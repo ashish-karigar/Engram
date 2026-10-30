@@ -1,0 +1,14 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/capture", "crates/understand", "crates/serve", "crates/daemon"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+engram-core = { path = "crates/core" }
+engram-capture = { path = "crates/capture" }
+engram-understand = { path = "crates/understand" }
+engram-serve = { path = "crates/serve" }
