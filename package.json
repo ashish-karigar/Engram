@@ -17,6 +17,8 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "chokidar": "^6.0.0"
+    "chokidar": "^6.0.0",
+    "tree-sitter-python": "^0.25.0",
+    "web-tree-sitter": "^0.27.1"
   }
 }
