@@ -193,6 +193,10 @@ export function history(db: Db, id: string): Memory[] {
   return rows.map(toMemory);
 }
 
+const STOP_WORDS = new Set(
+  "a an and are as at be by for from how in is it of on or that the this to was we what when where which who why with not do does did".split(" "),
+);
+
 export interface SearchHit {
   memory: Memory;
   score: number;
@@ -203,7 +207,9 @@ export function searchMemories(
   query: string,
   opts: { limit?: number; includeHistory?: boolean; asOf?: string } = {},
 ): SearchHit[] {
-  const terms = query.match(/[\p{L}\p{N}_]+/gu) ?? [];
+  const words = query.match(/[\p{L}\p{N}_]+/gu) ?? [];
+  const content = words.filter((w) => !STOP_WORDS.has(w.toLowerCase()));
+  const terms = content.length > 0 ? content : words;
   if (terms.length === 0) return [];
   const match = terms.map((t) => `"${t}"`).join(" OR ");
   const rows = db

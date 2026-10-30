@@ -19,6 +19,8 @@ before(async () => {
   addEdge(db, web.id, auth.id, "imports");
   const sess = createMemory(db, { type: "decision", title: "Auth strategy", claim: "Use signed session cookies", rationale: "Both sites are server rendered", touches: [auth.id] });
   createMemory(db, { type: "dead_end", title: "Login redirect loop", claim: "Cookie SameSite=Strict broke the redirect from site B", touches: [web.id] });
+  createMemory(db, { type: "dead_end", title: "Radius outlier filter", claim: "Radius outlier removal took 80ms per frame on lidar" });
+  createMemory(db, { type: "fact", title: "Lidar mount", claim: "Lidar is mounted on the roof" });
   createMemory(db, { type: "fact", title: "Billing", claim: "Stripe webhooks are verified in billing.py" });
   assert.ok(sess.id);
   server = await startServer({ db });
@@ -105,4 +107,9 @@ test("UI endpoints return graph, node detail, stats and timeline", async () => {
   assert.ok((await get("/api/stats")).memories >= 3);
   assert.ok((await get("/api/events")).length >= 1);
   assert.ok((await get("/api/requests")).length >= 1);
+});
+
+test("question words do not outrank the topic words", () => {
+  const titles = recall(db, "why not radius filter lidar").map((i) => i.memory.title);
+  assert.equal(titles[0], "Radius outlier filter");
 });

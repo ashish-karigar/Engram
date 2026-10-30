@@ -30,7 +30,7 @@ and serves small, token-budgeted answers over MCP and HTTP.
 | `core` | Schema, migrations, event log, memories, graph, access log. No I/O besides SQLite. | – |
 | `capture` | Watch files and git, scrub secrets, save uncommitted work to a git ref. | core |
 | `understand` | Index Python, group events into tasks, extract and verify memories, decay. | core |
-| `serve` | Recall ranking, token budget packer, MCP server, HTTP API, auth. | core |
+| `serve` | Recall ranking, token budget packer, MCP server, HTTP API, auth. | core, understand (notes) |
 | `daemon` | Wires everything for one project; project registry; `engram` CLI. | all above |
 | `app` | Desktop UI: graph, timeline, memory detail, request log. | HTTP API only |
 
@@ -98,6 +98,11 @@ speaks HTTP, so swapping the shell later is a small change.
 Free: local only. Paid: cloud sync (events carry `device_id` and `op_id`, so sync is
 operation shipping). Extra charge: project members. Entitlements will live in one module;
 none of this is built.
+
+## Connectors
+`engram connect <agent>` shows, then applies, one config change per agent: Codex (`~/.codex/config.toml`
+marked block), Muse Code (`mcpServers` in `~/.config/muse/settings.json`, entry format unverified),
+Claude Code (`claude mcp add`). Each agent gets its own token, so every request is attributed.
 
 ## Not built yet
 Vector search, session-log adapters for Codex and Muse Code (they use `note` instead),

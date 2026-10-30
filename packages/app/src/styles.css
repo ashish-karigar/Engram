@@ -1,0 +1,41 @@
+:root {
+  --bg: #0f1218; --panel: #161b24; --line: #252d3b; --text: #dde3ee; --muted: #8b93a1;
+  --accent: #4f8cff; --err: #e5584f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.muted { color: var(--muted); }
+.err { color: var(--err); }
+.clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+code, pre { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+pre { background: var(--bg); border: 1px solid var(--line); padding: 8px; overflow: auto; border-radius: 6px; white-space: pre-wrap; word-break: break-all; }
+button { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; margin: 0 6px 6px 0; }
+button.on, button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.welcome { display: grid; place-content: center; height: 100vh; text-align: center; gap: 4px; }
+.welcome h1 { margin: 0; font-size: 28px; }
+
+.app { display: grid; grid-template-rows: 44px 1fr; height: 100vh; }
+header { display: flex; align-items: center; gap: 14px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
+header .clip { max-width: 28%; }
+header .stats { margin-left: auto; color: var(--muted); }
+main { display: grid; grid-template-columns: 1fr 360px; min-height: 0; }
+.graph-wrap { position: relative; min-height: 0; }
+.graph { position: absolute; inset: 0; }
+.banner { position: absolute; top: 8px; left: 8px; z-index: 2; background: var(--panel); padding: 4px 8px; border-radius: 6px; }
+.legend { position: absolute; left: 10px; bottom: 10px; display: flex; flex-wrap: wrap; gap: 4px 12px; max-width: 70%; color: var(--muted); font-size: 11px; }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; }
+
+aside { border-left: 1px solid var(--line); background: var(--panel); overflow: auto; padding: 12px; }
+aside nav { margin-bottom: 10px; }
+aside h3 { margin: 6px 0; font-size: 15px; }
+aside h4 { margin: 12px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+aside ul { padding-left: 16px; margin: 4px 0; }
+.rows { list-style: none; padding: 0 !important; }
+.rows > li { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.rows .click { cursor: pointer; }
+.why { background: var(--bg); border-radius: 6px; padding: 6px 6px 6px 22px !important; margin-top: 4px !important; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; background: var(--line); }
+.badge.decision { background: #4f8cff55; } .badge.rejected_option { background: #e5584f55; }
+.badge.dead_end { background: #e5984f55; } .badge.fact { background: #3fb68b55; } .badge.preference { background: #a96bff55; }

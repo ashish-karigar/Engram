@@ -7,7 +7,7 @@
   ],
   "scripts": {
     "test": "node --test \"packages/*/test/*.test.ts\"",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p packages/app"
   },
   "engines": {
     "node": ">=24"
@@ -22,5 +22,8 @@
     "tree-sitter-python": "^0.25.0",
     "web-tree-sitter": "^0.27.1",
     "zod": "^4.6.7"
+  },
+  "allowScripts": {
+    "tree-sitter-python": false
   }
 }

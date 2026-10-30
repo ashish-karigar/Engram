@@ -21,6 +21,7 @@ async function main(): Promise<void> {
       const root = resolve(positional[0] ?? ".");
       const app = await startEngram(root, { port: Number(process.env.ENGRAM_PORT ?? 0) });
       console.log(`Engram watching ${app.paths.root}\n  api:  ${app.url}\n  data: ${app.paths.dir}`);
+      console.log(`ENGRAM_READY ${JSON.stringify({ url: app.url, uiToken: app.uiToken, root: app.paths.root })}`);
       const shutdown = () => void app.stop().then(() => process.exit(0));
       process.on("SIGINT", shutdown);
       process.on("SIGTERM", shutdown);
