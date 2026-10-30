@@ -165,4 +165,14 @@ export const MIGRATIONS: readonly string[] = [
   CREATE INDEX access_log_ts ON access_log(ts);
   CREATE INDEX access_log_actor ON access_log(actor_id, ts);
   `,
+  `
+  -- Per-agent API tokens. Only the sha256 is stored; the raw token is shown once.
+  CREATE TABLE tokens (
+    id         TEXT PRIMARY KEY,
+    actor_id   TEXT NOT NULL REFERENCES actors(id),
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    revoked_at TEXT
+  );
+  `,
 ];
