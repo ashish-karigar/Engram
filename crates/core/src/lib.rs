@@ -10,4 +10,5 @@ pub mod memory;
 pub mod meta;
 
 pub use error::{Error, Result};
+pub use rusqlite;
 pub use rusqlite::Connection;
