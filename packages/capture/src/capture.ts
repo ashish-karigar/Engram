@@ -2,7 +2,7 @@ import { ensureActor, type Db } from "@engram/core";
 import { ensureRepo, headSha } from "./git.ts";
 import { recordFileChanges, recordSnapshot, syncCommits, type CaptureContext } from "./ingest.ts";
 import { snapshotWorktree } from "./snapshot.ts";
-import { watchProject } from "./watcher.ts";
+import { watchProject, type FileChange } from "./watcher.ts";
 
 export interface CaptureOptions {
   db: Db;
@@ -10,6 +10,8 @@ export interface CaptureOptions {
   debounceMs?: number;
   /** Minimum gap between snapshots so busy edits do not create a commit per keystroke. */
   snapshotIntervalMs?: number;
+  /** Called after file changes are recorded, e.g. to re-index code. */
+  onChange?(changes: FileChange[]): void;
 }
 
 export interface CaptureHandle {
@@ -49,6 +51,7 @@ export async function startCapture(opts: CaptureOptions): Promise<CaptureHandle>
     onFiles: (changes) => {
       void headSha(opts.root).then((sha) => recordFileChanges(ctx, changes, sha));
       scheduleSnapshot();
+      opts.onChange?.(changes);
     },
     onGitActivity: () => void syncCommits(ctx),
   });

@@ -32,7 +32,7 @@ export function graphData(db: Db, opts: { includeArchived?: boolean; limit?: num
     .prepare(
       `SELECT DISTINCT e.id, e.kind, e.qualified_name FROM entities e JOIN edges g ON (g.src = e.id OR g.dst = e.id)
        WHERE g.src IN (SELECT value FROM json_each(?1)) OR g.dst IN (SELECT value FROM json_each(?1))
-       UNION SELECT id, kind, qualified_name FROM entities WHERE kind = 'module' AND status = 'active'`,
+       UNION SELECT id, kind, qualified_name FROM entities WHERE kind IN ('module','file') AND status = 'active'`,
     )
     .all(ids) as { id: string; kind: string; qualified_name: string }[];
   for (const e of touching) nodes.set(e.id, { id: e.id, label: e.qualified_name, kind: e.kind });

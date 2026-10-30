@@ -42,7 +42,7 @@ async function handleMcp(db: Db, actor: Actor, req: IncomingMessage, res: Server
   await transport.handleRequest(req, res, await readJson(req));
 }
 
-type Handler = (ctx: OpContext, url: URL, body: any) => unknown;
+export type Handler = (ctx: OpContext, url: URL, body: any) => unknown | Promise<unknown>;
 
 /** Plain-HTTP twins of the MCP tools, for agents without MCP, plus read-only views for the UI. */
 const ROUTES: Record<string, Handler> = {
@@ -58,9 +58,17 @@ const ROUTES: Record<string, Handler> = {
   "GET /api/requests": (ctx, u) => requestLog(ctx.db, Number(u.searchParams.get("limit") ?? 100)),
 };
 
-export async function startServer(opts: { db: Db; port?: number; host?: string }): Promise<RunningServer> {
+export interface ServerOptions {
+  db: Db;
+  port?: number;
+  host?: string;
+  /** Extra routes supplied by the daemon, e.g. agent connectors. Keys look like "POST /api/connect". */
+  routes?: Record<string, Handler>;
+}
+
+export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const server: Server = createServer((req, res) => {
-    void route(opts.db, req, res).catch((err: unknown) => {
+    void route(opts, req, res).catch((err: unknown) => {
       if (!res.headersSent) send(res, 500, { error: err instanceof Error ? err.message : String(err) });
     });
   });
@@ -72,17 +80,19 @@ export async function startServer(opts: { db: Db; port?: number; host?: string }
   };
 }
 
-async function route(db: Db, req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function route(opts: ServerOptions, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const { db } = opts;
   if (req.method === "OPTIONS") return void res.writeHead(204, CORS).end();
   const url = new URL(req.url ?? "/", "http://localhost");
   const actor = verifyToken(db, bearer(req));
   if (!actor) return send(res, 401, { error: "missing or invalid token" });
 
   if (url.pathname === "/mcp") return handleMcp(db, actor, req, res);
-  const handler = ROUTES[`${req.method} ${url.pathname}`];
+  const key = `${req.method} ${url.pathname}`;
+  const handler = opts.routes?.[key] ?? ROUTES[key];
   if (!handler) return send(res, 404, { error: "not found" });
   const body = req.method === "POST" ? await readJson(req) : undefined;
-  const out = handler({ db, actor }, url, body);
+  const out = await handler({ db, actor }, url, body);
   const op = out as { text?: string; data?: unknown };
   send(res, 200, typeof op?.text === "string" && "data" in op ? op : out);
 }
