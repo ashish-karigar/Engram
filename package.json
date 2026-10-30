@@ -3,27 +3,16 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "packages/*"
+    "apps/desktop/ui"
   ],
   "scripts": {
-    "test": "node --test \"packages/*/test/*.test.ts\"",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p packages/app"
-  },
-  "engines": {
-    "node": ">=24"
+    "test": "cargo test --workspace",
+    "ui:dev": "npm run dev -w @engram/ui",
+    "ui:build": "npm run build -w @engram/ui",
+    "app:dev": "cd apps/desktop && npx tauri dev",
+    "app:build": "cd apps/desktop && npx tauri build"
   },
   "devDependencies": {
-    "@types/node": "^26.6.6",
-    "typescript": "^7.0.2"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.2",
-    "chokidar": "^6.0.0",
-    "tree-sitter-python": "^0.25.0",
-    "web-tree-sitter": "^0.27.1",
-    "zod": "^4.6.7"
-  },
-  "allowScripts": {
-    "tree-sitter-python": false
+    "@tauri-apps/cli": "^2.12.4"
   }
 }

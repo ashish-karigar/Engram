@@ -1,0 +1,20 @@
+[package]
+name = "engram-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+engram-daemon = { path = "../../../crates/daemon" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+
+[features]
+# Serve the bundled UI instead of the dev server. `tauri build` enables this.
+custom-protocol = ["tauri/custom-protocol"]
+default = ["custom-protocol"]

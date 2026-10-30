@@ -1,8 +1,0 @@
-{
-  "name": "@engram/daemon",
-  "version": "0.0.0",
-  "private": true,
-  "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "bin": { "engram": "./src/cli.ts" }
-}

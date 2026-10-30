@@ -1,0 +1,30 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b0e14;
+  --surface: #11151d;
+  --surface-2: #171c27;
+  --surface-3: #1e2430;
+  --line: rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.13);
+  --text: #e7ebf3;
+  --muted: #8a93a6;
+  --faint: #5b6478;
+  --accent: #6d8dff;
+  --accent-soft: rgba(109, 141, 255, 0.16);
+  --danger: #ef6a62;
+  --ok: #47c394;
+
+  --t-decision: #6d8dff;
+  --t-rejected_option: #ef6a62;
+  --t-dead_end: #f0a35e;
+  --t-fact: #47c394;
+  --t-preference: #b184ff;
+  --t-episode: #8a93a6;
+  --t-task: #e8cf5c;
+  --t-module: #2c3548;
+  --t-file: #566178;
+
+  --radius: 10px;
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+}

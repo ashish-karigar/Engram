@@ -1,8 +1,10 @@
 node_modules/
+target/
+dist/
 .DS_Store
 .env
 .env.*
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
-dist/
+apps/desktop/src-tauri/gen/
