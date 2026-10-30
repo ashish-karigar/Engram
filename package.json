@@ -7,7 +7,7 @@
   ],
   "scripts": {
     "test": "node --test \"packages/*/test/*.test.ts\"",
-    "typecheck": "tsc --noEmit -p packages/core"
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "engines": {
     "node": ">=24"
@@ -15,5 +15,8 @@
   "devDependencies": {
     "@types/node": "^26.6.6",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "chokidar": "^6.0.0"
   }
 }
