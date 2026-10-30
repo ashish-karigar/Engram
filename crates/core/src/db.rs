@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use chrono::{SecondsFormat, Utc};
 use rusqlite::Connection;
@@ -8,6 +9,13 @@ use crate::error::Result;
 
 /// Ordered, append-only migrations. Never edit a shipped entry; add a new file.
 const MIGRATIONS: &[&str] = &[include_str!("../migrations/001.sql"), include_str!("../migrations/002.sql")];
+
+/// One connection shared across threads. SQLite work here is short, so a mutex is enough.
+pub type SharedDb = Arc<Mutex<Connection>>;
+
+pub fn shared(conn: Connection) -> SharedDb {
+    Arc::new(Mutex::new(conn))
+}
 
 pub fn new_id(prefix: &str) -> String {
     let uuid = Uuid::new_v4().simple().to_string();
@@ -20,7 +28,7 @@ pub fn now() -> String {
 
 pub fn open(path: &Path) -> Result<Connection> {
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| crate::Error::msg(e.to_string()))?;
+        std::fs::create_dir_all(dir)?;
     }
     configure(Connection::open(path)?)
 }
