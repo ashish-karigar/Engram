@@ -1342,6 +1342,7 @@ dependencies = [
 name = "engram-code"
 version = "0.1.0"
 dependencies = [
+ "regex",
  "tree-sitter",
  "tree-sitter-python",
  "tree-sitter-rust",
@@ -1416,11 +1417,13 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
+ "engram-code",
  "engram-core",
  "engram-embed",
  "engram-rag",
  "engram-serve",
  "engram-sessions",
+ "engram-understand",
  "hex",
  "rayon",
  "serde",

@@ -3,6 +3,7 @@
 
 mod cache;
 mod longmemeval;
+mod map;
 mod report;
 mod scale;
 mod split;
@@ -91,6 +92,11 @@ enum Suite {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Print a repository's system map (areas, endpoints, callers, services).
+    Map {
+        /// Repository root.
+        root: PathBuf,
+    },
     /// Suite D: search speed and nearest-neighbour recall on synthetic projects of growing size.
     Scale {
         /// Where the synthetic databases are kept (reused between runs).
@@ -125,6 +131,7 @@ fn main() {
             result
         }
         Suite::Scale { dir, sizes, queries } => scale::run(&dir, &sizes, queries),
+        Suite::Map { root } => map::run(&root),
     };
     if let Err(err) = result {
         eprintln!("error: {err}");

@@ -9,5 +9,6 @@ pub mod notes;
 pub mod quality;
 pub mod pipeline;
 pub mod reconcile;
+pub mod system;
 pub mod tasks;
 pub mod verify;

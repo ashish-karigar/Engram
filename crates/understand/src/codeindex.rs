@@ -1,8 +1,11 @@
 use std::path::Path;
 
+use engram_code::net::{self, NetLang};
 use engram_code::{Lang, Resolver, parse_file};
 use engram_core::graph::{EdgeOpts, add_edge, upsert_entity};
 use engram_core::{Connection, Result};
+
+use crate::system::store_file;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct IndexResult {
@@ -44,9 +47,20 @@ fn link_folder_tree(conn: &Connection, dir: &str, id: &str, commit_sha: Option<&
 pub fn index_code(conn: &Connection, root: &Path, paths: &[String], resolver: &Resolver, commit_sha: Option<&str>) -> Result<IndexResult> {
     let mut result = IndexResult::default();
     for path in paths {
-        let Some(lang) = Lang::from_path(path) else { continue };
+        let net_lang = NetLang::from_path(path);
         let Ok(source) = std::fs::read_to_string(root.join(path)) else { continue };
+        let Some(lang) = Lang::from_path(path) else {
+            // Languages without a parser here (Swift) still contribute routes and calls.
+            if let Some(nl) = net_lang {
+                upsert_entity(conn, "file", path, Some(path), commit_sha)?;
+                store_file(conn, path, &net::extract(nl, path, &source), &[], &[])?;
+            }
+            continue;
+        };
         let Some(parsed) = parse_file(lang, &source) else { continue };
+        if let Some(nl) = net_lang {
+            store_file(conn, path, &net::extract(nl, path, &source), &parsed.symbols, &parsed.imports)?;
+        }
         let file = upsert_entity(conn, "file", path, Some(path), commit_sha)?;
         let dir = module_of(path);
         let module = upsert_entity(conn, "module", &dir, Some(&dir), commit_sha)?;

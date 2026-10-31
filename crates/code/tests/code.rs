@@ -123,3 +123,143 @@ fn python_absolute_imports_resolve_in_src_and_subproject_layouts() {
     assert_eq!(py("worker/app/main.py", "app.models").as_deref(), Some("worker/app/models.py"));
     assert_eq!(py("backend/app/main.py", "numpy"), None);
 }
+
+mod net {
+    use engram_code::net::{NetLang, extract, normalize};
+
+    fn routes(lang: NetLang, path: &str, src: &str) -> Vec<String> {
+        extract(lang, path, src).routes.into_iter().map(|r| format!("{} {}{}", r.method, r.path, if r.prefix { "*" } else { "" })).collect()
+    }
+    fn calls(lang: NetLang, path: &str, src: &str) -> Vec<String> {
+        extract(lang, path, src).calls.into_iter().map(|c| format!("{} {}{}", c.method, c.host.map_or(String::new(), |h| format!("//{h}")), c.path)).collect()
+    }
+
+    #[test]
+    fn paths_normalize_across_frameworks() {
+        for p in ["/jobs/{job_id}", "/jobs/${id}", "/jobs/:id", "/jobs/<int:id>", "jobs/{id}/", "/jobs/{id}?x=1"] {
+            assert_eq!(normalize(p), "/jobs/{}", "{p}");
+        }
+    }
+
+    #[test]
+    fn fastapi_routes_include_the_router_prefix() {
+        let src = r#"
+router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+@router.post("", status_code=202)
+async def create(): ...
+
+@router.patch("/{job_id}", response_model=JobOut)
+async def update(job_id: int): ...
+"#;
+        assert_eq!(routes(NetLang::Python, "backend/app/api/jobs.py", src), ["POST /jobs", "PATCH /jobs/{}"]);
+    }
+
+    #[test]
+    fn angular_services_resolve_their_base_field() {
+        let src = r#"
+export class AccessApi {
+  private readonly http = inject(HttpClient);
+  private readonly base = `${APP_CONFIG.apiUrl}/access`;
+  me() { return this.http.get<AccessIdentity>(`${this.base}/me`); }
+  decide(id: string, action: string) {
+    return this.http.post<AccessRequestRecord>(`${this.base}/admin/requests/${id}/${action}`, {});
+  }
+}"#;
+        assert_eq!(calls(NetLang::Js, "frontend/src/app/core/access-api.ts", src), ["GET /access/me", "POST /access/admin/requests/{}/{}"]);
+    }
+
+    #[test]
+    fn http_server_handlers_and_python_and_browser_clients() {
+        let server = r#"
+class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        if self.path == '/recording':
+            return
+        if self.path != "/frame":
+            return self.send_error(404)
+    def do_GET(self):
+        url = urlsplit(self.path)
+        if url.path == "/health":
+            return
+"#;
+        assert_eq!(routes(NetLang::Python, "src/parallax/transport/http_server.py", server), ["POST /recording", "POST /frame", "GET /health"]);
+        let client = "connection.request('GET', f'{prefix}/frame?after={last_id}')";
+        assert_eq!(calls(NetLang::Python, "client.py", client), ["GET /frame"]);
+        let browser = "const response=await fetch('/frame?after='+lastID,{signal:AbortSignal.timeout(3000)});";
+        assert_eq!(calls(NetLang::Js, "dashboard.js", browser), ["GET /frame"]);
+    }
+
+    #[test]
+    fn slice_pattern_routers_and_wrapper_clients() {
+        let server = r#"
+    match (method, tail.as_slice()) {
+        (&Method::POST, ["mcp"]) => handle(),
+        (&Method::GET, ["api", "graph"]) => graph(),
+        (m, ["api", "projects", rest @ ..]) if is_admin => projects(),
+        _ => not_found(),
+    }"#;
+        assert_eq!(routes(NetLang::Rust, "crates/serve/src/http.rs", server), ["POST /mcp", "GET /api/graph", "ANY /api/projects*"]);
+        let client = r#"
+  const base = `/p/${id}/api`;
+  graph: (archived: boolean) => call<Graph>(c, `${base}/graph?archived=${archived ? 1 : 0}`),
+  remove: (id: string) => call<{ ok: boolean }>(c, `/api/projects/${id}`, { method: "DELETE" }),
+  addDocument: (title: string) => call<OpResult>(c, `${base}/documents`, post({ title })),
+"#;
+        assert_eq!(calls(NetLang::Js, "ui/src/api/client.ts", client), ["GET /p/{}/api/graph", "DELETE /api/projects/{}", "POST /p/{}/api/documents"]);
+    }
+
+    #[test]
+    fn external_hosts_are_kept_and_navigation_is_not_a_call() {
+        let src = r#"
+self.url = f"https://{domain}/.well-known/jwks.json"
+response = await client.get(self.url)
+r = httpx.post("http://localhost:11434/api/generate", json=body)
+key = keys.get("kid")
+"#;
+        assert_eq!(calls(NetLang::Python, "security.py", src), ["GET //domain/.well-known/jwks.json", "POST //localhost:11434/api/generate"]);
+        assert!(calls(NetLang::Js, "nav.ts", "this.router.navigate(['/jobs']); const k = map.get('key');").is_empty());
+    }
+
+    #[test]
+    fn configured_hosts_through_variables_and_concatenated_paths() {
+        let src = r#"
+domain = f"https://{settings.auth0_domain}"
+token = await client.post(f"{domain}/oauth/token", json={})
+r = await client.patch('/jobs/' + job['id'], json={'status': s})
+x = await client.post('/needs-attention/' + response.json()['job_id'] + '/resolve', json={})
+"#;
+        assert_eq!(calls(NetLang::Python, "access.py", src), ["POST //Auth0/oauth/token", "PATCH /jobs/{}", "POST /needs-attention/{}/resolve"]);
+    }
+
+    #[test]
+    fn swift_path_components_are_calls() {
+        let src = r#"var request = URLRequest(url: url.appendingPathComponent("health"))
+self.destination = url.appendingPathComponent("frame")"#;
+        assert_eq!(calls(NetLang::Swift, "ios/App.swift", src), ["ANY /health", "ANY /frame"]);
+    }
+}
+
+mod areas {
+    use engram_code::{area_of, detect};
+
+    #[test]
+    fn manifests_become_areas_and_files_belong_to_the_deepest() {
+        let files: Vec<String> = ["frontend/package.json", "frontend/src/app/core/jobs-api.ts", "backend/pyproject.toml", "backend/app/api/jobs.py",
+            "Cargo.toml", "crates/serve/Cargo.toml", "crates/serve/src/http.rs", "ios/LiTheR.xcodeproj/project.pbxproj", "ios/LiTheR/App.swift", "README.md"]
+            .iter().map(|s| s.to_string()).collect();
+        let read = |f: &str| match f {
+            "frontend/package.json" => Some(r#"{"dependencies": {"@angular/core": "^20"}}"#.to_string()),
+            "backend/pyproject.toml" => Some("dependencies = [\"fastapi>=0.115\", \"sqlalchemy\"]".to_string()),
+            "Cargo.toml" => Some("[workspace]\nmembers = []".to_string()),
+            "crates/serve/Cargo.toml" => Some("[package]\nname = \"serve\"\n[dependencies]\naxum = \"0.8\"".to_string()),
+            _ => None,
+        };
+        let areas = detect(&files, "repo", read);
+        let summary: Vec<String> = areas.iter().map(|a| format!("{}={}", a.name, a.kind)).collect();
+        assert_eq!(summary, ["backend=FastAPI service", "serve=Rust server", "frontend=Angular app", "ios=iOS / macOS app"]);
+        assert_eq!(area_of(&areas, "frontend/src/app/core/jobs-api.ts").unwrap().name, "frontend");
+        assert_eq!(area_of(&areas, "ios/LiTheR/App.swift").unwrap().name, "ios");
+        assert!(area_of(&areas, "README.md").is_none(), "no root manifest: the root is not an area");
+    }
+}

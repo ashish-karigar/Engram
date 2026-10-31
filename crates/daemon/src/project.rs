@@ -16,8 +16,9 @@ use engram_embed::store::{chunks_missing, embed_and_store, memories_missing};
 use engram_rag::project::{ingest_file, should_index};
 use engram_sessions::{Sources, sync_sessions};
 use engram_serve::{ProjectInfo, ProjectRef};
-use engram_code::{Lang, Resolver};
+use engram_code::{Lang, NetLang, Resolver};
 use engram_understand::codeindex::index_code;
+use engram_understand::system::rebuild_map;
 use engram_understand::llm::LlmClient;
 use engram_understand::pipeline::{PipelineOptions, run_pipeline};
 
@@ -133,7 +134,7 @@ fn sync_documents(conn: &Connection, embedder: &dyn Embedder, root: &Path, paths
 /// Cargo manifests are read so `use other_crate::...` resolves inside a workspace.
 fn reindex(conn: &Connection, root: &Path, changed: Option<&[String]>) {
     let all = list_files(root, None);
-    let known: HashSet<String> = all.iter().filter(|p| Lang::from_path(p).is_some()).cloned().collect();
+    let known: HashSet<String> = all.iter().filter(|p| Lang::from_path(p).is_some() || NetLang::from_path(p).is_some()).cloned().collect();
     let paths: Vec<String> = match changed {
         Some(c) => c.iter().filter(|p| known.contains(*p)).cloned().collect(),
         None => known.iter().cloned().collect(),
@@ -148,6 +149,11 @@ fn reindex(conn: &Connection, root: &Path, changed: Option<&[String]>) {
         .collect();
     if let Err(err) = index_code(conn, root, &paths, &Resolver::new(&known, &manifests), None) {
         eprintln!("engram: code indexing failed: {err}");
+    }
+    // Areas, endpoints and services are derived from all files, so rebuild them after any change.
+    let repo = root.file_name().map_or("project".into(), |n| n.to_string_lossy().to_string());
+    if let Err(err) = rebuild_map(conn, &repo, &all, |f| std::fs::read_to_string(root.join(f)).ok()) {
+        eprintln!("engram: system map failed: {err}");
     }
 }
 
