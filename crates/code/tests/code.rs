@@ -106,3 +106,20 @@ fn imports_resolve_to_project_files() {
 
     assert_eq!(r.resolve("perception/fusion.py", &Import::Python { module: "lidar".into(), level: 1 }).as_deref(), Some("perception/lidar.py"));
 }
+
+#[test]
+fn python_absolute_imports_resolve_in_src_and_subproject_layouts() {
+    let files: HashSet<String> = [
+        "src/parallax/__init__.py", "src/parallax/engine.py", "src/parallax/io/frames.py", "tests/test_engine.py",
+        "backend/app/main.py", "backend/app/models.py", "backend/app/routers/jobs.py", "backend/tests/test_jobs.py",
+        "worker/app/models.py",
+    ].map(String::from).into();
+    let r = Resolver::new(&files, &[]);
+    let py = |from: &str, module: &str| r.resolve(from, &Import::Python { module: module.into(), level: 0 });
+    assert_eq!(py("tests/test_engine.py", "parallax.engine").as_deref(), Some("src/parallax/engine.py"));
+    assert_eq!(py("src/parallax/engine.py", "parallax.io.frames").as_deref(), Some("src/parallax/io/frames.py"));
+    assert_eq!(py("tests/test_engine.py", "parallax").as_deref(), Some("src/parallax/__init__.py"));
+    assert_eq!(py("backend/app/routers/jobs.py", "app.models").as_deref(), Some("backend/app/models.py"), "same sub-project wins");
+    assert_eq!(py("worker/app/main.py", "app.models").as_deref(), Some("worker/app/models.py"));
+    assert_eq!(py("backend/app/main.py", "numpy"), None);
+}

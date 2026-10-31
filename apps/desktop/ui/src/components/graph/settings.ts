@@ -1,5 +1,6 @@
 /** Graph view preferences. Stored per viewer in localStorage, like Obsidian's graph settings. */
 export interface GraphSettings {
+  mode: "2d" | "3d";
   search: string;
   hidden: string[];
   showOrphans: boolean;
@@ -17,6 +18,7 @@ export interface GraphSettings {
 }
 
 export const DEFAULTS: GraphSettings = {
+  mode: "2d",
   search: "",
   hidden: [],
   showOrphans: true,

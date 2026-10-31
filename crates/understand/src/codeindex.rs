@@ -18,6 +18,26 @@ fn module_of(path: &str) -> String {
     }
 }
 
+/// Connect a folder to its parent folders (`backend/app/routers` ⊂ `backend/app` ⊂ `backend`),
+/// so the project's architecture shows as one tree instead of islands.
+fn link_folder_tree(conn: &Connection, dir: &str, id: &str, commit_sha: Option<&str>) -> Result<()> {
+    let (mut child_dir, mut child_id) = (dir.to_string(), id.to_string());
+    while let Some((parent, _)) = child_dir.rsplit_once('/') {
+        let parent_entity = upsert_entity(conn, "module", parent, Some(parent), commit_sha)?;
+        let fresh = conn.query_row(
+            "SELECT COUNT(*) FROM edges WHERE src = ? AND dst = ? AND type = 'contains'",
+            [&parent_entity.id, &child_id],
+            |r| r.get::<_, i64>(0),
+        )? == 0;
+        add_edge(conn, &parent_entity.id, &child_id, "contains", EdgeOpts::default())?;
+        if !fresh {
+            break;
+        }
+        (child_dir, child_id) = (parent.to_string(), parent_entity.id);
+    }
+    Ok(())
+}
+
 /// Turn source files (Python, Rust, TypeScript, JavaScript) into entities and edges:
 /// `module -contains-> file -contains-> symbol` and `file -imports-> file`.
 /// Re-running is safe: entities are upserted and edges are unique.
@@ -31,6 +51,7 @@ pub fn index_code(conn: &Connection, root: &Path, paths: &[String], resolver: &R
         let dir = module_of(path);
         let module = upsert_entity(conn, "module", &dir, Some(&dir), commit_sha)?;
         add_edge(conn, &module.id, &file.id, "contains", EdgeOpts::default())?;
+        link_folder_tree(conn, &dir, &module.id, commit_sha)?;
         result.files += 1;
 
         // `impl` blocks are containers, not things anyone asks about; their methods are recorded.

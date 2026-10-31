@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { projectApi, projectsApi } from "./api/client.ts";
 import type { Connection, Graph, Project } from "./api/types.ts";
 import { AgentsPanel } from "./components/AgentsPanel.tsx";
@@ -8,6 +8,9 @@ import { ReviewPanel } from "./components/ReviewPanel.tsx";
 import { EmptyState } from "./components/EmptyState.tsx";
 import { ForceGraph, type GraphCommands } from "./components/graph/ForceGraph.tsx";
 import { GraphControls } from "./components/graph/GraphControls.tsx";
+
+// three.js is large; load it only when someone switches to 3D.
+const ForceGraph3D = lazy(() => import("./components/graph/ForceGraph3D.tsx").then((m) => ({ default: m.ForceGraph3D })));
 import { loadSettings, saveSettings, type GraphSettings } from "./components/graph/settings.ts";
 import { NodeDrawer } from "./components/NodeDrawer.tsx";
 import { RequestLog } from "./components/RequestLog.tsx";
@@ -64,7 +67,12 @@ function Workspace({ connection, project }: { connection: Connection; project: P
         {tab === "graph" && (
           <div className={`graph ${selected ? "with-drawer" : ""}`}>
             {error && <div className="banner err">{error}</div>}
-            {graph && <ForceGraph graph={graph} settings={graphSettings} selectedId={selected} onSelect={select} onZoom={setZoom} commands={commands} />}
+            {graph && graphSettings.mode === "2d" && <ForceGraph graph={graph} settings={graphSettings} selectedId={selected} onSelect={select} onZoom={setZoom} commands={commands} />}
+            {graph && graphSettings.mode === "3d" && (
+              <Suspense fallback={<div className="graph-empty">Loading 3D…</div>}>
+                <ForceGraph3D graph={graph} settings={graphSettings} selectedId={selected} onSelect={select} onZoom={setZoom} commands={commands} />
+              </Suspense>
+            )}
             <GraphControls graph={graph} settings={graphSettings} onChange={updateGraphSettings} selectedId={selected} zoom={zoom} commands={commands} />
             {graph && graph.nodes.length === 0 && <div className="graph-empty">No memories yet. Connect an agent, or add documents.</div>}
             {selected && <NodeDrawer api={api} id={selected} onClose={() => setSelected(null)} onOpen={setSelected} />}

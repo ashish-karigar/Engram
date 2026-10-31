@@ -39,6 +39,9 @@ fn index_code_builds_entities_and_import_edges_across_languages() {
     let fusion: String = db.query_row("SELECT id FROM entities WHERE qualified_name = 'perception/fusion.py'", [], |r| r.get(0)).unwrap();
     let opts = ExpandOpts { max_depth: 1, edge_types: Some(vec!["imports".into()]), ..Default::default() };
     assert_eq!(expand(&db, &[fusion], &opts).unwrap().len(), 2);
+    let folders: i64 = db.query_row("SELECT COUNT(*) FROM edges e JOIN entities a ON a.id = e.src JOIN entities b ON b.id = e.dst
+        WHERE a.qualified_name = 'core' AND b.qualified_name = 'core/src' AND e.type = 'contains'", [], |r| r.get(0)).unwrap();
+    assert_eq!(folders, 1, "folders link to their parent folder");
     let plan_rs: i64 = db.query_row("SELECT COUNT(*) FROM entities WHERE qualified_name = 'core/src/plan.rs::plan' AND kind = 'function'", [], |r| r.get(0)).unwrap();
     assert_eq!(plan_rs, 1);
     let _ = (Import::Js { specifier: String::new() }, Lang::Rust, parse_file(Lang::Python, "x = 1"));

@@ -7,6 +7,9 @@ pub struct Resolver<'a> {
     files: &'a HashSet<String>,
     /// Rust crate identifier (`engram_core`) → its `src` directory (`crates/core/src`).
     crates: HashMap<String, String>,
+    /// Python module path suffix (`app/models`) → files that end with it. Lets absolute imports
+    /// resolve in `src/` layouts and in sub-projects (`backend/app/models.py`).
+    py_suffixes: HashMap<String, Vec<String>>,
 }
 
 fn dirname(path: &str) -> &str {
@@ -54,7 +57,7 @@ impl<'a> Resolver<'a> {
                 Some((name, if dir.is_empty() { "src".to_string() } else { format!("{dir}/src") }))
             })
             .collect();
-        Resolver { files, crates }
+        Resolver { files, crates, py_suffixes: python_suffixes(files) }
     }
 
     fn first(&self, candidates: impl IntoIterator<Item = String>, from: &str) -> Option<String> {
@@ -70,15 +73,19 @@ impl<'a> Resolver<'a> {
     }
 
     fn python(&self, from: &str, module: &str, level: usize) -> Option<String> {
-        let mut parts: Vec<&str> = if level > 0 {
+        if level > 0 {
             let dir: Vec<&str> = from.split('/').collect();
-            dir[..dir.len().saturating_sub(level)].to_vec()
-        } else {
-            vec![]
-        };
-        parts.extend(module.split('.').filter(|p| !p.is_empty()));
-        let stem = parts.join("/");
-        self.first([format!("{stem}.py"), format!("{stem}/__init__.py")], from)
+            let mut parts = dir[..dir.len().saturating_sub(level)].to_vec();
+            parts.extend(module.split('.').filter(|p| !p.is_empty()));
+            let stem = parts.join("/");
+            return self.first([format!("{stem}.py"), format!("{stem}/__init__.py")], from);
+        }
+        // Absolute import: the file whose path ends with the module path. With several matches
+        // (two sub-projects both having `app/`), prefer the one sharing the longest prefix with
+        // the importing file, i.e. the same sub-project.
+        let suffix = module.replace('.', "/");
+        let shared = |c: &String| c.split('/').zip(from.split('/')).take_while(|(a, b)| a == b).count();
+        self.py_suffixes.get(&suffix)?.iter().filter(|c| c.as_str() != from).max_by_key(|c| (shared(c), std::cmp::Reverse(c.len()))).cloned()
     }
 
     fn js(&self, from: &str, spec: &str) -> Option<String> {
@@ -138,4 +145,18 @@ impl<'a> Resolver<'a> {
             })
             .or_else(|| self.first([format!("{base}/lib.rs"), format!("{base}/main.rs")], from))
     }
+}
+
+/// Every module-path suffix of every Python file: `backend/app/models.py` yields `models`,
+/// `app/models` and `backend/app/models`; a package `__init__.py` yields its folder's suffixes.
+fn python_suffixes(files: &HashSet<String>) -> HashMap<String, Vec<String>> {
+    let mut map: HashMap<String, Vec<String>> = HashMap::new();
+    for f in files.iter().filter(|f| f.ends_with(".py")) {
+        let stem = f.trim_end_matches(".py").trim_end_matches("/__init__");
+        let parts: Vec<&str> = stem.split('/').collect();
+        for start in 0..parts.len() {
+            map.entry(parts[start..].join("/")).or_default().push(f.clone());
+        }
+    }
+    map
 }
