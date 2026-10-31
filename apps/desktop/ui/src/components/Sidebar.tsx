@@ -6,9 +6,11 @@ interface Props {
   onSelect(id: string): void;
   onAdd(): void;
   onRemove(id: string): void;
+  settingsOpen: boolean;
+  onSettings(): void;
 }
 
-export function Sidebar({ projects, selectedId, onSelect, onAdd, onRemove }: Props) {
+export function Sidebar({ projects, selectedId, onSelect, onAdd, onRemove, settingsOpen, onSettings }: Props) {
   return (
     <aside className="sidebar" data-tauri-drag-region>
       <div className="brand"><i />Engram</div>
@@ -18,7 +20,7 @@ export function Sidebar({ projects, selectedId, onSelect, onAdd, onRemove }: Pro
       </div>
       <div className="projects">
         {projects.map((p) => (
-          <button key={p.id} className={`project ${p.id === selectedId ? "active" : ""}`} onClick={() => onSelect(p.id)}>
+          <button key={p.id} className={`project ${p.id === selectedId && !settingsOpen ? "active" : ""}`} onClick={() => onSelect(p.id)}>
             <b className="clip">{p.name}</b>
             <small>{p.stats ? `${p.stats.memories} memories · ${p.stats.entities} code nodes` : "starting…"}</small>
             <span
@@ -30,6 +32,7 @@ export function Sidebar({ projects, selectedId, onSelect, onAdd, onRemove }: Pro
           </button>
         ))}
       </div>
+      <button className={`side-settings ${settingsOpen ? "active" : ""}`} onClick={onSettings}>⚙ Settings</button>
       <div className="side-foot"><span className="dot" />Watching locally</div>
     </aside>
   );

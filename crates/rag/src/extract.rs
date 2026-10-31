@@ -30,6 +30,11 @@ pub fn extension(path: &str) -> String {
     path.rsplit_once('.').map(|(_, e)| e.to_lowercase()).unwrap_or_default()
 }
 
+pub fn is_code(path: &str) -> bool {
+    let ext = extension(path);
+    CODE.iter().any(|(e, _)| *e == ext)
+}
+
 /// Whether Engram knows how to read this file.
 pub fn is_supported(path: &str) -> bool {
     let ext = extension(path);

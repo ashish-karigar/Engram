@@ -46,6 +46,8 @@ cargo run -p engram-daemon -- connect codex ~/path/to/project --apply  # apply (
 ```
 
 In the app, add project folders from the sidebar, then connect agents from the Agents tab.
+Models, embeddings and indexing rules are set on the Settings page (saved to `settings.json` in the
+data folder; API keys are stored only there and never sent back to the UI in full).
 
 Extraction from commits is optional and configured with environment variables:
 `META_API_KEY` (Muse Spark; `META_BASE_URL`, `META_MODEL` to override) or `ENGRAM_LLM=ollama`.

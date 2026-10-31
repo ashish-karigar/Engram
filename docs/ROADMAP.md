@@ -76,7 +76,8 @@ on session start and after compaction, Muse Spark extraction and `derives`.
   statuses, hash dedupe and versioning, `mentions`/`describes` edges, project folder auto-indexed
 - [x] **C** extends edges, reinforcement, expiry, inferred memories + approve/decline/undo, project profile
 - [x] **D** search modes (hybrid/memories/documents), `profile`, `add_document`, review and document endpoints
-- [ ] **E** done: Documents tab, Review tab, search modes, document nodes. Next: Obsidian-style graph,
-  Settings, project overview
+- [x] **E** Documents and Review tabs, search modes, Obsidian-style graph (canvas force simulation, drag,
+  pan, zoom, hover focus, filters, groups, display and force sliders, local graph, Z/C shortcuts),
+  Settings (extraction model, embeddings, indexing rules, upkeep intervals, test connection). Next: project overview
 - [ ] **F** session-log adapters, hook injection, Muse Spark extraction and `derives`
 - [ ] **G** benchmark, demo video, submission

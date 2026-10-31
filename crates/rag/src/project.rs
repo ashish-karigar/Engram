@@ -27,13 +27,13 @@ fn external_id(rel: &str) -> String {
 }
 
 /// Ingest (or refresh) one project file. Returns None for files that are skipped.
-pub fn ingest_file(conn: &Connection, embedder: &dyn Embedder, root: &Path, rel: &str) -> Result<Option<IngestOutcome>> {
+pub fn ingest_file(conn: &Connection, embedder: &dyn Embedder, root: &Path, rel: &str, max_bytes: u64) -> Result<Option<IngestOutcome>> {
     let full = root.join(rel);
     let Ok(meta) = std::fs::metadata(&full) else {
         remove_file(conn, rel)?;
         return Ok(None);
     };
-    if !should_index(rel) || !meta.is_file() || meta.len() > MAX_FILE_BYTES {
+    if !should_index(rel) || !meta.is_file() || meta.len() > max_bytes {
         return Ok(None);
     }
     let input = DocumentInput {

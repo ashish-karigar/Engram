@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use engram_core::Result;
+use engram_core::{Error, Result};
 use std::sync::Arc;
 
 use engram_core::db::SharedDb;
@@ -37,4 +37,17 @@ pub trait ProjectManager: Send + Sync {
     fn add(&self, root: &Path) -> Result<ProjectRef>;
     fn remove(&self, id: &str) -> Result<()>;
     fn connect(&self, id: &str, agent: &str, apply: bool) -> Result<ConnectOutcome>;
+
+    /// App settings as the UI may see them (secrets masked).
+    fn settings(&self) -> Result<serde_json::Value> {
+        Err(Error::msg("settings are not available"))
+    }
+    /// Save settings and apply them. Returns the new public view.
+    fn update_settings(&self, _incoming: serde_json::Value) -> Result<serde_json::Value> {
+        Err(Error::msg("settings are not available"))
+    }
+    /// Try the configured model (`llm`) or embedder (`embeddings`) with a tiny request.
+    fn test_settings(&self, _target: &str) -> Result<serde_json::Value> {
+        Err(Error::msg("settings are not available"))
+    }
 }

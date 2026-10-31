@@ -11,6 +11,7 @@ import { GraphControls } from "./components/graph/GraphControls.tsx";
 import { loadSettings, saveSettings, type GraphSettings } from "./components/graph/settings.ts";
 import { NodeDrawer } from "./components/NodeDrawer.tsx";
 import { RequestLog } from "./components/RequestLog.tsx";
+import { SettingsPage } from "./components/SettingsPage.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { Timeline } from "./components/Timeline.tsx";
 import { pickFolder, useDaemon } from "./hooks/useDaemon.ts";
@@ -83,6 +84,7 @@ export function App() {
   const { connection, error: daemonError } = useDaemon();
   const [selectedId, setSelectedId] = useState<string | null>(() => localStorage.getItem(LAST_PROJECT));
   const [addError, setAddError] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const api = useMemo(() => (connection ? projectsApi(connection) : null), [connection]);
   const { data: projects = [], reload } = usePolling<Project[]>(() => (api ? api.list() : Promise.resolve([])), 3000, [api]);
 
@@ -104,8 +106,18 @@ export function App() {
 
   return (
     <div className="shell">
-      <Sidebar projects={projects} selectedId={current?.id ?? null} onSelect={setSelectedId} onAdd={add} onRemove={remove} />
-      {current ? <Workspace key={current.id} connection={connection} project={current} /> : <EmptyState onAdd={add} error={addError} />}
+      <Sidebar
+        projects={projects}
+        selectedId={current?.id ?? null}
+        onSelect={(id) => { setSelectedId(id); setSettingsOpen(false); }}
+        onAdd={add}
+        onRemove={remove}
+        settingsOpen={settingsOpen}
+        onSettings={() => setSettingsOpen(true)}
+      />
+      {settingsOpen && api ? <SettingsPage api={api} />
+        : current ? <Workspace key={current.id} connection={connection} project={current} />
+        : <EmptyState onAdd={add} error={addError} />}
     </div>
   );
 }

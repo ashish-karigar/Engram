@@ -101,6 +101,19 @@ async fn dispatch(State(state): State<Arc<AppState>>, req: Request) -> Response 
     let result = match (&parts.method, segments.as_slice()) {
         (_, ["api", "health"]) => Ok(reply(StatusCode::OK, &json!({"ok": true}))),
         (m, ["api", "projects", rest @ ..]) if is_admin => handle_projects(state.clone(), m.clone(), rest, json_body).await,
+        (m, ["api", "settings", rest @ ..]) if is_admin => {
+            let (manager, method, test) = (state.manager.clone(), m.clone(), rest.first() == Some(&"test"));
+            tokio::task::spawn_blocking(move || match (method, test) {
+                (Method::GET, false) => manager.settings(),
+                (Method::POST, false) => manager.update_settings(json_body),
+                (Method::POST, true) => manager.test_settings(json_body["target"].as_str().unwrap_or("")),
+                _ => Err(Error::msg("not found")),
+            })
+            .await
+            .map_err(|e| Error::msg(e.to_string()))
+            .and_then(|r| r)
+            .map(|v| reply(StatusCode::OK, &v))
+        }
         (_, ["p", id, tail @ ..]) => {
             let st = state.clone();
             let (id, tail, method) = (id.to_string(), tail.iter().map(|s| s.to_string()).collect::<Vec<_>>(), parts.method.clone());

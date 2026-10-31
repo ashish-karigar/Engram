@@ -1,5 +1,5 @@
 import type {
-  ConnectResult, Connection, DocumentView, EventEntry, Graph, InferredMemory, MemoryView, NodeDetail, OpResult, Project,
+  AppSettings, ConnectResult, Connection, TestResult, DocumentView, EventEntry, Graph, InferredMemory, MemoryView, NodeDetail, OpResult, Project,
   RequestEntry, SearchMode, Stats,
 } from "./types.ts";
 
@@ -19,6 +19,9 @@ export const projectsApi = (c: Connection) => ({
   list: () => call<Project[]>(c, "/api/projects"),
   add: (root: string) => call<Project>(c, "/api/projects", post({ root })),
   remove: (id: string) => call<{ ok: boolean }>(c, `/api/projects/${id}`, { method: "DELETE" }),
+  settings: () => call<AppSettings>(c, "/api/settings"),
+  saveSettings: (s: AppSettings) => call<AppSettings>(c, "/api/settings", post(s)),
+  testSettings: (target: "llm" | "embeddings") => call<TestResult>(c, "/api/settings/test", post({ target })),
 });
 
 /** Everything the UI reads or does inside one project. */

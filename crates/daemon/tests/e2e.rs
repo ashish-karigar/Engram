@@ -106,7 +106,7 @@ async fn end_to_end_two_projects_two_agents_recovery() {
     runtime.pipeline_every = Duration::from_millis(200);
     runtime.capture_debounce = Duration::from_millis(50);
     runtime.snapshot_interval = Duration::from_millis(100);
-    let running = start_daemon(DaemonOptions { base: home.path().to_path_buf(), port: 0, runtime }).await.unwrap();
+    let running = start_daemon(DaemonOptions { base: home.path().to_path_buf(), port: 0, runtime: Some(runtime) }).await.unwrap();
     let api = Api { url: running.url.clone(), admin: running.admin_token.clone() };
 
     let drive_p = api.post(&api.admin, "/api/projects", json!({"root": drive.path()})).await;
@@ -160,5 +160,44 @@ async fn end_to_end_two_projects_two_agents_recovery() {
     let events = running.daemon.get_for_test(&drive_id);
     assert!(!list_events(&events.lock().unwrap(), 0, Some("snapshot.created"), 10).unwrap().is_empty());
 
+    running.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn settings_are_saved_masked_validated_and_applied() {
+    let home = tempfile::tempdir().unwrap();
+    let repo = repo(&[("notes.md", "# Notes\n\nhello")], "init");
+    let running = start_daemon(DaemonOptions { base: home.path().to_path_buf(), port: 0, runtime: None }).await.unwrap();
+    let api = Api { url: running.url.clone(), admin: running.admin_token.clone() };
+    api.post(&api.admin, "/api/projects", json!({"root": repo.path()})).await;
+
+    let mut s = api.get(&api.admin, "/api/settings").await;
+    assert_eq!(s["embeddings"]["provider"], "hash");
+    s["llm"]["provider"] = json!("meta");
+    s["llm"]["metaApiKey"] = json!("sk-meta-secret-1234");
+    s["indexing"]["ignore"] = json!(["*.md"]);
+    let saved = api.post(&api.admin, "/api/settings", s.clone()).await;
+    assert_eq!(saved["llm"]["metaApiKey"], "••••1234", "the key never comes back in full");
+    let on_disk = std::fs::read_to_string(home.path().join("settings.json")).unwrap();
+    assert!(on_disk.contains("sk-meta-secret-1234"));
+
+    // Sending the masked value back keeps the stored key.
+    let again = api.post(&api.admin, "/api/settings", saved.clone()).await;
+    assert_eq!(again["llm"]["metaApiKey"], "••••1234");
+
+    let mut bad = saved.clone();
+    bad["embeddings"]["provider"] = json!("magic");
+    let res = reqwest::Client::new().post(format!("{}/api/settings", api.url)).bearer_auth(&api.admin).json(&bad).send().await.unwrap();
+    assert_eq!(res.status(), 400);
+
+    let ok = api.post(&api.admin, "/api/settings/test", json!({"target": "embeddings"})).await;
+    assert!(ok["detail"].as_str().unwrap().contains("384"));
+
+    // The ignore rule applied on restart: the markdown file left the index.
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    let projects = api.get(&api.admin, "/api/projects").await;
+    let id = projects[0]["id"].as_str().unwrap();
+    let docs = api.get(&api.admin, &format!("/p/{id}/api/documents")).await;
+    assert!(docs.as_array().unwrap().is_empty(), "{docs}");
     running.stop().await;
 }

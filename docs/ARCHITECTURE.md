@@ -116,6 +116,13 @@ Tauri keeps it small, ships as one binary with no Node requirement, and the daem
 desktop app process. The UI is web technology because the graph is drawn by Cytoscape; it only speaks
 HTTP, so the shell is replaceable.
 
+## Settings
+
+`<data dir>/settings.json` (0600) holds the extraction model, embeddings, indexing rules and upkeep
+intervals; environment variables only seed the defaults. `GET/POST /api/settings` (admin token) read
+and apply them; API keys come back masked and a masked value sent back keeps the stored key. Applying
+restarts each project; chunks without a vector for the new embedding model are re-embedded on start.
+
 ## Plans (design only)
 Free: local only. Paid: cloud sync (events carry `device_id` and `op_id`, so sync is operation
 shipping). Extra charge: project members. None of this is built.

@@ -127,9 +127,9 @@ fn project_files_are_filtered_and_tracked_by_path() {
     std::fs::write(root.path().join("README.md"), "# Demo\n\nSelf-driving stack.").unwrap();
     let db = open_memory().unwrap();
     let e = HashEmbedder::default();
-    let out = ingest_file(&db, &e, root.path(), "README.md").unwrap().unwrap();
+    let out = ingest_file(&db, &e, root.path(), "README.md", engram_rag::project::MAX_FILE_BYTES).unwrap().unwrap();
     assert_eq!(out.document.source, "project");
     std::fs::remove_file(root.path().join("README.md")).unwrap();
-    assert!(ingest_file(&db, &e, root.path(), "README.md").unwrap().is_none());
+    assert!(ingest_file(&db, &e, root.path(), "README.md", engram_rag::project::MAX_FILE_BYTES).unwrap().is_none());
     assert!(list_documents(&db, None, 10).unwrap().is_empty(), "deleted files leave the index");
 }

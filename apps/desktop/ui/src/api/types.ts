@@ -130,3 +130,17 @@ export interface ConnectResult {
   preview: string;
   result: string | null;
 }
+
+export interface AppSettings {
+  llm: { provider: "none" | "meta" | "ollama"; metaBaseUrl: string; metaModel: string; metaApiKey: string | null; ollamaHost: string; ollamaModel: string };
+  embeddings: { provider: "hash" | "ollama" | "openai"; ollamaHost: string; ollamaModel: string; openaiBaseUrl: string; openaiModel: string; openaiApiKey: string | null };
+  indexing: { indexDocs: boolean; indexCode: boolean; maxFileKb: number; ignore: string[] };
+  memory: { extractEverySecs: number; decayEveryHours: number; snapshotEverySecs: number };
+  dataDir?: string;
+}
+
+export interface TestResult {
+  ok: boolean;
+  detail: string;
+  latencyMs: number;
+}

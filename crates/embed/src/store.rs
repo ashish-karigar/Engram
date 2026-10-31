@@ -59,6 +59,16 @@ pub fn memories_missing(conn: &Connection, model: &str, limit: i64) -> Result<Ve
     Ok(rows.collect::<engram_core::rusqlite::Result<_>>()?)
 }
 
+/// Chunks with no vector for this model yet (e.g. after switching embedding models).
+pub fn chunks_missing(conn: &Connection, model: &str, limit: i64) -> Result<Vec<(String, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT c.id, c.context || char(10) || c.content FROM chunks c
+         WHERE NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.owner_id = c.id AND e.model = ?1) LIMIT ?2",
+    )?;
+    let rows = stmt.query_map(params![model, limit], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    Ok(rows.collect::<engram_core::rusqlite::Result<_>>()?)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct VectorHit {
     pub id: String,

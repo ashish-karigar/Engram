@@ -12,7 +12,7 @@ use engram_core::db::{SharedDb, open, shared};
 use engram_core::decay::archive_stale;
 use engram_core::{Connection, Result};
 use engram_embed::{Embedder, embedder_from_env};
-use engram_embed::store::{embed_and_store, memories_missing};
+use engram_embed::store::{chunks_missing, embed_and_store, memories_missing};
 use engram_rag::project::{ingest_file, should_index};
 use engram_serve::{ProjectInfo, ProjectRef};
 use engram_understand::codeindex::index_python;
@@ -20,6 +20,7 @@ use engram_understand::llm::LlmClient;
 use engram_understand::pipeline::{PipelineOptions, run_pipeline};
 
 use crate::paths::{ProjectPaths, project_paths};
+use crate::settings::{IndexSettings, ignored};
 
 /// Builds the extraction model. A factory, so each project thread owns its own client.
 pub type LlmFactory = Arc<dyn Fn() -> Option<Box<dyn LlmClient>> + Send + Sync>;
@@ -33,6 +34,7 @@ pub struct RuntimeOptions {
     pub decay_every: Duration,
     pub capture_debounce: Duration,
     pub snapshot_interval: Duration,
+    pub index: IndexSettings,
 }
 
 impl Default for RuntimeOptions {
@@ -44,6 +46,7 @@ impl Default for RuntimeOptions {
             decay_every: Duration::from_secs(6 * 3600),
             capture_debounce: Duration::from_millis(500),
             snapshot_interval: Duration::from_secs(15),
+            index: IndexSettings::default(),
         }
     }
 }
@@ -72,9 +75,17 @@ fn list_python(root: &Path) -> Vec<String> {
 
 /// Keep the document index in step with the folder: new and changed files are (re)ingested,
 /// deleted ones removed. Unchanged files are skipped by content hash.
-fn sync_documents(conn: &Connection, embedder: &dyn Embedder, root: &Path, paths: &[String]) {
-    for path in paths.iter().filter(|p| should_index(p)) {
-        if let Err(err) = ingest_file(conn, embedder, root, path) {
+fn sync_documents(conn: &Connection, embedder: &dyn Embedder, root: &Path, paths: &[String], index: &IndexSettings) {
+    let wanted = |p: &String| {
+        let code = engram_rag::extract::is_code(p);
+        should_index(p) && !ignored(p, &index.ignore) && if code { index.index_code } else { index.index_docs }
+    };
+    for path in paths {
+        if !wanted(path) {
+            let _ = engram_rag::project::remove_file(conn, path);
+            continue;
+        }
+        if let Err(err) = ingest_file(conn, embedder, root, path, index.max_file_kb * 1024) {
             eprintln!("engram: could not index {path}: {err}");
         }
     }
@@ -102,13 +113,13 @@ impl RunningProject {
         let mut capture_opts = CaptureOptions::new(db.clone(), &paths.root);
         capture_opts.debounce = opts.capture_debounce;
         capture_opts.snapshot_interval = opts.snapshot_interval;
-        let (db_path, change_root, change_embedder) = (paths.db.clone(), paths.root.clone(), opts.embedder.clone());
+        let (db_path, change_root, change_embedder, change_index) = (paths.db.clone(), paths.root.clone(), opts.embedder.clone(), opts.index.clone());
         capture_opts.on_change = Some(Box::new(move |changes| {
             // A separate connection keeps indexing from blocking agent requests.
             let paths: Vec<String> = changes.iter().map(|c| c.path.clone()).collect();
             if let Ok(conn) = open(&db_path) {
                 reindex(&conn, &change_root, Some(&paths));
-                sync_documents(&conn, change_embedder.as_ref(), &change_root, &paths);
+                sync_documents(&conn, change_embedder.as_ref(), &change_root, &paths, &change_index);
             }
         }));
         let capture = start_capture(capture_opts)?;
@@ -142,7 +153,11 @@ fn spawn_upkeep(paths: &ProjectPaths, opts: RuntimeOptions, stop: Arc<AtomicBool
     std::thread::spawn(move || {
         let Ok(conn) = open(&db_path) else { return };
         // First pass: index the project's documents and code as searchable chunks.
-        sync_documents(&conn, opts.embedder.as_ref(), &root, &list_files(&root, None));
+        sync_documents(&conn, opts.embedder.as_ref(), &root, &list_files(&root, None), &opts.index);
+        // After a model switch, chunks whose files did not change still need vectors for the new model.
+        if let Ok(missing) = chunks_missing(&conn, &opts.embedder.model_id(), 10_000) {
+            let _ = embed_and_store(&conn, opts.embedder.as_ref(), "chunk", &missing);
+        }
         let llm = (opts.llm)();
         let (mut last_pipeline, mut last_decay) = (Instant::now(), Instant::now());
         while !stop.load(Ordering::SeqCst) {
