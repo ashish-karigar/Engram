@@ -12,9 +12,14 @@ export interface Focus {
   id: string | null;
   neighbours: Set<string>;
   selected: string | null;
+  /** A clicked node's traced flow: each line and the step it was reached at. */
+  path?: Map<string, number>;
 }
 
 const ACCENT = "#7c97ff";
+/** Traced steps: the familiar blue first, then shifting one step at a time toward amber. */
+const STEPS = ["#7c97ff", "#9a8cff", "#b784f2", "#cf7fd6", "#e27fb4", "#ec8f8f", "#f0a35e"];
+const stepColor = (step: number) => STEPS[Math.min(step, STEPS.length - 1)]!;
 
 /**
  * Draw one frame from projected positions (`sx`, `sy`; see projection.ts). Nodes arrive far to near,
@@ -27,9 +32,13 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
   ctx.scale(cam.k, cam.k);
   const lit = (id: string) => !focus.id || focus.neighbours.has(id);
 
-  for (const l of links) {
-    const hot = focus.id && (l.source.id === focus.id || l.target.id === focus.id);
-    ctx.strokeStyle = hot ? ACCENT : focus.id ? "rgba(255,255,255,0.04)" : l.type === "supersedes" ? "rgba(177,132,255,0.35)" : "rgba(200,210,235,0.16)";
+  // Lit lines last, so a traced path is never painted over by a dimmed one.
+  const step = (l: SimLink) => (focus.path ? focus.path.get(l.id) : focus.id && (l.source.id === focus.id || l.target.id === focus.id) ? 0 : undefined);
+  const ordered = focus.id ? [...links].sort((a, b) => Number(step(a) !== undefined) - Number(step(b) !== undefined)) : links;
+  for (const l of ordered) {
+    const at = step(l);
+    const hot = at !== undefined;
+    ctx.strokeStyle = hot ? (focus.path ? stepColor(at) : ACCENT) : focus.id ? "rgba(255,255,255,0.04)" : l.type === "supersedes" ? "rgba(177,132,255,0.35)" : "rgba(200,210,235,0.16)";
     ctx.lineWidth = (hot ? 1.6 : 1) * s.linkWidth / cam.k;
     ctx.globalAlpha = Math.min(l.source.fade!, l.target.fade!);
     ctx.setLineDash(l.type === "supersedes" || l.type === "derives" ? [4 / cam.k, 3 / cam.k] : []);
@@ -91,13 +100,15 @@ function labels(ctx: CanvasRenderingContext2D, cam: Camera, nodes: SimNode[], s:
   const order = [...nodes].sort((a, b) => Number(focus.neighbours.has(b.id)) - Number(focus.neighbours.has(a.id)) || b.degree - a.degree);
   for (const n of order) {
     const focused = focus.id !== null && focus.neighbours.has(n.id);
+    // On a long traced path only the clicked node is always labelled; the rest give way to overlaps.
+    const forced = focused && (!focus.path || n.id === focus.id);
     const hub = n.degree >= 8 && cam.k > s.textFade * 0.35;
     const alpha = (focused ? 1 : focus.id ? 0 : hub ? Math.max(zoomAlpha, 0.85) : zoomAlpha) * (focused ? 1 : n.fade!);
     if (alpha <= 0.02) continue;
     const text = shortLabel(n);
     const w = ctx.measureText(text).width, h = size * 1.2;
     const x = n.sx! - w / 2, y = n.sy! + radius(n, s) + 3 / cam.k;
-    if (!focused && placed.some(([px, py, pw, ph]) => x < px + pw && px < x + w && y < py + ph && py < y + h)) continue;
+    if (!forced && placed.some(([px, py, pw, ph]) => x < px + pw && px < x + w && y < py + ph && py < y + h)) continue;
     placed.push([x, y, w, h]);
     ctx.globalAlpha = alpha;
     ctx.fillStyle = n.id === focus.selected ? "#ffffff" : "#c9d1e3";

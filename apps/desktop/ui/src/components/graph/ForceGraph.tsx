@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY, forceZ, type Simulation3D } from "d3-force-3d";
 import type { Graph } from "../../api/types.ts";
 import { type Camera, draw, fitCamera, radius } from "./draw.ts";
-import { buildScene, type SimLink, type SimNode } from "./model.ts";
+import { buildScene, trace, type SimLink, type SimNode, type Trace } from "./model.ts";
 import { project, unproject, type View } from "./projection.ts";
 import type { GraphSettings } from "./settings.ts";
 
@@ -40,6 +40,8 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onZoom, comm
   const view = useRef<View>({ yaw: 0, pitch: 0 });
   const size = useRef({ w: 0, h: 0 });
   const hover = useRef<string | null>(null);
+  /** The clicked node's traced flow, kept until the selection or the graph changes. */
+  const traced = useRef<{ id: string; links: SimLink[]; trace: Trace } | null>(null);
   const drag = useRef<Drag>(null);
   /** Auto-fit stages: 0 = not yet, 1 = rough fit done, 2 = settled or the user took over. */
   const autoFit = useRef(0);
@@ -63,11 +65,20 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onZoom, comm
       if (!ctx) return;
       const { links, adj } = scene.current;
       const nodes = projected();
-      const focusId = hover.current ?? live.current.selectedId;
-      const neighbours = new Set(focusId ? [focusId, ...(adj.get(focusId) ?? [])] : []);
+      const selectedId = live.current.selectedId;
+      const focusId = hover.current ?? selectedId;
+      // Hovering shows a node's neighbours; the clicked node shows its whole traced flow.
+      let path: Trace | undefined;
+      if (selectedId && focusId === selectedId) {
+        if (traced.current?.id !== selectedId || traced.current.links !== links) {
+          traced.current = { id: selectedId, links, trace: trace(scene.current.nodes, links, selectedId) };
+        }
+        path = traced.current.trace;
+      }
+      const neighbours = path?.nodes ?? new Set(focusId ? [focusId, ...(adj.get(focusId) ?? [])] : []);
       const dpr = window.devicePixelRatio || 1;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      draw(ctx, size.current.w, size.current.h, cam.current, nodes, links, live.current.settings, { id: focusId, neighbours, selected: live.current.selectedId });
+      draw(ctx, size.current.w, size.current.h, cam.current, nodes, links, live.current.settings, { id: focusId, neighbours, selected: selectedId, path: path?.links });
     });
   };
 

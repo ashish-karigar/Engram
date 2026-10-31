@@ -201,16 +201,31 @@ pub fn graph_data(conn: &Connection, include_archived: bool, limit: i64) -> Resu
         .collect::<SqlResult<_>>()?;
     let hub = "api:all".to_string();
     let mut endpoints: HashSet<String> = HashSet::new();
+    let (mut callers, mut servers): (BTreeMap<String, Vec<String>>, BTreeMap<String, Vec<String>>) = Default::default();
     for (endpoint, _, kind, path) in links {
         let Some(file) = files.get(&path) else { continue };
         if kind == "calls" && is_test(&path) {
             continue;
         }
-        endpoints.insert(endpoint);
+        endpoints.insert(endpoint.clone());
+        let side = if kind == "calls" { &mut callers } else { &mut servers };
+        side.entry(endpoint).or_default().push(file.clone());
         edges.entry((file.clone(), hub.clone(), kind.clone())).or_insert_with(|| format!("{kind}:{file}:{hub}"));
     }
     if !endpoints.is_empty() {
-        nodes.insert(hub.clone(), json!({"id": hub, "label": "API", "kind": "api", "children": endpoints.len()}));
+        // Which files each caller reaches through the API, so a traced path crosses to the right handlers.
+        let mut routes: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (endpoint, from) in &callers {
+            for caller in from {
+                let to = routes.entry(caller.clone()).or_default();
+                for server in servers.get(endpoint).into_iter().flatten() {
+                    if !to.contains(server) {
+                        to.push(server.clone());
+                    }
+                }
+            }
+        }
+        nodes.insert(hub.clone(), json!({"id": hub, "label": "API", "kind": "api", "children": endpoints.len(), "routes": routes}));
     }
 
     let edges: Vec<Value> = edges

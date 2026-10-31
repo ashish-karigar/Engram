@@ -68,6 +68,8 @@ export interface GraphNode {
   files?: number;
   /** Zoomable map: how many children it can open into, whether it is open, and its part. */
   children?: number;
+  /** The API node: for each calling file, the files that serve what it calls. */
+  routes?: Record<string, string[]>;
   expanded?: boolean;
   area?: string;
   serves?: string;

@@ -14,6 +14,8 @@ export interface SimNode extends SimulationNodeDatum {
   part?: string;
   /** Where its cluster sits across the screen: -1 left (calls the API), 1 right (serves it), 0 middle. */
   side?: number;
+  /** The API node: for each calling file, the files that serve what it calls. */
+  routes?: Record<string, string[]>;
   /** Third axis, used only while the graph is rotatable. */
   z?: number;
   vz?: number;
@@ -96,7 +98,7 @@ export function buildScene(graph: Graph, s: GraphSettings, selected: string | nu
     const part = parts.get(n.id);
     return {
       id: n.id, label: n.label, kind: n.kind, status: n.status ?? "", degree: d, part,
-      side: n.kind === "api" ? 0 : part !== undefined ? sides.get(part) : undefined,
+      side: n.kind === "api" ? 0 : part !== undefined ? sides.get(part) : undefined, routes: n.routes,
       radius: radiusFor(n.kind, d, inside.get(n.id) ?? n.children ?? 0, n.label.split("/").length - 1), color: cssColor(n.kind), ...prior,
     };
   });
@@ -116,6 +118,64 @@ function placeNear(id: string, adj: Map<string, Set<string>>, previous: Map<stri
     }
   }
   return {};
+}
+
+export interface Trace {
+  /** Every node on the path, the start included. */
+  nodes: Set<string>;
+  /** Each highlighted line and the step it was reached at (0 = touching the start). */
+  links: Map<string, number>;
+}
+
+/**
+ * Follow the flow out of a node instead of stopping at its neighbours: down into what a folder
+ * contains, along the imports of its files, out through the API calls they make, and across the
+ * API to the files that serve them, where it stops. A top-level part (`frontend`) stops at the
+ * API, its boundary. The start's own neighbours are always shown, like a hover.
+ */
+export function trace(nodes: SimNode[], links: SimLink[], start: string): Trace {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const from = new Map<string, SimLink[]>();
+  for (const l of links) for (const id of [l.source.id, l.target.id]) from.set(id, [...(from.get(id) ?? []), l]);
+  const origin = byId.get(start);
+  const result: Trace = { nodes: new Set([start]), links: new Map() };
+  if (!origin) return result;
+  const crosses = origin.part !== origin.id;
+  const forward = (u: SimNode, l: SimLink) =>
+    l.source.id === u.id && (l.type === "contains" || l.type === "imports" || l.type === "calls") &&
+    (l.type === "calls" || l.target.part === undefined || l.target.part === origin.part);
+
+  let frontier = [origin];
+  let api: { node: SimNode; step: number } | null = null;
+  for (let step = 0; frontier.length && step < 40; step++) {
+    const next: SimNode[] = [];
+    for (const u of frontier) {
+      for (const l of from.get(u.id) ?? []) {
+        const v = l.source.id === u.id ? l.target : l.source;
+        const flows = forward(u, l);
+        if (!flows && step > 0) continue;
+        if (!result.links.has(l.id)) result.links.set(l.id, step);
+        if (result.nodes.has(v.id)) continue;
+        result.nodes.add(v.id);
+        if (v.kind === "api") api ??= { node: v, step: step + 1 };
+        else if (flows) next.push(v);
+      }
+    }
+    frontier = next;
+  }
+
+  // Across the API, only to the files that serve what the traced callers call.
+  if (api && crosses && origin.kind !== "api") {
+    const reached = new Set<string>();
+    for (const caller of result.nodes) for (const s of api.node.routes?.[caller] ?? []) reached.add(s);
+    for (const l of from.get(api.node.id) ?? []) {
+      const v = l.source.id === api.node.id ? l.target : l.source;
+      if (l.type !== "serves" || !reached.has(v.id)) continue;
+      result.links.set(l.id, api.step);
+      result.nodes.add(v.id);
+    }
+  }
+  return result;
 }
 
 /** The top-level folder above each node, following `contains` edges up; only folders that hold something. */
