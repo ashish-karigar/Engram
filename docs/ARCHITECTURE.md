@@ -89,7 +89,10 @@ reinforces it; facts can carry `expires_at`; a project profile splits standing f
 | Chunking | Markdown by heading path; Python, Rust, TS/JS by top-level symbol (tree-sitter); other code by overlapping line windows | Chunks follow meaning, not character counts |
 | Offline embeddings | Signed feature hashing of words, bigrams and 4-grams (FNV-1a) | No model download; deterministic; lexical, not deep semantics |
 | Neighbour walk | Recursive CTE, per-hop score decay, edge-type filter | One query, depth-bounded, no graph DB |
-| Fit a token budget | Greedy by value density (score / tokens) | Knapsack approximation; O(n log n) |
+| Mix memories and documents | Each ranker's score blended with IDF-weighted query coverage (light stemming) | Each ranker normalizes to its own best hit; coverage puts both on one scale and favours rare words |
+| How much to return (search) | Best first, stop below 70% of the top score (max 6), then the token budget | Short answers when one result clearly wins; no padding to fill the budget |
+| Snippets | The chunk window that covers the most of the query | The answer is often deep in a chunk; `expand` has the rest |
+| Fit a token budget (brief) | Greedy by value density (score / tokens) | Knapsack approximation; O(n log n) |
 | Rank | relevance × freshness (decay + usage) | Cheap, explainable, logged per hit |
 | Forgetting | Exponential decay, half-life by memory type | Facts persist until superseded; episodes fade |
 | Group events into tasks | Sessionization by idle gap | Single linear pass |

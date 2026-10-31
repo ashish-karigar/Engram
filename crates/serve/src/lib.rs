@@ -11,6 +11,7 @@ pub mod ops;
 pub mod profile;
 pub mod project;
 pub mod recall;
+pub mod relevance;
 pub mod route;
 pub mod tokens;
 

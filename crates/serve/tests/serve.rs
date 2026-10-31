@@ -176,7 +176,7 @@ async fn two_agents_share_one_memory_over_mcp() {
 
     let brief = rpc(f.codex.clone(), 5, "tools/call", json!({"name": "brief", "arguments": {"task": "change auth from session to token"}})).await;
     let brief_text = brief["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(brief_text.contains("Auth strategy") && brief_text.contains("Memories:"));
+    assert!(brief_text.contains("Auth strategy") && brief_text.contains("Key memories:"));
 
     let id = text.split_whitespace().find_map(|w| w.trim_matches(|c| c == '(' || c == ',').strip_prefix("mem_").map(|_| w.trim_matches(|c| c == '(' || c == ','))).unwrap().to_string();
     let open = rpc(f.codex.clone(), 6, "tools/call", json!({"name": "expand", "arguments": {"id": id}})).await;
@@ -232,12 +232,12 @@ async fn documents_are_searchable_alongside_memories() {
 
     let (_, both) = post(&f, &f.codex, "/p/p1/api/search", json!({"query": "why session cookies for auth"})).await;
     let text = both["text"].as_str().unwrap();
-    assert!(text.contains("Memories:") && text.contains("From documents:"), "{text}");
+    assert!(text.contains("[decision]") && text.contains("[doc]"), "memories and documents in one list: {text}");
     assert!(text.contains("Auth design > Sessions"));
 
     let (_, docs_only) = post(&f, &f.codex, "/p/p1/api/search", json!({"query": "mobile bearer tokens", "mode": "documents"})).await;
     let docs_text = docs_only["text"].as_str().unwrap();
-    assert!(!docs_text.contains("Memories:") && docs_text.contains("Tokens"));
+    assert!(!docs_text.contains("[decision]") && docs_text.contains("Tokens"));
 
     let chunk = docs_only["data"][0]["id"].as_str().unwrap().to_string();
     let (_, opened) = post(&f, &f.codex, "/p/p1/api/expand", json!({"id": chunk})).await;
@@ -305,4 +305,25 @@ fn activity_groups_turns_into_sessions_and_hides_background_events() {
     assert_eq!(page["items"][0]["title"], "why are objects missing?");
     let with_system = activity(&db, "/repo", &ActivityQuery { system: true, ..q }).unwrap();
     assert!(with_system["items"].as_array().unwrap().iter().any(|i| i["kind"] == "system"));
+}
+
+#[test]
+fn rare_query_words_outweigh_common_ones_and_results_stop_at_a_score_drop() {
+    use engram_serve::relevance::{cut, vocabulary};
+    let db = open_memory().unwrap();
+    for (i, claim) in ["The daemon watches files", "The daemon indexes code", "The daemon serves agents", "The daemon listens on port 41741"].iter().enumerate() {
+        create_memory(&db, NewMemory { kind: "fact".into(), title: format!("Daemon {i}"), claim: claim.to_string(), ..Default::default() }).unwrap();
+    }
+    let v = vocabulary(&db, "what port does the daemon use").unwrap();
+    let (port, daemon) = (v.coverage("listens on port 41741"), v.coverage("the daemon watches files"));
+    assert!(port > daemon, "rare 'port' ({port}) outweighs common 'daemon' ({daemon})");
+    assert_eq!(cut(vec![("a", 0.9), ("b", 0.8), ("c", 0.6), ("d", 0.3)]).len(), 2, "stops where the score falls off");
+}
+
+#[test]
+fn snippets_show_the_part_of_a_chunk_that_matches() {
+    let db = open_memory().unwrap();
+    let v = engram_serve::relevance::vocabulary(&db, "which port does it listen on").unwrap();
+    let text = format!("{}\nThe daemon listens on port 41741 by default.", "Unrelated setup notes. ".repeat(30));
+    assert!(v.best_window(&text, 80).contains("41741"));
 }

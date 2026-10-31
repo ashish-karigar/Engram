@@ -147,7 +147,9 @@ def recall(e):
     rows = []
     for project, question, expected in QUESTIONS:
         text, ms = e.tool("search", {"cwd": PROJECTS[project], "query": question})
-        hit = next((p for p in expected if p.lower() in text.lower()), None)
+        # This script is indexed too and contains every expected answer; it must not grade itself.
+        graded = "\n".join(l for l in text.splitlines() if "bench/" not in l)
+        hit = next((p for p in expected if p.lower() in graded.lower()), None)
         rows.append({"project": project, "question": question, "found": hit is not None, "matched": hit, "tokens": tokens(text), "ms": round(ms, 1)})
     return rows
 

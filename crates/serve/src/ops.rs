@@ -17,6 +17,7 @@ use crate::budget::{Packable, estimate_tokens, pack_by_density};
 use crate::format::{format_chunk, format_memory};
 use crate::profile::build_profile;
 use crate::recall::{RecallItem, RecallOpts, recall};
+use crate::relevance::{blend, cut, vocabulary};
 
 /// What every operation needs: the project's database, who is asking, and the embedding model.
 pub struct Ctx<'a> {
@@ -31,6 +32,8 @@ pub struct OpResult {
 }
 
 const DEFAULT_BUDGET: usize = 1200;
+/// Snippet length shown per chunk; `format_chunk` trims to the same length.
+const SNIPPET_CHARS: usize = 280;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -115,6 +118,23 @@ fn round(x: f64) -> f64 {
     (x * 1000.0).round() / 1000.0
 }
 
+/// Take results best first while they fit the budget (a result that does not fit is skipped).
+fn fit(items: Vec<(Item, f64)>, budget: usize) -> Vec<Item> {
+    let mut used = 0;
+    items
+        .into_iter()
+        .filter(|(item, _)| {
+            let cost = estimate_tokens(&item.line());
+            let fits = used + cost <= budget;
+            if fits {
+                used += cost;
+            }
+            fits
+        })
+        .map(|(item, _)| item)
+        .collect()
+}
+
 /// Choose what fits the budget by value per token, then present it by value, best first.
 fn pack(items: Vec<(Item, f64)>, budget: usize) -> Vec<Item> {
     let packable = items.into_iter().map(|(item, value)| Packable { cost: estimate_tokens(&item.line()), value, item: (item, value) }).collect();
@@ -123,37 +143,47 @@ fn pack(items: Vec<(Item, f64)>, budget: usize) -> Vec<Item> {
     picked.into_iter().map(|(item, _)| item).collect()
 }
 
-fn render(items: &[Item]) -> (String, Vec<Value>) {
-    let memories: Vec<String> = items.iter().filter(|i| matches!(i, Item::Memory(_))).map(Item::line).collect();
-    let chunks: Vec<String> = items.iter().filter(|i| matches!(i, Item::Chunk(_))).map(Item::line).collect();
-    let mut sections = vec![];
-    if !memories.is_empty() {
-        sections.push(format!("Memories:\n{}", memories.join("\n")));
+/// Prose explains why, code shows what, data files (fixtures, eval outputs, lockfiles) rarely
+/// answer a question: prefer them in that order when scores are close.
+fn source_prior(hit: &ChunkHit) -> f64 {
+    const DATA: &[&str] = &[".json", ".jsonl", ".csv", ".tsv", ".yaml", ".yml", ".toml", ".xml", ".lock"];
+    let path = hit.path.as_deref().unwrap_or(&hit.title).to_lowercase();
+    if DATA.iter().any(|ext| path.ends_with(ext)) {
+        0.5
+    } else if hit.mime.starts_with("text/x-") {
+        0.7
+    } else {
+        1.0
     }
-    if !chunks.is_empty() {
-        sections.push(format!("From documents:\n{}", chunks.join("\n")));
-    }
-    (sections.join("\n\n"), items.iter().map(Item::returned).collect())
 }
 
-/// Memories and document chunks scored on one scale: memories first by default, since they are
-/// distilled; chunks are the grounding.
+/// One list, best first: memories (`[decision]`, `[fact]`, ...) and document chunks (`[doc]`) mixed.
+fn render(items: &[Item]) -> (String, Vec<Value>) {
+    (items.iter().map(Item::line).collect::<Vec<_>>().join("\n"), items.iter().map(Item::returned).collect())
+}
+
+/// Memories and document chunks on one scale (see `relevance`): each ranker's own score, blended
+/// with how much of the query's distinctive vocabulary the item contains.
 fn gather(ctx: &Ctx, query: &str, mode: &str, as_of: Option<String>) -> Result<Vec<(Item, f64)>> {
+    let vocab = vocabulary(ctx.conn, query)?;
     let mut items: Vec<(Item, f64)> = vec![];
     if mode != "documents" {
         let opts = RecallOpts { as_of, ..Default::default() };
         items.extend(recall(ctx.conn, Some(ctx.embedder), query, &opts)?.into_iter().map(|m| {
-            let v = m.score;
+            let text = format!("{} {} {}", m.memory.title, m.memory.claim, m.memory.rationale.as_deref().unwrap_or(""));
+            let v = blend(vocab.coverage(&text), m.score);
             (Item::Memory(m), v)
         }));
     }
     if mode != "memories" {
-        let hits = search_chunks(ctx.conn, Some(ctx.embedder), query, 8)?;
+        let hits = search_chunks(ctx.conn, Some(ctx.embedder), query, 12)?;
         let top = hits.first().map(|h| h.score).unwrap_or(1.0);
-        // Prose explains why; code shows what. Prefer prose when scores are close.
-        items.extend(hits.into_iter().map(|h| {
-            let prior = if h.mime.starts_with("text/x-") { 0.7 } else { 1.0 };
-            let v = 0.8 * prior * h.score / top;
+        items.extend(hits.into_iter().map(|mut h| {
+            let prior = source_prior(&h);
+            let text = format!("{} {} {}", h.title, h.heading.as_deref().unwrap_or(""), h.content);
+            let v = blend(vocab.coverage(&text), prior * h.score / top);
+            // The answer is often deep in a chunk: show the part that matches (`expand` has it all).
+            h.content = vocab.best_window(&h.content, SNIPPET_CHARS).to_string();
             (Item::Chunk(h), v)
         }));
     }
@@ -164,7 +194,7 @@ pub fn op_search(ctx: &Ctx, req: SearchReq) -> Result<OpResult> {
     let mode = req.mode.clone().unwrap_or_else(|| "hybrid".into());
     let request = json!({"query": req.query, "budget": req.budget, "asOf": req.as_of, "mode": mode});
     logged(ctx, "search", request, || {
-        let picked = pack(gather(ctx, &req.query, &mode, req.as_of.clone())?, req.budget.unwrap_or(DEFAULT_BUDGET));
+        let picked = fit(cut(gather(ctx, &req.query, &mode, req.as_of.clone())?), req.budget.unwrap_or(DEFAULT_BUDGET));
         let (text, returned) = render(&picked);
         let text = if text.is_empty() { "Nothing relevant in memory or documents.".to_string() } else { text };
         Ok((OpResult { text, data: Value::Array(returned.clone()) }, returned))
@@ -194,7 +224,7 @@ pub fn op_brief(ctx: &Ctx, req: BriefReq) -> Result<OpResult> {
             lines.push(String::new());
         }
         if !body.is_empty() {
-            lines.push(body);
+            lines.push(format!("Key memories:\n{body}"));
             lines.push(String::new());
         }
         if !o.activity.is_empty() {
