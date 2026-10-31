@@ -43,8 +43,12 @@ pub fn search_chunks(conn: &Connection, embedder: Option<&dyn Embedder>, query: 
     let keyword = keyword_ranking(conn, query)?;
     let semantic: Vec<String> = match embedder {
         Some(e) => {
-            let q = e.embed(&[query.to_string()])?.remove(0);
-            top_k(conn, &e.model_id(), "chunk", &q, CANDIDATES)?.into_iter().filter(|h| h.score > 0.05).map(|h| h.id).collect()
+            match e.embed(&[query.to_string()]) {
+                Ok(mut v) if !v.is_empty() => {
+                    top_k(conn, &e.model_id(), "chunk", &v.remove(0), CANDIDATES)?.into_iter().filter(|h| h.score > 0.05).map(|h| h.id).collect()
+                }
+                _ => vec![], // embedding server slow or down: keyword results still come back
+            }
         }
         None => vec![],
     };

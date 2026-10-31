@@ -136,7 +136,10 @@ async fn handle_projects(state: Arc<AppState>, method: Method, rest: &[&str], bo
     let id = rest.first().map(|s| s.to_string());
     match (method, id) {
         (Method::GET, None) => {
-            let list: Vec<Value> = state.manager.list().iter().map(project_summary).collect();
+            let manager = state.manager.clone();
+            let list = tokio::task::spawn_blocking(move || manager.list().iter().map(project_summary).collect::<Vec<Value>>())
+                .await
+                .map_err(|e| Error::msg(e.to_string()))?;
             Ok(reply(StatusCode::OK, &Value::Array(list)))
         }
         (Method::POST, None) => {
@@ -155,8 +158,11 @@ async fn handle_projects(state: Arc<AppState>, method: Method, rest: &[&str], bo
 }
 
 fn project_summary(p: &ProjectRef) -> Value {
-    let db = p.db.lock().unwrap();
-    json!({"id": p.info.id, "name": p.info.name, "root": p.info.root, "stats": stats(&db).unwrap_or(Value::Null)})
+    let stats = match p.db_path.as_deref().map(engram_core::db::open) {
+        Some(Ok(conn)) => stats(&conn).unwrap_or(Value::Null),
+        _ => stats(&p.db.lock().unwrap()).unwrap_or(Value::Null),
+    };
+    json!({"id": p.info.id, "name": p.info.name, "root": p.info.root, "stats": stats})
 }
 
 fn parse<T: serde::de::DeserializeOwned>(body: Value) -> Result<T> {
@@ -182,7 +188,9 @@ fn project_route(
     body: Value,
 ) -> Result<Response> {
     let Some(project) = state.manager.get(id) else { return Ok(fail(StatusCode::NOT_FOUND, "unknown project")) };
-    let conn = project.db.lock().unwrap();
+    let own = project.db_path.as_deref().map(engram_core::db::open).transpose()?;
+    let shared = if own.is_none() { Some(project.db.lock().unwrap()) } else { None };
+    let conn: &Connection = own.as_ref().or(shared.as_deref()).expect("a connection");
     let actor = match authenticate(&conn, token, is_admin)? {
         Some(Principal::Admin) => ensure_actor(&conn, "user", "engram-ui")?,
         Some(Principal::Actor(a)) => a,
@@ -190,7 +198,7 @@ fn project_route(
     };
     let tail: Vec<&str> = tail.iter().map(String::as_str).collect();
     let limit = query_param(query, "limit").and_then(|v| v.parse().ok()).unwrap_or(100);
-    let ctx = Ctx { conn: &conn, actor: &actor, embedder: project.embedder.as_ref() };
+    let ctx = Ctx { conn, actor: &actor, embedder: project.embedder.as_ref() };
     let op = |r: Result<crate::ops::OpResult>| r.map(|o| reply(StatusCode::OK, &json!({"text": o.text, "data": o.data})));
     let json_ok = |r: Result<Value>| r.map(|v| reply(StatusCode::OK, &v));
 
@@ -218,7 +226,7 @@ fn project_route(
         }
         (&Method::POST, ["api", "connect"]) => {
             drop(ctx);
-            drop(conn);
+            drop(shared);
             let agent = body["agent"].as_str().unwrap_or("");
             let outcome = state.manager.connect(id, agent, body["apply"].as_bool().unwrap_or(false))?;
             Ok(reply(StatusCode::OK, &serde_json::to_value(outcome)?))

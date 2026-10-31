@@ -73,7 +73,7 @@ pub fn normalize(mut v: Vec<f32>) -> Vec<f32> {
 
 fn post(url: &str, body: Value, bearer: Option<&str>) -> Result<Value> {
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(120))
+        .timeout(Duration::from_secs(30))
         .build()
         .map_err(|e| Error::msg(e.to_string()))?;
     let mut req = client.post(url).json(&body);

@@ -50,11 +50,16 @@ fn entity_seeds(conn: &Connection, query: &str) -> Result<Vec<String>> {
 /// Vector ranking of memories. Memories without a vector are embedded first (cheap, incremental).
 fn semantic_ranking(conn: &Connection, embedder: &dyn Embedder, query: &str) -> Result<Vec<String>> {
     let model = embedder.model_id();
-    let missing = memories_missing(conn, &model, 500)?;
+    // Background upkeep embeds new memories; at query time only a handful are caught up.
+    let missing = memories_missing(conn, &model, 20)?;
     if !missing.is_empty() {
-        embed_and_store(conn, embedder, "memory", &missing)?;
+        let _ = embed_and_store(conn, embedder, "memory", &missing);
     }
-    let q = embedder.embed(&[query.to_string()])?.remove(0);
+    let Ok(mut v) = embedder.embed(&[query.to_string()]) else { return Ok(vec![]) };
+    if v.is_empty() {
+        return Ok(vec![]);
+    }
+    let q = v.remove(0);
     Ok(top_k(conn, &model, "memory", &q, SEEDS as usize * 2)?.into_iter().filter(|h| h.score >= MIN_COSINE).map(|h| h.id).collect())
 }
 

@@ -146,7 +146,7 @@ impl RunningProject {
     }
 
     pub fn handle(&self) -> ProjectRef {
-        ProjectRef { info: self.info.clone(), db: self.db.clone(), embedder: self.embedder.clone() }
+        ProjectRef { info: self.info.clone(), db: self.db.clone(), db_path: Some(self.paths.db.clone()), embedder: self.embedder.clone() }
     }
 
     pub fn stop(mut self) {

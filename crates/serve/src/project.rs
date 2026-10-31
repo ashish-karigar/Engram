@@ -19,6 +19,9 @@ pub struct ProjectInfo {
 pub struct ProjectRef {
     pub info: ProjectInfo,
     pub db: SharedDb,
+    /// On-disk database. When set, each request opens its own connection (SQLite in WAL mode
+    /// serves concurrent readers), so one slow request never blocks the others.
+    pub db_path: Option<std::path::PathBuf>,
     /// The project's embedding model, shared by search and document ingest.
     pub embedder: Arc<dyn Embedder>,
 }

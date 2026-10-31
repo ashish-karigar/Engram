@@ -28,7 +28,7 @@ impl ProjectManager for TestManager {
     fn add(&self, root: &Path) -> Result<ProjectRef> {
         let id = format!("p{}", self.projects.lock().unwrap().len() + 1);
         let info = ProjectInfo { id: id.clone(), name: root.to_string_lossy().into(), root: root.to_string_lossy().into() };
-        let project = ProjectRef { info, db: shared(open_memory()?), embedder: Arc::new(HashEmbedder::default()) };
+        let project = ProjectRef { info, db: shared(open_memory()?), db_path: None, embedder: Arc::new(HashEmbedder::default()) };
         self.projects.lock().unwrap().insert(id, project.clone());
         Ok(project)
     }
@@ -71,7 +71,7 @@ async fn fixture() -> Fixture {
     let (claude, _) = issue_token(&db, "agent", "claude-code").unwrap();
     let (codex, _) = issue_token(&db, "agent", "codex").unwrap();
     let info = ProjectInfo { id: "p1".into(), name: "drive".into(), root: "/tmp/drive".into() };
-    let manager = Arc::new(TestManager { projects: Mutex::new(HashMap::from([("p1".to_string(), ProjectRef { info, db: shared(db), embedder: Arc::new(HashEmbedder::default()) })])) });
+    let manager = Arc::new(TestManager { projects: Mutex::new(HashMap::from([("p1".to_string(), ProjectRef { info, db: shared(db), db_path: None, embedder: Arc::new(HashEmbedder::default()) })])) });
     let server = start_server(manager.clone(), "admin-secret".into(), 0).await.unwrap();
     Fixture { url: server.url.clone(), admin: "admin-secret".into(), claude, codex, manager, _server: server }
 }
