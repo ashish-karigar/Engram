@@ -1,8 +1,6 @@
 import { useState } from "react";
 import type { Graph } from "../../api/types.ts";
 import type { GraphCommands } from "./ForceGraph.tsx";
-import { EDGE_COLORS } from "./draw.ts";
-import { authorColor } from "./model.ts";
 import { DEFAULTS, GROUPS, type GraphSettings } from "./settings.ts";
 
 interface Props {
@@ -49,24 +47,10 @@ export function GraphControls({ graph, settings: s, onChange, selectedId, zoom, 
   const set = <K extends keyof GraphSettings>(key: K, value: GraphSettings[K]) => onChange({ ...s, [key]: value });
   const counts = new Map<string, number>();
   for (const n of graph?.nodes ?? []) counts.set(n.kind, (counts.get(n.kind) ?? 0) + 1);
-  // Authors present in the visible map, by lines written (parts only, so lines are not counted twice).
-  const authors = new Map<string, number>();
-  for (const n of graph?.nodes ?? []) if (n.kind === "area" && n.owner) authors.set(n.owner.who, (authors.get(n.owner.who) ?? 0) + Math.round(n.owner.lines * n.owner.share));
   const toggleGroup = (kind: string) => set("hidden", s.hidden.includes(kind) ? s.hidden.filter((k) => k !== kind) : [...s.hidden, kind]);
 
   return (
     <>
-      {s.view === "architecture" && (
-        <div className="graph-legend">
-          {s.colorBy === "author" && [...authors.entries()].sort((a, b) => b[1] - a[1]).map(([who, lines]) => (
-            <span key={who}><i style={{ background: authorColor(who) }} />{who} <span className="faint">{lines.toLocaleString()} lines</span></span>
-          ))}
-          {[...new Map(Object.values(EDGE_COLORS).map(([rgb, label]) => [label, rgb])).entries()].map(([label, rgb]) => (
-            <span key={label}><b className="line" style={{ background: `rgb(${rgb})` }} />{label}</span>
-          ))}
-          <span className="faint">Double-click a part, API, folder, file or class to open it</span>
-        </div>
-      )}
       <div className="graph-search">
         <input placeholder="Filter nodes…" value={s.search} onChange={(e) => set("search", e.target.value)} />
         {selectedId && (
@@ -82,18 +66,6 @@ export function GraphControls({ graph, settings: s, onChange, selectedId, zoom, 
       </div>
 
       <div className="graph-camera">
-        <span className="seg mode">
-          <button className={s.view === "architecture" ? "on" : ""} onClick={() => set("view", "architecture")} title="Parts, endpoints, services and memories">Architecture</button>
-          <button className={s.view === "code" ? "on" : ""} onClick={() => set("view", "code")} title="Files, modules and memories">Code</button>
-        </span>
-        <span className="seg mode">
-          <button className={s.colorBy === "type" ? "on" : ""} onClick={() => set("colorBy", "type")} title="Colour by what each node is">Type</button>
-          <button className={s.colorBy === "author" ? "on" : ""} onClick={() => set("colorBy", "author")} title="Colour by who wrote most of it">Author</button>
-        </span>
-        <span className="seg mode">
-          <button className={s.mode === "2d" ? "on" : ""} onClick={() => set("mode", "2d")}>2D</button>
-          <button className={s.mode === "3d" ? "on" : ""} onClick={() => set("mode", "3d")} title="Drag empty space to rotate; Shift-drag to pan">3D</button>
-        </span>
         <button onClick={() => commands.current?.fit()}>Fit <kbd>Z</kbd></button>
         <button onClick={() => commands.current?.center()}>Center <kbd>C</kbd></button>
         <span className="zoom">

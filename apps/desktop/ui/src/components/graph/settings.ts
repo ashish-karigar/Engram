@@ -1,10 +1,5 @@
 /** Graph view preferences. Stored per viewer in localStorage, like Obsidian's graph settings. */
 export interface GraphSettings {
-  /** architecture: parts, endpoints, services and memories; code: files, modules and memories. */
-  view: "architecture" | "code";
-  /** Colour nodes by what they are, or by who wrote most of them. */
-  colorBy: "type" | "author";
-  mode: "2d" | "3d";
   search: string;
   hidden: string[];
   showOrphans: boolean;
@@ -22,9 +17,6 @@ export interface GraphSettings {
 }
 
 export const DEFAULTS: GraphSettings = {
-  view: "architecture",
-  colorBy: "type",
-  mode: "2d",
   search: "",
   hidden: [],
   showOrphans: true,
@@ -43,13 +35,6 @@ export const DEFAULTS: GraphSettings = {
 
 /** Node groups, in legend order. Colors come from the `--t-<kind>` CSS tokens. */
 export const GROUPS: { kind: string; label: string }[] = [
-  { kind: "area", label: "Parts" },
-  { kind: "endpoint", label: "Endpoints" },
-  { kind: "service", label: "External services" },
-  { kind: "dir", label: "Folders" },
-  { kind: "class", label: "Classes" },
-  { kind: "function", label: "Functions" },
-  { kind: "method", label: "Methods" },
   { kind: "decision", label: "Decisions" },
   { kind: "rejected_option", label: "Rejected options" },
   { kind: "dead_end", label: "Dead ends" },
@@ -62,7 +47,7 @@ export const GROUPS: { kind: string; label: string }[] = [
   { kind: "file", label: "Code files" },
 ];
 
-const KEY = "engram.graph.settings.v2";
+const KEY = "engram.graph.settings.v3";
 
 export function loadSettings(): GraphSettings {
   try {

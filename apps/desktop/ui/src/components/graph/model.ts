@@ -10,31 +10,11 @@ export interface SimNode extends SimulationNodeDatum {
   degree: number;
   radius: number;
   color: string;
-  /** Third axis, used only while the graph is rotatable. */
-  z?: number;
-  vz?: number;
-  fz?: number | null;
-  /** Zoomable map: children it can open into, open or not, its part, who wrote most of it. */
-  children: number;
-  expanded: boolean;
-  area?: string;
-  owner?: string;
-  /** API bodies: the part that serves them; groups and endpoints: their API body. */
-  serves?: string;
-  hub?: string;
-  /** Screen-plane position after rotation and perspective (see projection.ts). */
-  sx?: number;
-  sy?: number;
-  depth?: number;
-  scale?: number;
-  fade?: number;
 }
 
 export interface SimLink extends SimulationLinkDatum<SimNode> {
   id: string;
   type: string;
-  /** How many fine-grained edges it stands for (zoomable map), 1 otherwise. */
-  count: number;
   source: SimNode;
   target: SimNode;
 }
@@ -64,7 +44,7 @@ export function neighbourhood(adj: Map<string, Set<string>>, root: string, depth
   return seen;
 }
 
-type Position = Pick<SimNode, "x" | "y" | "z" | "vx" | "vy" | "vz">;
+type Position = Pick<SimNode, "x" | "y" | "vx" | "vy">;
 
 /**
  * Apply filters and build simulation objects. Positions of nodes that survive a refresh are kept,
@@ -88,37 +68,33 @@ export function buildScene(graph: Graph, s: GraphSettings, selected: string | nu
   }
   if (!s.showOrphans) keep = keep.filter((n) => (degree.get(n.id) ?? 0) > 0 || n.id === selected);
 
-  // A node that just appeared (a folder opened) starts next to its parent, not a random neighbour.
-  const parents = new Map(graph.edges.filter((e) => e.type === "contains").map((e) => [e.target, e.source]));
   const nodes: SimNode[] = keep.map((n) => {
     const d = degree.get(n.id) ?? 0;
-    const prior = previous.get(n.id) ?? placeNear(n.id, adj, previous, parents.get(n.id));
-    const children = n.children ?? 0;
-    const color = s.colorBy === "author" ? authorColor(n.owner?.who) : cssColor(n.kind);
-    return {
-      id: n.id, label: n.label, kind: n.kind, status: n.status ?? "", degree: d, radius: radiusFor(n.kind, d, children), color,
-      children, expanded: n.expanded ?? false, area: n.area, owner: n.owner?.who, serves: n.serves, hub: n.hub, ...prior,
-    };
+    const prior = previous.get(n.id) ?? placeNear(n.id, adj, previous);
+    return { id: n.id, label: n.label, kind: n.kind, status: n.status ?? "", degree: d, radius: radiusFor(n.kind, d), color: cssColor(n.kind), ...prior };
   });
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const links: SimLink[] = edges
     .filter((e) => byId.has(e.source) && byId.has(e.target))
-    .map((e) => ({ id: e.id, type: e.type, count: e.count ?? 1, source: byId.get(e.source)!, target: byId.get(e.target)! }));
+    .map((e) => ({ id: e.id, type: e.type, source: byId.get(e.source)!, target: byId.get(e.target)! }));
   return { nodes, links, adj };
 }
 
-function placeNear(id: string, adj: Map<string, Set<string>>, previous: Map<string, Position>, parent?: string): Position {
-  for (const n of [...(parent ? [parent] : []), ...(adj.get(id) ?? [])]) {
+function placeNear(id: string, adj: Map<string, Set<string>>, previous: Map<string, Position>): Position {
+  for (const n of adj.get(id) ?? []) {
     const p = previous.get(n);
-    if (p?.x !== undefined && p.y !== undefined) {
-      const jitter = () => (Math.random() - 0.5) * 30;
-      return { x: p.x + jitter(), y: p.y + jitter(), ...(p.z !== undefined && { z: p.z + jitter() }) };
-    }
+    if (p?.x !== undefined && p.y !== undefined) return { x: p.x + (Math.random() - 0.5) * 30, y: p.y + (Math.random() - 0.5) * 30 };
   }
   return {};
 }
 
 /** Memories are the point of the graph, so they stay prominent; code nodes stay small. */
+function radiusFor(kind: string, degree: number): number {
+  if (kind === "file") return 2.5 + Math.sqrt(degree) * 0.9;
+  if (kind === "module") return 4.5 + Math.sqrt(degree) * 1.1;
+  return 5 + Math.sqrt(degree) * 1.8;
+}
+
 /** Agents keep their colours everywhere; people get stable colours from a hash of their name. */
 const PEOPLE = ["#e8cf5c", "#b184ff", "#3fb6c9", "#ef6a62", "#f0a35e", "#9fb4ff"];
 export function authorColor(who?: string): string {
@@ -129,18 +105,4 @@ export function authorColor(who?: string): string {
   let h = 0;
   for (const c of who) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return PEOPLE[h % PEOPLE.length]!;
-}
-
-function radiusFor(kind: string, degree: number, children = 0): number {
-  if (kind === "area") return 14 + Math.sqrt(degree + children) * 2.2;
-  if (kind === "api") return 11 + Math.sqrt(children) * 2.4;
-  if (kind === "api_group") return 6 + Math.sqrt(children) * 1.4;
-  if (kind === "dir") return 7 + Math.sqrt(children) * 1.6;
-  if (kind === "class" || kind === "struct" || kind === "trait") return 5 + Math.sqrt(children) * 1.2;
-  if (kind === "function" || kind === "method") return 3.2 + Math.sqrt(degree) * 0.5;
-  if (kind === "service") return 7 + Math.sqrt(degree);
-  if (kind === "endpoint") return 3.5 + Math.sqrt(degree) * 0.6;
-  if (kind === "file") return children ? 4 + Math.sqrt(children) * 0.9 : 2.5 + Math.sqrt(degree) * 0.9;
-  if (kind === "module") return 4.5 + Math.sqrt(degree) * 1.1;
-  return 5 + Math.sqrt(degree) * 1.8;
 }
