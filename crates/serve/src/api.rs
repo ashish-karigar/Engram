@@ -36,7 +36,14 @@ pub fn graph_data(conn: &Connection, include_archived: bool, limit: i64) -> Resu
     }
 
     let documents: Vec<(String, String, String)> = conn
-        .prepare("SELECT id, title, source FROM documents WHERE status = 'done' AND mime NOT LIKE 'text/x-%' ORDER BY updated_at DESC LIMIT 150")?
+        .prepare(
+            "SELECT id, title, source FROM documents
+             WHERE status = 'done' AND mime NOT LIKE 'text/x-%'
+               AND NOT (COALESCE(path, '') GLOB '*.json' OR COALESCE(path, '') GLOB '*.toml' OR COALESCE(path, '') GLOB '*.yaml'
+                        OR COALESCE(path, '') GLOB '*.yml' OR COALESCE(path, '') GLOB '*.ini' OR COALESCE(path, '') GLOB '*.cfg'
+                        OR COALESCE(path, '') GLOB '*.xml' OR COALESCE(path, '') GLOB '*.csv')
+             ORDER BY updated_at DESC LIMIT 150",
+        )?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
         .collect::<SqlResult<_>>()?;
     for (id, title, source) in documents {
