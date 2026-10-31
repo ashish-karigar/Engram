@@ -39,15 +39,17 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
   ctx.scale(cam.k, cam.k);
   const lit = (id: string) => !focus.id || focus.neighbours.has(id);
 
-  for (const l of links) {
+  for (const l of bundle(nodes, links, focus)) {
     const hot = focus.id && (l.source.id === focus.id || l.target.id === focus.id);
     const contains = l.type === "contains";
     const rgb = EDGE_COLORS[l.type]?.[0];
     ctx.strokeStyle = focus.id && !hot ? "rgba(255,255,255,0.04)"
-      : rgb ? `rgba(${rgb},${hot ? 0.9 : 0.42})`
+      : rgb ? `rgba(${rgb},${hot ? 0.9 : l.bundled ? 0.3 : 0.42})`
       : hot ? ACCENT : l.type === "supersedes" ? "rgba(177,132,255,0.35)" : contains ? "rgba(200,210,235,0.09)" : "rgba(200,210,235,0.16)";
     // A summed edge (34 calls between two folders) is drawn thicker than a single call.
-    ctx.lineWidth = (hot ? 1.6 : 1) * (1 + Math.log2(Math.max(1, l.count))) * s.linkWidth / cam.k;
+    // Bundles are capped so a part everything depends on (core) doesn't drown the view.
+    const weight = 1 + Math.log2(Math.max(1, l.count));
+    ctx.lineWidth = (hot ? 1.6 : 1) * (l.bundled ? Math.min(weight, 4) : weight) * s.linkWidth / cam.k;
     ctx.globalAlpha = Math.min(l.source.fade!, l.target.fade!);
     ctx.setLineDash(l.type === "supersedes" || l.type === "derives" || contains ? [4 / cam.k, 3 / cam.k] : []);
     ctx.beginPath();
@@ -55,6 +57,7 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
     ctx.lineTo(l.target.sx!, l.target.sy!);
     ctx.stroke();
     if (s.arrows) arrow(ctx, l, cam.k, s);
+    if (l.bundled && hot) bundleLabel(ctx, l, cam.k, focus.id);
   }
   ctx.setLineDash([]);
 
@@ -100,6 +103,57 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
   }
   ctx.globalAlpha = 1;
   labels(ctx, cam, nodes, s, focus);
+  ctx.restore();
+}
+
+type Drawn = SimLink & { bundled?: boolean; calls?: number; imports?: number };
+
+/**
+ * Lines between two opened parts are bundled: every import and call between two parts (either way) is
+ * drawn as one line between the parts, as thick as how many it stands for: green when code calls
+ * across, blue when it only imports. Hovering a part labels its bundles with the counts.
+ * Lines inside a part, and the lines of the node under focus, are drawn as they are.
+ */
+function bundle(nodes: SimNode[], links: SimLink[], focus: Focus): Drawn[] {
+  const areas = new Map(nodes.filter((n) => n.kind === "area").map((n) => [n.id, n]));
+  const out: Drawn[] = [];
+  const bundles = new Map<string, Drawn>();
+  for (const l of links) {
+    const [a, b] = [l.source.area, l.target.area];
+    const between = (l.type === "imports" || l.type === "invokes") && a && b && a !== b && areas.has(a) && areas.has(b) && (l.source.kind !== "area" || l.target.kind !== "area");
+    if (!between || l.source.id === focus.id || l.target.id === focus.id) {
+      out.push(l);
+      continue;
+    }
+    const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+    let found = bundles.get(key);
+    if (!found) {
+      found = { id: key, type: "imports", count: 0, calls: 0, imports: 0, source: areas.get(a)!, target: areas.get(b)!, bundled: true };
+      bundles.set(key, found);
+    }
+    found.count += l.count;
+    if (l.type === "invokes") { found.calls! += l.count; found.type = "invokes"; } else found.imports! += l.count;
+  }
+  return [...out, ...bundles.values()];
+}
+
+function bundleLabel(ctx: CanvasRenderingContext2D, l: Drawn, k: number, from: string | null) {
+  // Two thirds of the way out from the hovered part, so its labels fan out instead of piling up.
+  const [a, b] = l.source.id === from ? [l.source, l.target] : [l.target, l.source];
+  const x = a.sx! + (b.sx! - a.sx!) * 0.65, y = a.sy! + (b.sy! - a.sy!) * 0.65;
+  const text = [l.calls ? `${l.calls} calls` : "", l.imports ? `${l.imports} imports` : ""].filter(Boolean).join(" · ");
+  ctx.save();
+  ctx.font = `${10.5 / k}px Inter, -apple-system, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const w = ctx.measureText(text).width + 8 / k, h = 15 / k;
+  ctx.setLineDash([]);
+  ctx.fillStyle = "rgba(14,17,26,0.85)";
+  ctx.beginPath();
+  ctx.roundRect(x - w / 2, y - h / 2, w, h, h / 2);
+  ctx.fill();
+  ctx.fillStyle = `rgb(${EDGE_COLORS[l.type]?.[0] ?? "200,210,235"})`;
+  ctx.fillText(text, x, y);
   ctx.restore();
 }
 
