@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { Graph } from "../../api/types.ts";
 import type { GraphCommands } from "./ForceGraph.tsx";
-import { EDGE_COLORS } from "./draw.ts";
 import { authorColor } from "./model.ts";
 import { DEFAULTS, GROUPS, type GraphSettings } from "./settings.ts";
 
@@ -56,13 +55,10 @@ export function GraphControls({ graph, settings: s, onChange, selectedId, zoom, 
 
   return (
     <>
-      {s.view === "architecture" && (
+      {(
         <div className="graph-legend">
           {s.colorBy === "author" && [...authors.entries()].sort((a, b) => b[1] - a[1]).map(([who, lines]) => (
             <span key={who}><i style={{ background: authorColor(who) }} />{who} <span className="faint">{lines.toLocaleString()} lines</span></span>
-          ))}
-          {[...new Map(Object.values(EDGE_COLORS).map(([rgb, label]) => [label, rgb])).entries()].map(([label, rgb]) => (
-            <span key={label}><b className="line" style={{ background: `rgb(${rgb})` }} />{label}</span>
           ))}
           <span className="faint">Double-click a part, API, folder, file or class to open it</span>
         </div>
@@ -82,10 +78,6 @@ export function GraphControls({ graph, settings: s, onChange, selectedId, zoom, 
       </div>
 
       <div className="graph-camera">
-        <span className="seg mode">
-          <button className={s.view === "architecture" ? "on" : ""} onClick={() => set("view", "architecture")} title="Parts, endpoints, services and memories">Architecture</button>
-          <button className={s.view === "code" ? "on" : ""} onClick={() => set("view", "code")} title="Files, modules and memories">Code</button>
-        </span>
         <span className="seg mode">
           <button className={s.colorBy === "type" ? "on" : ""} onClick={() => set("colorBy", "type")} title="Colour by what each node is">Type</button>
           <button className={s.colorBy === "author" ? "on" : ""} onClick={() => set("colorBy", "author")} title="Colour by who wrote most of it">Author</button>
@@ -109,7 +101,6 @@ export function GraphControls({ graph, settings: s, onChange, selectedId, zoom, 
           <div className="gc-scroll">
             <Section title="Filters" open>
               <Toggle label="Orphans" value={s.showOrphans} onChange={(v) => set("showOrphans", v)} />
-              <Toggle label="Archived memories" value={s.showArchived} onChange={(v) => set("showArchived", v)} />
             </Section>
             <Section title="Groups" open>
               {GROUPS.filter((g) => counts.has(g.kind)).map((g) => (

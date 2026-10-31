@@ -16,18 +16,6 @@ export interface Focus {
 
 const ACCENT = "#7c97ff";
 
-/** What a line means, by colour (see the legend): rgb, used with an alpha. */
-export const EDGE_COLORS: Record<string, [string, string]> = {
-  imports: ["109,141,255", "imports"],
-  invokes: ["71,195,148", "function calls"],
-  calls: ["240,163,94", "HTTP calls"],
-  serves: ["240,163,94", "serves an API"],
-  "served by": ["240,163,94", "serves an API"],
-  uses: ["209,107,165", "uses a service"],
-  about: ["177,132,255", "a memory about it"],
-  touches: ["177,132,255", "a memory about it"],
-};
-
 /**
  * Draw one frame from projected positions (`sx`, `sy`; see projection.ts). Nodes arrive far to near,
  * so nearer ones paint on top. Sizes are divided by zoom where they should stay constant on screen.
@@ -41,15 +29,11 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
 
   for (const l of links) {
     const hot = focus.id && (l.source.id === focus.id || l.target.id === focus.id);
-    const contains = l.type === "contains";
-    const rgb = EDGE_COLORS[l.type]?.[0];
-    ctx.strokeStyle = focus.id && !hot ? "rgba(255,255,255,0.04)"
-      : rgb ? `rgba(${rgb},${hot ? 0.9 : 0.42})`
-      : hot ? ACCENT : l.type === "supersedes" ? "rgba(177,132,255,0.35)" : contains ? "rgba(200,210,235,0.09)" : "rgba(200,210,235,0.16)";
-    // A summed edge (34 calls between two folders) is drawn thicker than a single call.
-    ctx.lineWidth = (hot ? 1.6 : 1) * (1 + Math.log2(Math.max(1, l.count))) * s.linkWidth / cam.k;
+    // One plain line for every link; only the focused node's links stand out.
+    ctx.strokeStyle = focus.id ? (hot ? ACCENT : "rgba(255,255,255,0.04)") : "rgba(200,210,235,0.2)";
+    ctx.lineWidth = (hot ? 1.6 : 1) * s.linkWidth / cam.k;
     ctx.globalAlpha = Math.min(l.source.fade!, l.target.fade!);
-    ctx.setLineDash(l.type === "supersedes" || l.type === "derives" || contains ? [4 / cam.k, 3 / cam.k] : []);
+    ctx.setLineDash([]);
     ctx.beginPath();
     ctx.moveTo(l.source.sx!, l.source.sy!);
     ctx.lineTo(l.target.sx!, l.target.sy!);

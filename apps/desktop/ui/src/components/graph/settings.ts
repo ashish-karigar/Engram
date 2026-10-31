@@ -1,14 +1,11 @@
 /** Graph view preferences. Stored per viewer in localStorage, like Obsidian's graph settings. */
 export interface GraphSettings {
-  /** architecture: parts, endpoints, services and memories; code: files, modules and memories. */
-  view: "architecture" | "code";
   /** Colour nodes by what they are, or by who wrote most of them. */
   colorBy: "type" | "author";
   mode: "2d" | "3d";
   search: string;
   hidden: string[];
   showOrphans: boolean;
-  showArchived: boolean;
   local: boolean;
   localDepth: number;
   nodeSize: number;
@@ -22,13 +19,11 @@ export interface GraphSettings {
 }
 
 export const DEFAULTS: GraphSettings = {
-  view: "architecture",
   colorBy: "type",
   mode: "2d",
   search: "",
   hidden: [],
   showOrphans: true,
-  showArchived: false,
   local: false,
   localDepth: 1,
   nodeSize: 1,
@@ -44,6 +39,8 @@ export const DEFAULTS: GraphSettings = {
 /** Node groups, in legend order. Colors come from the `--t-<kind>` CSS tokens. */
 export const GROUPS: { kind: string; label: string }[] = [
   { kind: "area", label: "Parts" },
+  { kind: "api", label: "APIs" },
+  { kind: "api_group", label: "API groups" },
   { kind: "endpoint", label: "Endpoints" },
   { kind: "service", label: "External services" },
   { kind: "dir", label: "Folders" },
@@ -57,12 +54,13 @@ export const GROUPS: { kind: string; label: string }[] = [
   { kind: "preference", label: "Preferences" },
   { kind: "episode", label: "Episodes" },
   { kind: "task", label: "Tasks" },
+  { kind: "group", label: "Notes group" },
   { kind: "document", label: "Documents" },
   { kind: "module", label: "Modules" },
   { kind: "file", label: "Code files" },
 ];
 
-const KEY = "engram.graph.settings.v2";
+const KEY = "engram.graph.settings.v3";
 
 export function loadSettings(): GraphSettings {
   try {

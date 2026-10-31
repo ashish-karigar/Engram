@@ -159,6 +159,23 @@ pub fn zoom_graph(conn: &Connection, expanded: &[String]) -> Result<Value> {
         items.insert(id, Item { kind: "endpoint".into(), label: name, parent: Some(parent), path: None, area: None });
     }
 
+    // Memories (decisions, reasons, facts): each sits on every code node it is about. Ones that are
+    // about nothing in the map wait together in one "Project notes" group, so none is lost.
+    let mut stmt = conn.prepare("SELECT m.id, m.type, m.title, t.dst FROM memories m LEFT JOIN edges t ON t.src = m.id AND t.type = 'touches' AND t.valid_to IS NULL WHERE m.status = 'current' AND m.type != 'episode' ORDER BY m.observed_at DESC")?;
+    let rows: Vec<(String, String, String, Option<String>)> = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect::<engram_core::rusqlite::Result<_>>()?;
+    let mut memories: BTreeMap<String, (String, String, Vec<String>)> = BTreeMap::new();
+    for (id, kind, title, about) in rows {
+        let entry = memories.entry(id).or_insert_with(|| (kind, title, Vec::new()));
+        entry.2.extend(about.filter(|a| items.contains_key(a)));
+    }
+    let notes = "group:notes".to_string();
+    for (id, (kind, title, about)) in &memories {
+        if about.is_empty() {
+            items.entry(notes.clone()).or_insert_with(|| Item { kind: "group".into(), label: "Project notes".into(), parent: None, path: None, area: None });
+            items.insert(id.clone(), Item { kind: kind.clone(), label: title.clone(), parent: Some(notes.clone()), path: None, area: None });
+        }
+    }
+
     // Children counts, and what is visible: the roots plus children of expanded nodes.
     let mut children: HashMap<String, usize> = HashMap::new();
     for item in items.values() {
@@ -238,15 +255,10 @@ pub fn zoom_graph(conn: &Connection, expanded: &[String]) -> Result<Value> {
         }
     }
     // Memories, on the most specific visible thing they are about.
-    let mut stmt = conn.prepare(
-        "SELECT m.id, m.type, m.title, m.status, t.dst FROM memories m JOIN edges t ON t.src = m.id AND t.type = 'touches'
-          WHERE m.status = 'current' AND m.type != 'episode'",
-    )?;
-    for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, String>(4)?)))? {
-        let (id, kind, title, status, about) = row?;
-        if let Some(target) = lift(&about) {
-            nodes.entry(id.clone()).or_insert_with(|| json!({"id": id, "label": title, "kind": kind, "status": status}));
-            counts.insert((id, target, "about".into()), 1);
+    for (id, (kind, title, about)) in &memories {
+        for target in about.iter().filter_map(|a| lift(a)) {
+            nodes.entry(id.clone()).or_insert_with(|| json!({"id": id, "label": title, "kind": kind, "status": "current"}));
+            counts.insert((id.clone(), target, "about".into()), 1);
         }
     }
 

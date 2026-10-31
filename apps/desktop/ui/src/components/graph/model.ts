@@ -69,30 +69,55 @@ type Position = Pick<SimNode, "x" | "y" | "z" | "vx" | "vy" | "vz">;
 /**
  * Apply filters and build simulation objects. Positions of nodes that survive a refresh are kept,
  * and new nodes start next to an already placed neighbour, so the layout never jumps.
+ *
+ * Hiding a kind never cuts the network: a hidden node folds into its nearest visible parent and
+ * every link through it is re-attached there, the same way a closed folder carries its files' links.
  */
 export function buildScene(graph: Graph, s: GraphSettings, selected: string | null, previous: Map<string, Position>) {
-  const adj = adjacency(graph);
+  const full = adjacency(graph);
   const query = s.search.trim().toLowerCase();
-  const local = s.local && selected && adj.has(selected) ? neighbourhood(adj, selected, s.localDepth) : null;
+  const local = s.local && selected && full.has(selected) ? neighbourhood(full, selected, s.localDepth) : null;
+  const parentOf = new Map(graph.edges.filter((e) => e.type === "contains").map((e) => [e.target, e.source]));
 
-  let keep = graph.nodes.filter((n) =>
-    !s.hidden.includes(n.kind) &&
-    (!query || n.label.toLowerCase().includes(query)) &&
-    (!local || local.has(n.id)));
-  const kept = new Set(keep.map((n) => n.id));
-  const edges = graph.edges.filter((e) => kept.has(e.source) && kept.has(e.target));
-  const degree = new Map<string, number>();
-  for (const e of edges) {
-    degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
-    degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
+  // A search keeps the matches, what they sit in and what they touch, so results stay in context.
+  let found: Set<string> | null = null;
+  if (query) {
+    found = new Set();
+    for (const n of graph.nodes) {
+      if (!n.label.toLowerCase().includes(query)) continue;
+      for (let id: string | undefined = n.id; id && !found.has(id); id = parentOf.get(id)) found.add(id);
+      for (const near of full.get(n.id) ?? []) found.add(near);
+    }
   }
-  if (!s.showOrphans) keep = keep.filter((n) => (degree.get(n.id) ?? 0) > 0 || n.id === selected);
+  const keep = graph.nodes.filter((n) => !s.hidden.includes(n.kind) && (!found || found.has(n.id)) && (!local || local.has(n.id)));
+  const kept = new Set(keep.map((n) => n.id));
+  /** The node itself, or the nearest kept ancestor it folds into. */
+  const lift = (id: string): string | null => {
+    for (let cur: string | undefined = id; cur; cur = parentOf.get(cur)) if (kept.has(cur)) return cur;
+    return null;
+  };
+  const merged = new Map<string, { id: string; source: string; target: string; type: string; count: number }>();
+  for (const e of graph.edges) {
+    const source = lift(e.source), target = lift(e.target);
+    if (!source || !target || source === target) continue;
+    const id = source === e.source && target === e.target ? e.id : `${source}>${target}:${e.type}`;
+    const prior = merged.get(id);
+    if (prior) prior.count += e.count ?? 1;
+    else merged.set(id, { id, source, target, type: e.type, count: e.count ?? 1 });
+  }
+  const edges = [...merged.values()];
+  const adj = new Map<string, Set<string>>(keep.map((n) => [n.id, new Set<string>()]));
+  for (const e of edges) {
+    adj.get(e.source)?.add(e.target);
+    adj.get(e.target)?.add(e.source);
+  }
+  const degree = new Map([...adj].map(([id, near]) => [id, near.size]));
+  const shown = s.showOrphans ? keep : keep.filter((n) => (degree.get(n.id) ?? 0) > 0 || n.id === selected);
 
   // A node that just appeared (a folder opened) starts next to its parent, not a random neighbour.
-  const parents = new Map(graph.edges.filter((e) => e.type === "contains").map((e) => [e.target, e.source]));
-  const nodes: SimNode[] = keep.map((n) => {
+  const nodes: SimNode[] = shown.map((n) => {
     const d = degree.get(n.id) ?? 0;
-    const prior = previous.get(n.id) ?? placeNear(n.id, adj, previous, parents.get(n.id));
+    const prior = previous.get(n.id) ?? placeNear(n.id, adj, previous, parentOf.get(n.id));
     const children = n.children ?? 0;
     const color = s.colorBy === "author" ? authorColor(n.owner?.who) : cssColor(n.kind);
     return {
@@ -103,7 +128,7 @@ export function buildScene(graph: Graph, s: GraphSettings, selected: string | nu
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const links: SimLink[] = edges
     .filter((e) => byId.has(e.source) && byId.has(e.target))
-    .map((e) => ({ id: e.id, type: e.type, count: e.count ?? 1, source: byId.get(e.source)!, target: byId.get(e.target)! }));
+    .map((e) => ({ id: e.id, type: e.type, count: e.count, source: byId.get(e.source)!, target: byId.get(e.target)! }));
   return { nodes, links, adj };
 }
 
@@ -118,7 +143,6 @@ function placeNear(id: string, adj: Map<string, Set<string>>, previous: Map<stri
   return {};
 }
 
-/** Memories are the point of the graph, so they stay prominent; code nodes stay small. */
 /** Agents keep their colours everywhere; people get stable colours from a hash of their name. */
 const PEOPLE = ["#e8cf5c", "#b184ff", "#3fb6c9", "#ef6a62", "#f0a35e", "#9fb4ff"];
 export function authorColor(who?: string): string {
@@ -131,7 +155,9 @@ export function authorColor(who?: string): string {
   return PEOPLE[h % PEOPLE.length]!;
 }
 
+/** Memories are the point of the graph, so they stay prominent; code nodes stay small. */
 function radiusFor(kind: string, degree: number, children = 0): number {
+  if (kind === "group") return 9 + Math.sqrt(children) * 1.6;
   if (kind === "area") return 14 + Math.sqrt(degree + children) * 2.2;
   if (kind === "api") return 11 + Math.sqrt(children) * 2.4;
   if (kind === "api_group") return 6 + Math.sqrt(children) * 1.4;

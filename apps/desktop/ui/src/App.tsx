@@ -32,21 +32,19 @@ function Workspace({ connection, project }: { connection: Connection; project: P
   const [zoom, setZoom] = useState(1);
   const commands = useRef<GraphCommands | null>(null);
   const updateGraphSettings = useCallback((s: GraphSettings) => { setGraphSettings(s); saveSettings(s); }, []);
-  const archived = graphSettings.showArchived;
-  const view = graphSettings.view;
-  // The architecture view is the zoomable map: which nodes are open is kept per project.
+  // The graph is the zoomable map: which nodes are open is kept per project.
   const [expanded, setExpanded] = useState<string[]>([]);
   useEffect(() => setExpanded([]), [api]);
   const toggle = useCallback((id: string) => setExpanded((e) => (e.includes(id) ? e.filter((x) => x !== id) : [...e, id])), []);
-  const { data: graph, error } = usePolling<Graph>(() => (view === "architecture" ? api.zoom(expanded) : api.graph(archived)), 3000, [api, archived, view, expanded.join(",")]);
+  const { data: graph, error } = usePolling<Graph>(() => api.zoom(expanded), 3000, [api, expanded.join(",")]);
   // On first load, open every part one level so each shows as a galaxy of its folders.
   const opened = useRef<string | null>(null);
   useEffect(() => {
-    if (view !== "architecture" || !graph || opened.current === project.id) return;
+    if (!graph || opened.current === project.id) return;
     opened.current = project.id;
     const parts = graph.nodes.filter((n) => n.kind === "area").map((n) => n.id);
     if (parts.length) setExpanded(parts);
-  }, [graph, view, project.id]);
+  }, [graph, project.id]);
   const { data: stats } = usePolling(() => api.stats(), 3000, [api]);
   const select = useCallback((id: string | null) => setSelected(id), []);
 
@@ -78,12 +76,12 @@ function Workspace({ connection, project }: { connection: Connection; project: P
         {tab === "graph" && (
           <div className={`graph ${selected ? "with-drawer" : ""}`}>
             {error && <div className="banner err">{error}</div>}
-            {graph && <ForceGraph graph={graph} settings={graphSettings} selectedId={selected} onSelect={select} onExpand={view === "architecture" ? toggle : undefined} onZoom={setZoom} commands={commands} />}
+            {graph && <ForceGraph graph={graph} settings={graphSettings} selectedId={selected} onSelect={select} onExpand={toggle} onZoom={setZoom} commands={commands} />}
             <GraphControls graph={graph} settings={graphSettings} onChange={updateGraphSettings} selectedId={selected} zoom={zoom} commands={commands} />
             {graph && graph.nodes.length === 0 && <div className="graph-empty">No memories yet. Connect an agent, or add documents.</div>}
             {selected && (
               <NodeDrawer api={api} id={selected} onClose={() => setSelected(null)} onOpen={setSelected}
-                expandable={view === "architecture" ? graph?.nodes.find((n) => n.id === selected) : undefined} onExpand={toggle}
+                expandable={graph?.nodes.find((n) => n.id === selected)} onExpand={toggle}
                 parts={graph?.nodes.filter((n) => n.kind === "area") ?? []} />
             )}
           </div>
