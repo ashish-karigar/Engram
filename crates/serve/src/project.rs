@@ -39,7 +39,13 @@ pub trait ProjectManager: Send + Sync {
     fn get(&self, id: &str) -> Option<ProjectRef>;
     fn add(&self, root: &Path) -> Result<ProjectRef>;
     fn remove(&self, id: &str) -> Result<()>;
-    fn connect(&self, id: &str, agent: &str, apply: bool) -> Result<ConnectOutcome>;
+    /// Connect an agent to the shared endpoint (all projects). Shows the change; `apply` makes it.
+    fn connect(&self, agent: &str, apply: bool) -> Result<ConnectOutcome>;
+
+    /// The agent (actor name) a shared-endpoint token belongs to.
+    fn agent_for_token(&self, _token: &str) -> Option<String> {
+        None
+    }
 
     /// App settings as the UI may see them (secrets masked).
     fn settings(&self) -> Result<serde_json::Value> {

@@ -12,8 +12,16 @@ use crate::connectors::{Agent, Endpoint, plan_connect};
 use crate::paths::{app_data_dir, project_paths};
 use crate::project::{RunningProject, RuntimeOptions};
 use crate::registry::Registry;
-use crate::secrets::{ensure_admin_token, ensure_token, write_private};
+use crate::secrets::{agent_for_token, ensure_admin_token, ensure_agent_token, write_private};
 use crate::settings::Settings;
+
+/// Agents' configs hold the endpoint URL, so the port must survive restarts.
+/// `ENGRAM_PORT` overrides it; if it is taken, a free port is used and agents must reconnect.
+pub const DEFAULT_PORT: u16 = 41741;
+
+pub fn configured_port() -> u16 {
+    std::env::var("ENGRAM_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(DEFAULT_PORT)
+}
 
 pub struct DaemonOptions {
     pub base: PathBuf,
@@ -25,7 +33,7 @@ pub struct DaemonOptions {
 
 impl Default for DaemonOptions {
     fn default() -> Self {
-        DaemonOptions { base: app_data_dir(), port: 0, runtime: None }
+        DaemonOptions { base: app_data_dir(), port: configured_port(), runtime: None }
     }
 }
 
@@ -107,19 +115,18 @@ impl ProjectManager for Daemon {
         Ok(())
     }
 
-    fn connect(&self, id: &str, agent: &str, apply: bool) -> Result<ConnectOutcome> {
+    fn connect(&self, agent: &str, apply: bool) -> Result<ConnectOutcome> {
         let agent = Agent::parse(agent).ok_or_else(|| Error::msg(format!("unknown agent: {agent}")))?;
-        let (db, tokens) = {
-            let projects = self.projects.lock().unwrap();
-            let p = projects.get(id).ok_or_else(|| Error::msg("unknown project"))?;
-            (p.db.clone(), p.paths.tokens.clone())
-        };
-        let token = ensure_token(&db.lock().unwrap(), &tokens, "agent", agent.actor_name())?;
-        let endpoint = Endpoint { base_url: format!("{}/p/{id}", self.url.read().unwrap()), token };
+        let token = ensure_agent_token(&self.base, agent.actor_name())?;
+        let endpoint = Endpoint { base_url: self.url.read().unwrap().clone(), token };
         let plan = plan_connect(agent, endpoint);
         let preview = plan.preview.clone();
         let result = if apply { Some(plan.apply()?) } else { None };
         Ok(ConnectOutcome { agent: agent.id().into(), preview, result })
+    }
+
+    fn agent_for_token(&self, token: &str) -> Option<String> {
+        agent_for_token(&self.base, token)
     }
 
     fn settings(&self) -> Result<Value> {
@@ -189,7 +196,13 @@ pub async fn start_daemon(opts: DaemonOptions) -> std::io::Result<RunningDaemon>
     let admin_token = ensure_admin_token(&opts.base)?;
     let daemon = Arc::new(Daemon::new(&opts));
     let manager: Arc<dyn ProjectManager> = daemon.clone();
-    let server = start_server(manager, admin_token.clone(), opts.port).await?;
+    let server = match start_server(manager.clone(), admin_token.clone(), opts.port).await {
+        Err(err) if opts.port != 0 => {
+            eprintln!("engram: port {} is busy ({err}); using a free port. Reconnect agents to pick it up.", opts.port);
+            start_server(manager, admin_token.clone(), 0).await?
+        }
+        other => other?,
+    };
     *daemon.url.write().unwrap() = server.url.clone();
 
     let restore = daemon.clone();

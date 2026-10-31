@@ -10,6 +10,7 @@ pub mod ops;
 pub mod profile;
 pub mod project;
 pub mod recall;
+pub mod route;
 pub mod tokens;
 
 pub use http::{RunningServer, start_server};

@@ -8,7 +8,7 @@ use engram_capture::snapshot::snapshot_changes;
 use engram_core::events::list_events;
 use engram_daemon::connectors::{Agent, Endpoint, codex_plan, merge_claude_hook, merge_mcp_server, muse_plan, upsert_block};
 use engram_daemon::project::RuntimeOptions;
-use engram_daemon::secrets::ensure_token;
+use engram_daemon::secrets::ensure_agent_token;
 use engram_daemon::{DaemonOptions, start_daemon};
 use engram_understand::llm::{LlmClient, ScriptedClient};
 use serde_json::{Value, json};
@@ -126,15 +126,22 @@ async fn end_to_end_two_projects_two_agents_recovery() {
     let web_graph = api.get(&api.admin, &format!("/p/{web_id}/api/graph")).await;
     assert!(!web_graph["nodes"].as_array().unwrap().iter().any(|n| n["label"] == "perception/fusion.py"), "projects are isolated");
 
-    // Agents get their own tokens through the connect flow and share the project's memory.
-    let claude_preview = api.post(&api.admin, &format!("/p/{drive_id}/api/connect"), json!({"agent": "claude"})).await;
-    assert!(claude_preview["preview"].as_str().unwrap().contains("claude mcp add"));
-    let paths = engram_daemon::paths::project_paths(drive.path(), home.path()).unwrap();
-    let token = {
-        let project = running.daemon.get_for_test(&drive_id);
-        ensure_token(&project.lock().unwrap(), &paths.tokens, "agent", "claude-code").unwrap()
-    };
-    api.post(&token, &format!("/p/{drive_id}/api/note"), json!({"type": "dead_end", "title": "Radius filter", "claim": "Radius outlier removal took 80ms per frame", "files": ["perception/lidar.py"]})).await;
+    // Agents connect once to the shared endpoint; each call is placed in a project by its folder.
+    let claude_preview = api.post(&api.admin, "/api/connect", json!({"agent": "claude"})).await;
+    let preview = claude_preview["preview"].as_str().unwrap();
+    assert!(preview.contains("claude mcp add") && preview.contains(&format!("{}/mcp", api.url)), "{preview}");
+    let token = ensure_agent_token(home.path(), "claude-code").unwrap();
+    let call = |args: Value| json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "note", "arguments": args}});
+    let note = json!({"type": "dead_end", "title": "Radius filter", "claim": "Radius outlier removal took 80ms per frame",
+                      "files": ["perception/lidar.py"], "cwd": drive.path().join("perception")});
+    let placed = api.post(&token, "/mcp", call(note)).await;
+    assert!(placed["result"]["content"][0]["text"].as_str().unwrap().contains(&format!("[project: {}", drive.path().file_name().unwrap().to_string_lossy())), "{placed}");
+    // Without a folder, the call goes where this agent was last active.
+    let profile = json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "profile", "arguments": {}}});
+    let recent = api.post(&token, "/mcp", profile).await;
+    assert!(recent["result"]["content"][0]["text"].as_str().unwrap().contains(&drive.path().canonicalize().unwrap().to_string_lossy().to_string()), "{recent}");
+    let outside = api.post(&token, "/mcp", call(json!({"title": "x", "claim": "y", "cwd": "/nowhere"}))).await;
+    assert_eq!(outside["result"]["isError"], true);
     let answer = api.post(&api.admin, &format!("/p/{drive_id}/api/search"), json!({"query": "why not radius filter lidar"})).await;
     let text = answer["text"].as_str().unwrap();
     assert!(text.contains("voxel grid") && text.contains("80ms"), "{text}");

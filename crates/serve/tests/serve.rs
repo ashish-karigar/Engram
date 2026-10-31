@@ -35,7 +35,7 @@ impl ProjectManager for TestManager {
     fn remove(&self, id: &str) -> Result<()> {
         self.projects.lock().unwrap().remove(id).map(|_| ()).ok_or_else(|| Error::msg("unknown project"))
     }
-    fn connect(&self, _id: &str, agent: &str, apply: bool) -> Result<ConnectOutcome> {
+    fn connect(&self, agent: &str, apply: bool) -> Result<ConnectOutcome> {
         Ok(ConnectOutcome { agent: agent.into(), preview: "claude mcp add ...".into(), result: apply.then(|| "done".into()) })
     }
 }

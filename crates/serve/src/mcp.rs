@@ -9,6 +9,15 @@ use crate::ops::{Ctx, OpResult, op_add_document, op_brief, op_expand, op_note, o
 
 const DEFAULT_PROTOCOL: &str = "2025-03-26";
 
+/// Tools on the shared endpoint take the agent's working folder, which picks the project.
+pub fn shared_tool_definitions() -> Value {
+    let mut tools = tool_definitions();
+    for tool in tools.as_array_mut().into_iter().flatten() {
+        tool["inputSchema"]["properties"]["cwd"] = json!({"type": "string", "description": "Absolute path of the folder you are working in; selects the project."});
+    }
+    tools
+}
+
 /// A deliberately small tool surface: every tool definition costs the agent context tokens.
 pub fn tool_definitions() -> Value {
     json!([
@@ -54,7 +63,7 @@ pub fn tool_definitions() -> Value {
     ])
 }
 
-fn call_tool(ctx: &Ctx, name: &str, args: Value) -> Result<OpResult> {
+pub fn call_tool(ctx: &Ctx, name: &str, args: Value) -> Result<OpResult> {
     let bad = |e: serde_json::Error| engram_core::Error::msg(format!("invalid arguments for {name}: {e}"));
     match name {
         "brief" => op_brief(ctx, serde_json::from_value(args).map_err(bad)?),
@@ -71,8 +80,11 @@ fn error(id: &Value, code: i64, message: &str) -> Value {
     json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}})
 }
 
+/// Runs one tool call; the project endpoint calls straight in, the shared one picks a project first.
+pub type ToolCall<'a> = &'a dyn Fn(&str, Value) -> Result<OpResult>;
+
 /// Handle one JSON-RPC message. Notifications (no id) produce no response.
-pub fn handle_message(ctx: &Ctx, msg: &Value) -> Option<Value> {
+pub fn handle_message(tools: &Value, call: ToolCall, msg: &Value) -> Option<Value> {
     let id = msg.get("id").cloned()?;
     let params = msg.get("params").cloned().unwrap_or(Value::Null);
     let result = match msg["method"].as_str().unwrap_or("") {
@@ -82,11 +94,11 @@ pub fn handle_message(ctx: &Ctx, msg: &Value) -> Option<Value> {
             "serverInfo": {"name": "engram", "version": env!("CARGO_PKG_VERSION")}
         }),
         "ping" => json!({}),
-        "tools/list" => json!({"tools": tool_definitions()}),
+        "tools/list" => json!({"tools": tools}),
         "tools/call" => {
             let name = params["name"].as_str().unwrap_or("");
             let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
-            match call_tool(ctx, name, args) {
+            match call(name, args) {
                 Ok(out) => json!({"content": [{"type": "text", "text": out.text}], "isError": false}),
                 Err(e) => json!({"content": [{"type": "text", "text": e.to_string()}], "isError": true}),
             }
@@ -97,12 +109,17 @@ pub fn handle_message(ctx: &Ctx, msg: &Value) -> Option<Value> {
 }
 
 /// Handle a request body: a single message or a batch. None means "accepted, nothing to return".
-pub fn handle_body(ctx: &Ctx, body: &Value) -> Option<Value> {
+pub fn handle_body_with(tools: &Value, call: ToolCall, body: &Value) -> Option<Value> {
     match body {
         Value::Array(items) => {
-            let out: Vec<Value> = items.iter().filter_map(|m| handle_message(ctx, m)).collect();
+            let out: Vec<Value> = items.iter().filter_map(|m| handle_message(tools, call, m)).collect();
             (!out.is_empty()).then_some(Value::Array(out))
         }
-        single => handle_message(ctx, single),
+        single => handle_message(tools, call, single),
     }
+}
+
+/// A project-scoped endpoint: every call goes to `ctx`'s project.
+pub fn handle_body(ctx: &Ctx, body: &Value) -> Option<Value> {
+    handle_body_with(&tool_definitions(), &|name, args| call_tool(ctx, name, args), body)
 }

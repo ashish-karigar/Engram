@@ -16,9 +16,10 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use crate::api::{documents, graph_data, node_detail, request_log, review_queue, stats, timeline};
-use crate::mcp::handle_body;
-use crate::ops::{Ctx, op_add_document, op_brief, op_expand, op_note, op_profile, op_search};
+use crate::mcp::{call_tool, handle_body, handle_body_with, shared_tool_definitions};
+use crate::ops::{Ctx, OpResult, op_add_document, op_brief, op_expand, op_note, op_profile, op_search};
 use crate::project::{ProjectManager, ProjectRef};
+use crate::route::{pick_project, with_conn};
 use crate::tokens::verify_token;
 
 struct AppState {
@@ -41,8 +42,9 @@ impl RunningServer {
     }
 }
 
-/// Serve every project on one port. Agents use `/p/<project>/mcp` or `/p/<project>/api/...` with a
-/// per-agent token; the UI uses the admin token, which also manages the project list.
+/// Serve every project on one port. Agents connect once to `/mcp`, which places each call in a
+/// project (see `route`); `/p/<project>/mcp` and `/p/<project>/api/...` address one project directly.
+/// The UI uses the admin token, which also manages the project list and agent connections.
 pub async fn start_server(manager: Arc<dyn ProjectManager>, admin_token: String, port: u16) -> std::io::Result<RunningServer> {
     let state = Arc::new(AppState { manager, admin_token });
     let app = Router::new().fallback(dispatch).with_state(state);
@@ -114,6 +116,19 @@ async fn dispatch(State(state): State<Arc<AppState>>, req: Request) -> Response 
             .and_then(|r| r)
             .map(|v| reply(StatusCode::OK, &v))
         }
+        (&Method::POST, ["mcp"]) => {
+            let st = state.clone();
+            tokio::task::spawn_blocking(move || shared_mcp(&st, &token, is_admin, &json_body))
+                .await
+                .unwrap_or_else(|e| Err(Error::msg(e.to_string())))
+        }
+        (_, ["mcp"]) => Ok(fail(StatusCode::METHOD_NOT_ALLOWED, "use POST")),
+        (&Method::POST, ["api", "connect"]) if is_admin => {
+            let manager = state.manager.clone();
+            tokio::task::spawn_blocking(move || connect(manager.as_ref(), &json_body))
+                .await
+                .unwrap_or_else(|e| Err(Error::msg(e.to_string())))
+        }
         (_, ["p", id, tail @ ..]) => {
             let st = state.clone();
             let (id, tail, method) = (id.to_string(), tail.iter().map(|s| s.to_string()).collect::<Vec<_>>(), parts.method.clone());
@@ -169,11 +184,46 @@ fn parse<T: serde::de::DeserializeOwned>(body: Value) -> Result<T> {
     serde_json::from_value(body).map_err(|e| Error::msg(e.to_string()))
 }
 
-fn authenticate(conn: &Connection, token: &str, is_admin: bool) -> Result<Option<Principal>> {
+/// Admin, a token issued by this project, or an agent's shared-endpoint token.
+fn authenticate(state: &AppState, conn: &Connection, token: &str, is_admin: bool) -> Result<Option<Principal>> {
     if is_admin {
         return Ok(Some(Principal::Admin));
     }
-    Ok(verify_token(conn, token)?.map(Principal::Actor))
+    if let Some(actor) = verify_token(conn, token)? {
+        return Ok(Some(Principal::Actor(actor)));
+    }
+    match state.manager.agent_for_token(token) {
+        Some(agent) => Ok(Some(Principal::Actor(ensure_actor(conn, "agent", &agent)?))),
+        None => Ok(None),
+    }
+}
+
+fn connect(manager: &dyn ProjectManager, body: &Value) -> Result<Response> {
+    let outcome = manager.connect(body["agent"].as_str().unwrap_or(""), body["apply"].as_bool().unwrap_or(false))?;
+    Ok(reply(StatusCode::OK, &serde_json::to_value(outcome)?))
+}
+
+/// The endpoint agents are connected to. Each tool call is placed in a project by the agent's
+/// `cwd` or its latest activity, and the answer says which project it came from.
+fn shared_mcp(state: &AppState, token: &str, is_admin: bool, body: &Value) -> Result<Response> {
+    let (kind, agent) = match (is_admin, state.manager.agent_for_token(token)) {
+        (true, _) => ("user", "engram-ui".to_string()),
+        (false, Some(agent)) => ("agent", agent),
+        (false, None) => return Ok(fail(StatusCode::UNAUTHORIZED, "missing or invalid token")),
+    };
+    let call = |name: &str, mut args: Value| -> Result<OpResult> {
+        let cwd = args.as_object_mut().and_then(|o| o.remove("cwd")).and_then(|v| v.as_str().map(String::from));
+        let project = pick_project(&state.manager.list(), &agent, cwd.as_deref())?;
+        with_conn(&project, |conn| {
+            let actor = ensure_actor(conn, kind, &agent)?;
+            let out = call_tool(&Ctx { conn, actor: &actor, embedder: project.embedder.as_ref() }, name, args)?;
+            Ok(OpResult { text: format!("[project: {} · {}]\n{}", project.info.name, project.info.root, out.text), data: out.data })
+        })
+    };
+    Ok(match handle_body_with(&shared_tool_definitions(), &call, body) {
+        Some(out) => reply(StatusCode::OK, &out),
+        None => reply(StatusCode::ACCEPTED, &Value::Null),
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -191,7 +241,7 @@ fn project_route(
     let own = project.db_path.as_deref().map(engram_core::db::open).transpose()?;
     let shared = if own.is_none() { Some(project.db.lock().unwrap()) } else { None };
     let conn: &Connection = own.as_ref().or(shared.as_deref()).expect("a connection");
-    let actor = match authenticate(&conn, token, is_admin)? {
+    let actor = match authenticate(state, conn, token, is_admin)? {
         Some(Principal::Admin) => ensure_actor(&conn, "user", "engram-ui")?,
         Some(Principal::Actor(a)) => a,
         None => return Ok(fail(StatusCode::UNAUTHORIZED, "missing or invalid token")),
@@ -224,13 +274,7 @@ fn project_route(
             let memory = engram_core::memory::review(&conn, body["id"].as_str().unwrap_or(""), body["action"].as_str().unwrap_or(""))?;
             Ok(reply(StatusCode::OK, &serde_json::to_value(memory)?))
         }
-        (&Method::POST, ["api", "connect"]) => {
-            drop(ctx);
-            drop(shared);
-            let agent = body["agent"].as_str().unwrap_or("");
-            let outcome = state.manager.connect(id, agent, body["apply"].as_bool().unwrap_or(false))?;
-            Ok(reply(StatusCode::OK, &serde_json::to_value(outcome)?))
-        }
+        (&Method::POST, ["api", "connect"]) if is_admin => connect(state.manager.as_ref(), &body),
         (&Method::GET, ["api", "stats"]) => json_ok(stats(&conn)),
         (&Method::GET, ["api", "graph"]) => json_ok(graph_data(&conn, query_param(query, "archived").as_deref() == Some("1"), 300)),
         (&Method::GET, ["api", "node"]) => json_ok(node_detail(&conn, &query_param(query, "id").unwrap_or_default())),

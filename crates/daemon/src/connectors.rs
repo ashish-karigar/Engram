@@ -37,7 +37,7 @@ impl Agent {
 }
 
 pub struct Endpoint {
-    /// Project-scoped base, e.g. `http://127.0.0.1:4000/p/abc123`.
+    /// The daemon's base URL, e.g. `http://127.0.0.1:41741`; agents use its shared `/mcp`.
     pub base_url: String,
     pub token: String,
 }

@@ -17,8 +17,9 @@ struct Cli {
 enum Command {
     /// Run the Engram daemon (watches every added project).
     Daemon {
-        #[arg(long, default_value_t = 0)]
-        port: u16,
+        /// Defaults to ENGRAM_PORT or 41741, so agent configs keep working across restarts.
+        #[arg(long)]
+        port: Option<u16>,
     },
     /// Start watching a project folder.
     Add { dir: PathBuf },
@@ -28,11 +29,10 @@ enum Command {
     List,
     /// Print the project brief for an agent hook (reads the hook's JSON on stdin). Never fails.
     Hook { agent: String },
-    /// Connect an agent (claude, codex, muse) to a project. Shows the change; --apply makes it.
+    /// Connect an agent (claude, codex, muse) to Engram, for every watched project. Shows the
+    /// change; --apply makes it.
     Connect {
         agent: String,
-        #[arg(default_value = ".")]
-        dir: PathBuf,
         #[arg(long)]
         apply: bool,
     },
@@ -77,7 +77,7 @@ async fn main() {
 async fn run(command: Command) -> Result<(), String> {
     match command {
         Command::Daemon { port } => {
-            let daemon = start_daemon(DaemonOptions { port, ..Default::default() }).await.map_err(|e| e.to_string())?;
+            let daemon = start_daemon(DaemonOptions { port: port.unwrap_or_else(engram_daemon::configured_port), ..Default::default() }).await.map_err(|e| e.to_string())?;
             println!("Engram daemon at {}", daemon.url);
             println!("ENGRAM_READY {}", json!({"url": daemon.url, "adminToken": daemon.admin_token}));
             tokio::signal::ctrl_c().await.map_err(|e| e.to_string())?;
@@ -109,12 +109,11 @@ fn client_command(command: Command) -> Result<(), String> {
                 println!("{}  {}  {} memories", p["id"].as_str().unwrap_or(""), p["root"].as_str().unwrap_or(""), p["stats"]["memories"]);
             }
         }
-        Command::Connect { agent, dir, apply } => {
+        Command::Connect { agent, apply } => {
             if !AGENTS.iter().any(|a| a.id() == agent) {
                 return Err(format!("unknown agent {agent}; use claude, codex or muse"));
             }
-            let id = project_id(&dir)?;
-            let out = client.call(reqwest::Method::POST, &format!("/p/{id}/api/connect"), Some(json!({"agent": agent, "apply": apply})))?;
+            let out = client.call(reqwest::Method::POST, "/api/connect", Some(json!({"agent": agent, "apply": apply})))?;
             println!("{}", out["preview"].as_str().unwrap_or(""));
             match out["result"].as_str() {
                 Some(done) => println!("\n{done}"),

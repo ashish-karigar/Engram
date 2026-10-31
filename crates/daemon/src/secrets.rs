@@ -40,6 +40,25 @@ pub fn ensure_token(conn: &Connection, file: &Path, kind: &str, name: &str) -> R
     Ok(token)
 }
 
+/// Agents connect once to the shared endpoint, with one token each, kept in `agents.json` (0600)
+/// so connectors can write it into the agent's config.
+pub fn ensure_agent_token(base: &Path, agent: &str) -> std::io::Result<String> {
+    let file = base.join("agents.json");
+    let mut tokens = read(&file);
+    if let Some(existing) = tokens.get(agent) {
+        return Ok(existing.clone());
+    }
+    let token = format!("egm_{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
+    tokens.insert(agent.to_string(), token.clone());
+    write_private(&file, &serde_json::to_string_pretty(&tokens).map_err(std::io::Error::other)?)?;
+    Ok(token)
+}
+
+/// The agent a shared-endpoint token belongs to.
+pub fn agent_for_token(base: &Path, token: &str) -> Option<String> {
+    read(&base.join("agents.json")).into_iter().find(|(_, t)| t == token).map(|(agent, _)| agent)
+}
+
 /// One admin token for the whole daemon; the desktop app uses it to manage projects.
 pub fn ensure_admin_token(base: &Path) -> std::io::Result<String> {
     let file = base.join("admin_token");
