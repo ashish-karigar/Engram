@@ -33,7 +33,7 @@ Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Decisions: [docs/ACTION_PL
 Requires Rust (stable), Node 20+, and git.
 
 ```bash
-cargo test --workspace            # 72 tests, including a two-project, two-agent end-to-end run
+cargo test --workspace            # 71 tests, including a two-project, two-agent end-to-end run
 npm install
 npm run app:dev                   # desktop app (Tauri) with hot reload
 npm run app:build                 # release bundle
