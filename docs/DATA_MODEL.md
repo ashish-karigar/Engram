@@ -46,15 +46,17 @@ drift. Impact walks these edges backwards.
 
 `commits(sha, ts, author, subject, files, agent, session, evidence)` and
 `code_history(entity_id, commit_sha, lines)`:
-- **From git:** per commit, which files changed (`git log --numstat`); per symbol, which commits
-  touched its lines (`git blame` over its span, only for files that changed since the last pass).
-- **From agent sessions:** every Write/Edit tool call is already an event with the agent, session
-  and file. A commit whose files an agent edited in the window before it is attributed to that agent
-  and session; otherwise to the person who committed it. Uncommitted agent edits are attributed the
-  same way against the snapshot ref.
-- **Summary on each symbol:** created in (commit, author, agent), last changed in, number of changes,
-  number of authors and agents. Shown in the map and given to agents with `impact`, so "who wrote
-  this, in which session, and why" leads to the conversation and decision behind it.
+- **From git:** each commit's author, time, message and files; per file and symbol, which commits
+  wrote its current lines (`git blame` mapped onto line spans, re-run only for files that changed).
+  Lines not committed yet are counted as "uncommitted".
+- **From agent sessions:** every Write/Edit tool call is an event with the agent, session and files
+  (Codex edits are read from `apply_patch` in its shell commands). A commit is attributed to an agent
+  with the evidence shown next to it: **edited** (that agent edited the commit's files since the
+  previous commit), **trailer** (a co-author line names it), or **session** (one of its sessions was
+  active here in the 30 minutes before: likely, not certain). Otherwise it stays with its git author.
+- **Summary on each file and symbol:** lines per author or agent, created in (commit, date, who), last
+  changed in, number of commits, and the agent sessions involved, each linked to its transcript.
+  Given to agents in `expand` and `impact`, shown in the map's drawer and as "colour by author".
 
 ## Layer 4: knowledge
 
