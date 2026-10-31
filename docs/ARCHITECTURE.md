@@ -84,7 +84,8 @@ reinforces it; facts can carry `expires_at`; a project profile splits standing f
 |---|---|---|
 | Tamper-evident history | Hash chain over events | O(n) verify, O(1) append |
 | Keyword recall | FTS5 + BM25, weighted columns, stopwords dropped | Built into SQLite, no service |
-| Semantic recall | Embeddings + exact top-k with a size-k heap, O(n·d + n log k) | Correct, simple; ANN index later |
+| Semantic recall | Embeddings (in-process ONNX models) + exact top-k below 5,000 vectors, HNSW (usearch, 32 links, f16) above | Exact is correct and fast when small; HNSW keeps 1M vectors under a millisecond at 0.995 recall@10 |
+| IDF and keyword pruning | Word document counts from FTS5 vocabulary tables; at 10k+ chunks, words in over 5% of chunks are left out of the keyword query | No per-search row scans; ranking every chunk with a common word was the slow part at 1M |
 | Combine rankers | Reciprocal Rank Fusion (k = 60) | Uses ranks only, so BM25 and cosine scales never need calibrating |
 | Chunking | Markdown by heading path; Python, Rust, TS/JS by top-level symbol (tree-sitter); other code by overlapping line windows | Chunks follow meaning, not character counts |
 | Offline embeddings | Signed feature hashing of words, bigrams and 4-grams (FNV-1a) | No model download; deterministic; lexical, not deep semantics |

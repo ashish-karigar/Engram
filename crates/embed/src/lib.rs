@@ -1,5 +1,6 @@
 //! Text embeddings and vector search, stored in each project's SQLite file.
 
+pub mod ann;
 pub mod embedder;
 pub mod fuse;
 pub mod local;

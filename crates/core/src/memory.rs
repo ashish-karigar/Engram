@@ -240,9 +240,18 @@ fn tokenize(query: &str) -> Vec<String> {
 /// Build a safe FTS5 MATCH expression: words are quoted (no operator injection), question words are
 /// dropped unless nothing else remains, and terms are OR-ed so BM25 does the ranking.
 pub fn fts_query(query: &str) -> Option<String> {
+    fts_match(&fts_terms(query))
+}
+
+/// The words of a query that are worth matching: stopwords dropped, unless nothing else is left.
+pub fn fts_terms(query: &str) -> Vec<String> {
     let words = tokenize(query);
-    let content: Vec<&String> = words.iter().filter(|w| !STOP_WORDS.contains(&w.to_lowercase().as_str())).collect();
-    let terms: Vec<&String> = if content.is_empty() { words.iter().collect() } else { content };
+    let content: Vec<String> = words.iter().filter(|w| !STOP_WORDS.contains(&w.to_lowercase().as_str())).cloned().collect();
+    if content.is_empty() { words } else { content }
+}
+
+/// An FTS5 query matching any of `terms`.
+pub fn fts_match(terms: &[String]) -> Option<String> {
     (!terms.is_empty()).then(|| terms.iter().map(|t| format!("\"{t}\"")).collect::<Vec<_>>().join(" OR "))
 }
 

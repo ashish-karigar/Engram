@@ -43,3 +43,48 @@ fn memories_missing_lists_only_unembedded_current_memories() {
     embed_and_store(&db, &e, "memory", &[(m.id, "Lidar rate. 10 Hz".into())]).unwrap();
     assert!(memories_missing(&db, &e.model_id(), 10).unwrap().is_empty());
 }
+
+/// Deterministic pseudo-random unit vectors (no `rand` dependency).
+fn unit_vectors(n: usize, dim: usize, seed: u64) -> Vec<Vec<f32>> {
+    let mut s = seed;
+    (0..n)
+        .map(|_| {
+            let v: Vec<f32> = (0..dim)
+                .map(|_| {
+                    s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                    ((s >> 33) as f32 / (1u64 << 31) as f32) - 0.5
+                })
+                .collect();
+            let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+            v.into_iter().map(|x| x / norm).collect()
+        })
+        .collect()
+}
+
+#[test]
+fn nearest_neighbour_index_agrees_with_exact_search_and_tracks_changes() {
+    use engram_embed::ann::top_k_with;
+    use engram_embed::store::{delete_owners, exact_top_k, put};
+    let dir = tempfile::tempdir().unwrap();
+    let db = engram_core::db::open(&dir.path().join("engram.sqlite")).unwrap();
+    let vectors = unit_vectors(3000, 64, 7);
+    for (i, v) in vectors.iter().enumerate() {
+        put(&db, &format!("chk_{i}"), "chunk", "m", v).unwrap();
+    }
+    let queries = unit_vectors(20, 64, 99);
+    let mut overlap = 0;
+    for q in &queries {
+        let exact: Vec<String> = exact_top_k(&db, "m", "chunk", q, 10).unwrap().into_iter().map(|h| h.id).collect();
+        let approx = top_k_with(&db, "m", "chunk", q, 10, 100).unwrap();
+        overlap += approx.iter().filter(|h| exact.contains(&h.id)).count();
+    }
+    assert!(overlap as f64 / 200.0 >= 0.9, "recall@10 vs exact: {}", overlap as f64 / 200.0);
+
+    // A deleted vector never comes back; a replaced one is found by its new value.
+    let target = &queries[0];
+    let best = top_k_with(&db, "m", "chunk", target, 1, 100).unwrap()[0].id.clone();
+    delete_owners(&db, &[best.clone()]).unwrap();
+    assert!(top_k_with(&db, "m", "chunk", target, 10, 100).unwrap().iter().all(|h| h.id != best));
+    put(&db, "chk_5", "chunk", "m", target).unwrap();
+    assert_eq!(top_k_with(&db, "m", "chunk", target, 1, 100).unwrap()[0].id, "chk_5");
+}

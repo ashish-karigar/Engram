@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use engram_core::memory::fts_query;
+use engram_core::memory::{fts_match, fts_terms};
 use engram_core::rusqlite::params;
 use engram_core::{Connection, Result};
 use engram_embed::Embedder;
@@ -27,8 +27,23 @@ pub struct ChunkHit {
 
 const CANDIDATES: usize = 40;
 
+/// In large projects, words in more than this share of chunks are left out of the keyword query:
+/// they barely change the ranking, but ranking every chunk that contains them is what makes a
+/// search slow at scale. Small projects keep every word (there a key word can be in many chunks).
+const COMMON_WORD_SHARE: f64 = 0.05;
+const PRUNE_FROM: f64 = 10_000.0;
+
 fn keyword_ranking(conn: &Connection, query: &str) -> Result<Vec<String>> {
-    let Some(matcher) = fts_query(query) else { return Ok(vec![]) };
+    let terms = fts_terms(query);
+    let total: f64 = conn.query_row("SELECT COALESCE(MAX(rowid), 0) FROM chunks", [], |r| r.get(0))?;
+    let mut rare = vec![];
+    for t in &terms {
+        let df: f64 = conn.query_row("SELECT COALESCE(SUM(doc), 0) FROM chunks_vocab WHERE term = lower(?)", [t], |r| r.get(0))?;
+        if total < PRUNE_FROM || df <= total * COMMON_WORD_SHARE {
+            rare.push(t.clone());
+        }
+    }
+    let Some(matcher) = fts_match(if rare.is_empty() { &terms } else { &rare }) else { return Ok(vec![]) };
     let mut stmt = conn.prepare(
         "SELECT c.id FROM chunks_fts JOIN chunks c ON c.rowid = chunks_fts.rowid
          WHERE chunks_fts MATCH ? ORDER BY bm25(chunks_fts, 3.0, 2.0, 1.0) LIMIT ?",

@@ -5,7 +5,11 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+usearch = "2.26.6"
 fastembed = { version = "7.5.0", default-features = false, features = ["onnx", "ort-download-binaries-rustls-tls", "hf-hub-rustls-tls"] }
 engram-core = { path = "../core" }
 reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "json", "rustls"] }
 serde_json = "1.0.154"
+
+[dev-dependencies]
+tempfile = "3.27.0"

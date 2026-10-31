@@ -3,6 +3,7 @@
 
 mod longmemeval;
 mod report;
+mod scale;
 mod split;
 
 use std::path::PathBuf;
@@ -80,12 +81,23 @@ enum Suite {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Suite D: search speed and nearest-neighbour recall on synthetic projects of growing size.
+    Scale {
+        /// Where the synthetic databases are kept (reused between runs).
+        #[arg(long)]
+        dir: PathBuf,
+        #[arg(long, value_delimiter = ',', default_value = "10000,100000,1000000")]
+        sizes: Vec<usize>,
+        #[arg(long, default_value_t = 100)]
+        queries: usize,
+    },
 }
 
 fn main() {
     let cli = Cli::parse();
     let result = match cli.suite {
         Suite::Longmemeval { data, split, embed, limit, out } => longmemeval::run(&data, split, embed.load(), limit, out.as_deref()),
+        Suite::Scale { dir, sizes, queries } => scale::run(&dir, &sizes, queries),
     };
     if let Err(err) = result {
         eprintln!("error: {err}");

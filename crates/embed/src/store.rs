@@ -10,7 +10,7 @@ fn encode(v: &[f32]) -> Vec<u8> {
     v.iter().flat_map(|x| x.to_le_bytes()).collect()
 }
 
-fn decode(bytes: &[u8]) -> Vec<f32> {
+pub(crate) fn decode(bytes: &[u8]) -> Vec<f32> {
     bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect()
 }
 
@@ -19,10 +19,11 @@ pub fn dot(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b).map(|(x, y)| x * y).sum()
 }
 
+/// Store a vector. A changed vector replaces its row (and so gets a new rowid), which is how the
+/// nearest-neighbour index (`ann`) notices it.
 pub fn put(conn: &Connection, owner_id: &str, kind: &str, model: &str, vector: &[f32]) -> Result<()> {
     conn.execute(
-        "INSERT INTO embeddings (owner_id, kind, model, dim, vector) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(owner_id, model) DO UPDATE SET vector = excluded.vector, dim = excluded.dim",
+        "INSERT OR REPLACE INTO embeddings (owner_id, kind, model, dim, vector) VALUES (?, ?, ?, ?, ?)",
         params![owner_id, kind, model, vector.len() as i64, encode(vector)],
     )?;
     Ok(())
@@ -93,9 +94,11 @@ impl Ord for MinByScore {
     }
 }
 
+pub use crate::ann::top_k;
+
 /// Exact top-k by cosine: one pass over the vectors with a size-k min-heap, O(n·d + n log k).
-/// Fast enough for tens of thousands of chunks per project; an ANN index can replace it later.
-pub fn top_k(conn: &Connection, model: &str, kind: &str, query: &[f32], k: usize) -> Result<Vec<VectorHit>> {
+/// Used below `ann::EXACT_BELOW` vectors and for in-memory databases.
+pub fn exact_top_k(conn: &Connection, model: &str, kind: &str, query: &[f32], k: usize) -> Result<Vec<VectorHit>> {
     let mut stmt = conn.prepare("SELECT owner_id, vector FROM embeddings WHERE model = ? AND kind = ?")?;
     let mut rows = stmt.query(params![model, kind])?;
     let mut heap: BinaryHeap<MinByScore> = BinaryHeap::with_capacity(k + 1);

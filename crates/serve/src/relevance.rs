@@ -38,20 +38,36 @@ pub fn vocabulary(conn: &Connection, query: &str) -> Result<Vocabulary> {
         .collect();
     stems.sort_unstable();
     stems.dedup();
-    let total: f64 = conn.query_row("SELECT (SELECT COUNT(*) FROM memories WHERE status = 'current') + (SELECT COUNT(*) FROM chunks)", [], |r| r.get(0))?;
+    // Counts come from the full-text indexes' vocabulary (O(log n) per word), not from scanning rows.
+    // A stem covers every indexed word that starts with it; summing their document counts can count a
+    // document twice, which only makes common stems look a little more common.
+    let total: f64 = conn.query_row(
+        "SELECT COALESCE((SELECT MAX(rowid) FROM chunks), 0) + (SELECT COUNT(*) FROM memories WHERE status = 'current')",
+        [],
+        |r| r.get(0),
+    )?;
     let mut words = Vec::with_capacity(stems.len());
     for s in stems {
-        let like = format!("%{s}%");
+        let upper = next_prefix(&s);
         let df: f64 = conn.query_row(
-            "SELECT (SELECT COUNT(*) FROM memories WHERE status = 'current' AND lower(title || ' ' || claim || ' ' || COALESCE(rationale, '')) LIKE ?1)
-                  + (SELECT COUNT(*) FROM chunks WHERE lower(context || ' ' || content) LIKE ?1)",
-            [&like],
+            "SELECT COALESCE((SELECT SUM(doc) FROM chunks_vocab WHERE term >= ?1 AND term < ?2), 0)
+                  + COALESCE((SELECT SUM(doc) FROM memories_vocab WHERE term >= ?1 AND term < ?2), 0)",
+            [&s, &upper],
             |r| r.get(0),
         )?;
         // Smoothed so weights stay positive in a new, nearly empty project.
         words.push((s, (1.0 + (total + 1.0) / (1.0 + df)).ln()));
     }
     Ok(Vocabulary { words })
+}
+
+/// The smallest string greater than every string starting with `prefix` (for a term range scan).
+fn next_prefix(prefix: &str) -> String {
+    let mut chars: Vec<char> = prefix.chars().collect();
+    if let Some(last) = chars.last_mut() {
+        *last = char::from_u32(*last as u32 + 1).unwrap_or(char::MAX);
+    }
+    chars.into_iter().collect()
 }
 
 impl Vocabulary {

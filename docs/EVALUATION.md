@@ -80,13 +80,39 @@ expected answer and where it lives. Engram's author does not write or edit them.
 Metric: found within the default token budget, judged by matching the evidence location, plus
 tokens returned.
 
-### D. Scale and speed *(planned)*
+### D. Scale and speed *(done, synthetic)*
 
-Synthetic projects of 10k, 100k and 1M chunks (and 100k memories), built from public text and code.
+Synthetic projects of 10k, 100k and 1M chunks: Zipf-distributed words (so keyword search sees common
+and rare words like real text) and structured unit vectors (a chunk is near its document, documents near
+their topic), because embedding a million real texts on a laptop takes about 12 hours. Queries are new
+noisy variants of existing documents. Measured on the real search path; Apple M3 Pro, release build.
 
-- Approximate nearest-neighbour recall@10 against exact search (target ≥ 0.95).
-- Search latency p50/p95 at each size (target p95 under 100 ms at 1M chunks).
-- Index build time, memory use, disk size.
+Run: `cargo run --release -p engram-eval -- scale --dir <folder> --sizes 10000,100000,1000000`
+
+| Chunks | Recall@10 vs exact | Similarity of results vs exact | Vector search p50 / p95 | Exact scan p50 | Full search p50 / p95 | Disk | Memory |
+|---|---|---|---|---|---|---|---|
+| 10k | 0.995 | 1.000 | 0.3 / 0.4 ms | 10 ms | 1.1 / 1.7 ms | 42 MB | 44 MB |
+| 100k | 1.000 | 1.000 | 0.7 / 1.0 ms | 101 ms | 5.6 / 11.3 ms | 409 MB | 155 MB |
+| 1M | 0.995 | 1.000 | 0.4 / 0.7 ms | 1.0 s | 45 / 106 ms | 4.1 GB | 1.3 GB |
+
+Index build (first search after crossing 5,000 vectors, all cores): 0.3 s at 10k, 7 s at 100k, 65 s at 1M;
+saved to disk and reloaded in under half a second afterwards.
+
+Against the targets above: recall ≥ 0.95 is met at every size; p95 under 100 ms at 1M is **missed
+narrowly (106 ms)**; the remaining time is keyword ranking of moderately common words.
+
+What it took to get here, in order (all on this suite):
+
+| Change | 1M recall@10 | 1M vector p50 | 1M full search p95 |
+|---|---|---|---|
+| HNSW, 16 links, search width 128 | 0.675 (results 0.82 as similar as exact) | 45 ms | 907 ms |
+| 32 links, width 256; keyword search skips very common words at scale | 0.995 | 45 ms | 180 ms |
+| Hits looked up by rowid (the query walked every vector of the model) | 0.995 | 0.4 ms | 133 ms |
+| Common-word cutoff 20% → 5% (projects of 10k+ chunks only) | 0.995 | 0.4 ms | 106 ms |
+
+Caveat: uniformly random vectors (no structure at all) are a worst case for any approximate index; on
+them an early configuration scored 0.18 recall@10. Real embeddings are structured, which is why the
+suite uses structured vectors, but this suite does not replace a measurement on real embeddings at scale.
 
 ### E. Live agents, with and without Engram *(planned)*
 
