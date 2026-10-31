@@ -169,9 +169,12 @@ fn claude_plan(e: Endpoint) -> ConnectPlan {
     let url = e.mcp_url();
     let settings = home().join(".claude/settings.json");
     let command = hook_command("claude");
+    let user_config = home().join(".claude.json");
     let preview = format!(
-        "1. Run: claude mcp add --transport http --scope user engram {url} --header \"Authorization: Bearer <token>\"\n\
+        "1. Run: claude mcp add --transport http --scope user engram {url} --header \"Authorization: Bearer <token>\"\n   \
+         (without the `claude` command, the same entry goes into mcpServers in {})\n\
          2. Add a SessionStart hook to {} (startup, resume and after compaction):\n   {command}\n   It injects the project brief so Claude re-orients after compacting.",
+        user_config.display(),
         settings.display()
     );
     ConnectPlan {
@@ -189,7 +192,13 @@ fn claude_plan(e: Endpoint) -> ConnectPlan {
             match run(&["mcp", "add", "--transport", "http", "--scope", "user", "engram", &url, "--header", &header]) {
                 Ok(out) if out.status.success() => Ok(format!("Registered with Claude Code (user scope). {hook_note} Start a new session.")),
                 Ok(out) => Err(Error::msg(format!("{hook_note} But `claude mcp add` failed: {}", String::from_utf8_lossy(&out.stderr).trim()))),
-                Err(_) => Ok(format!("{hook_note} The `claude` command was not found, so run step 1 yourself in a terminal.")),
+                // The desktop app ships Claude Code without the CLI on PATH: write what `mcp add` writes.
+                Err(_) => {
+                    backup(&user_config)?;
+                    let current = std::fs::read_to_string(&user_config).unwrap_or_default();
+                    std::fs::write(&user_config, merge_mcp_server(&current, mcp_entry(&url, &e.token))?)?;
+                    Ok(format!("Added engram to mcpServers in {} (backup: .engram.bak). {hook_note} Start a new session.", user_config.display()))
+                }
             }
         }),
     }
