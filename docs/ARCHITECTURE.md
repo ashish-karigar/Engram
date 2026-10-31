@@ -105,12 +105,17 @@ Selected by environment variables (`META_API_KEY`, `META_BASE_URL`, `META_MODEL`
 The Meta base URL and model id defaults are unverified. Embeddings: `ENGRAM_EMBED=hash|ollama|openai` (default `hash`, offline). `ollama` uses `nomic-embed-text` unless `ENGRAM_EMBED_MODEL` is set.
 
 ## Agent integration
-Agents connect to a project-scoped MCP endpoint (streamable HTTP, JSON responses, bearer token).
+Agents connect once to the shared MCP endpoint `http://127.0.0.1:41741/mcp` (streamable HTTP, JSON
+responses, one bearer token per agent in `agents.json`, 0600). The port is fixed (`ENGRAM_PORT` overrides
+it) so agent configs survive restarts. Each tool call is placed in a project: the deepest watched folder
+containing the `cwd` argument, else the project where that agent was last active, else the only one; the
+answer names the project. `/p/<project>/mcp` still addresses one project directly.
 The MCP server is hand-written (initialize, ping, tools/list, tools/call) and was checked against the
 official TypeScript MCP client. Tools are deliberately few: `brief`, `search` (modes hybrid/memories/documents), `expand`, `note`, `profile`, `add_document`.
-`engram connect <claude|codex|muse>` shows, then applies, one config change per agent:
-Codex (`~/.codex/config.toml`, marked block), Muse Code (`mcpServers` in `~/.config/muse/settings.json`,
-entry format unverified), Claude Code (`claude mcp add`).
+`engram connect <claude|codex|muse>` shows, then applies (`--apply`), one config change per agent, backing
+up each file: Codex (`~/.codex/config.toml`, marked block), Muse Code (`mcpServers` in
+`~/.config/muse/settings.json`, entry format unverified), Claude Code (`claude mcp add`, or `mcpServers` in
+`~/.claude.json` when the CLI is not installed, plus the SessionStart hook).
 
 ## Why Rust + Tauri
 Engram is an always-on background process, so idle memory and startup matter. A Rust daemon plus
