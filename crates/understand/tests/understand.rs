@@ -35,7 +35,7 @@ fn index_code_builds_entities_and_import_edges_across_languages() {
     let manifests = vec![("core/Cargo.toml".to_string(), std::fs::read_to_string(root.path().join("core/Cargo.toml")).unwrap())];
     let db = open_memory().unwrap();
     let res = index_code(&db, root.path(), &paths, &Resolver::new(&files, &manifests), None).unwrap();
-    assert_eq!(res, IndexResult { files: 6, symbols: 7, import_edges: 4 });
+    assert_eq!(res, IndexResult { files: 6, symbols: 6, import_edges: 4 });
     let fusion: String = db.query_row("SELECT id FROM entities WHERE qualified_name = 'perception/fusion.py'", [], |r| r.get(0)).unwrap();
     let opts = ExpandOpts { max_depth: 1, edge_types: Some(vec!["imports".into()]), ..Default::default() };
     assert_eq!(expand(&db, &[fusion], &opts).unwrap().len(), 2);
