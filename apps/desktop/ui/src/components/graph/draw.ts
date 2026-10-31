@@ -10,15 +10,14 @@ export interface Camera {
 export interface Focus {
   /** Node under the pointer or selected; its neighbourhood stays bright, the rest dims. */
   id: string | null;
-  /** Milliseconds, for the dots flowing along the focused node's lines. */
-  t: number;
   neighbours: Set<string>;
   selected: string | null;
 }
 
+const ACCENT = "#7c97ff";
+
 /** What a line means, by colour (see the legend): rgb, used with an alpha. */
 export const EDGE_COLORS: Record<string, [string, string]> = {
-  contains: ["200,210,235", "contains"],
   imports: ["109,141,255", "imports"],
   invokes: ["71,195,148", "function calls"],
   calls: ["240,163,94", "HTTP calls"],
@@ -27,12 +26,7 @@ export const EDGE_COLORS: Record<string, [string, string]> = {
   uses: ["209,107,165", "uses a service"],
   about: ["177,132,255", "a memory about it"],
   touches: ["177,132,255", "a memory about it"],
-  describes: ["232,207,92", "a document about it"],
-  mentions: ["232,207,92", "a document about it"],
 };
-
-/** Every line at rest: one quiet colour, so the shape of the network reads first. */
-const REST = "rgba(190,200,225,0.13)";
 
 /**
  * Draw one frame from projected positions (`sx`, `sy`; see projection.ts). Nodes arrive far to near,
@@ -45,28 +39,24 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
   ctx.scale(cam.k, cam.k);
   const lit = (id: string) => !focus.id || focus.neighbours.has(id);
 
-  // Quiet lines first, then the focused node's lines on top in the colour of what they are.
-  const hot: SimLink[] = [];
-  ctx.strokeStyle = focus.id ? "rgba(190,200,225,0.035)" : REST;
-  ctx.lineWidth = 0.8 * s.linkWidth / cam.k;
-  ctx.beginPath();
   for (const l of links) {
-    if (focus.id && (l.source.id === focus.id || l.target.id === focus.id)) { hot.push(l); continue; }
-    ctx.moveTo(l.source.sx!, l.source.sy!);
-    ctx.lineTo(l.target.sx!, l.target.sy!);
-  }
-  ctx.stroke();
-  for (const l of hot) {
-    const rgb = EDGE_COLORS[l.type]?.[0] ?? "124,151,255";
-    ctx.strokeStyle = `rgba(${rgb},0.85)`;
-    ctx.lineWidth = 1.6 * s.linkWidth / cam.k;
+    const hot = focus.id && (l.source.id === focus.id || l.target.id === focus.id);
+    const contains = l.type === "contains";
+    const rgb = EDGE_COLORS[l.type]?.[0];
+    ctx.strokeStyle = focus.id && !hot ? "rgba(255,255,255,0.04)"
+      : rgb ? `rgba(${rgb},${hot ? 0.9 : 0.42})`
+      : hot ? ACCENT : l.type === "supersedes" ? "rgba(177,132,255,0.35)" : contains ? "rgba(200,210,235,0.09)" : "rgba(200,210,235,0.16)";
+    // A summed edge (34 calls between two folders) is drawn thicker than a single call.
+    ctx.lineWidth = (hot ? 1.6 : 1) * (1 + Math.log2(Math.max(1, l.count))) * s.linkWidth / cam.k;
+    ctx.globalAlpha = Math.min(l.source.fade!, l.target.fade!);
+    ctx.setLineDash(l.type === "supersedes" || l.type === "derives" || contains ? [4 / cam.k, 3 / cam.k] : []);
     ctx.beginPath();
     ctx.moveTo(l.source.sx!, l.source.sy!);
     ctx.lineTo(l.target.sx!, l.target.sy!);
     ctx.stroke();
     if (s.arrows) arrow(ctx, l, cam.k, s);
-    flow(ctx, l, rgb, cam.k, focus.t);
   }
+  ctx.setLineDash([]);
 
   for (const n of nodes) {
     const r = radius(n, s);
@@ -92,6 +82,14 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
       ctx.fill();
       ctx.shadowBlur = 0;
     }
+    if (n.children > 0 && !n.expanded) {
+      // Can be opened (double-click): a thin outer ring.
+      ctx.beginPath();
+      ctx.arc(n.sx!, n.sy!, r + 3 / cam.k, 0, Math.PI * 2);
+      ctx.strokeStyle = n.color;
+      ctx.lineWidth = 1 / cam.k;
+      ctx.stroke();
+    }
     if (n.id === focus.selected) {
       ctx.beginPath();
       ctx.arc(n.sx!, n.sy!, r, 0, Math.PI * 2);
@@ -103,25 +101,6 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
   ctx.globalAlpha = 1;
   labels(ctx, cam, nodes, s, focus);
   ctx.restore();
-}
-
-/**
- * Dots travelling along a line from its source to its target: away from the selected node for what
- * it uses or calls, toward it for what uses or calls it. Spaced by screen length, so long and short
- * lines move at the same pace.
- */
-function flow(ctx: CanvasRenderingContext2D, l: SimLink, rgb: string, k: number, t: number) {
-  const dx = l.target.sx! - l.source.sx!, dy = l.target.sy! - l.source.sy!;
-  const len = Math.hypot(dx, dy) * k;
-  if (len < 12) return;
-  const gap = 46, speed = 0.05;
-  const offset = ((t * speed) % gap) / len;
-  ctx.fillStyle = `rgb(${rgb})`;
-  for (let f = offset; f < 1; f += gap / len) {
-    ctx.beginPath();
-    ctx.arc(l.source.sx! + dx * f, l.source.sy! + dy * f, 2.2 / k, 0, Math.PI * 2);
-    ctx.fill();
-  }
 }
 
 /** Radius on screen: the node's size times perspective (1 in 2D). */

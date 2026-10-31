@@ -31,7 +31,6 @@ export const projectApi = (c: Connection, id: string) => {
     stats: () => call<Stats>(c, `${base}/stats`),
     graph: (archived: boolean) => call<Graph>(c, `${base}/graph?archived=${archived ? 1 : 0}`),
     architecture: () => call<Graph>(c, `${base}/architecture`),
-    network: () => call<Graph>(c, `${base}/network`),
     zoom: (expanded: string[]) => call<Graph>(c, `${base}/zoom?expanded=${expanded.map(encodeURIComponent).join(",")}`),
     map: (area?: string) => call<OpResult>(c, `${base}/map${area ? `?area=${encodeURIComponent(area)}` : ""}`),
     impact: (target: string) => call<{ text: string; data: ImpactResult }>(c, `${base}/impact`, post({ target, limit: 60 })),
