@@ -43,7 +43,8 @@ export function NodeDrawer({ api, id, onClose, onOpen, expandable, onExpand, par
       {apiNode && (
         <>
           <Type kind="api" />
-          <h3>{expandable?.label ?? id}</h3>
+          <h3>{id === "api:all" ? "API" : expandable?.label ?? id}</h3>
+          {id === "api:all" && <p className="muted">Every endpoint, with the code that serves it and the code that calls it.</p>}
           {openButton}
           <EndpointTable api={api} hubId={id} parts={parts} />
         </>
@@ -112,6 +113,7 @@ function EndpointTable({ api, hubId, parts }: { api: ProjectApi; hubId: string; 
   const short = (q: string) => q.split("/").pop() ?? q;
   const isTest = (q: string) => /(^|\/)tests?\//.test(q) || q.includes(".spec.") || /(^|\/)test_/.test(q);
   const rows = map.endpoints.filter((e) => {
+    if (hub === "api:all") return e.handlers.length > 0 || e.callers.some((c) => !isTest(c));
     const served = e.handlers.length > 0;
     const inPart = hub === "api:unserved" ? !served : served && partPath !== undefined && e.handlers.some((h) => partPath === "" || h.startsWith(`${partPath}/`));
     const path = e.name.split(" ")[1] ?? "";

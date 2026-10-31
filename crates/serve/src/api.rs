@@ -186,8 +186,9 @@ pub fn graph_data(conn: &Connection, include_archived: bool, limit: i64) -> Resu
         edges.entry((folder.clone(), id.clone(), "contains".into())).or_insert_with(|| format!("contains:{folder}:{id}"));
     }
 
-    // API endpoints bridge the code that calls them and the code that serves them
-    // (`jobs-api.ts → POST /jobs → jobs.py`). Tests also call endpoints, but they are not the bridge.
+    // One API node bridges the code that calls endpoints and the code that serves them
+    // (`jobs-api.ts → API → jobs.py`); the endpoints themselves are listed in the drawer.
+    // Tests also call endpoints, but they are not the bridge.
     let is_test = |p: &str| p.contains("/tests/") || p.contains("/test_") || p.contains(".spec.") || p.contains(".test.");
     let links: Vec<(String, String, String, String)> = conn
         .prepare(
@@ -198,13 +199,18 @@ pub fn graph_data(conn: &Connection, include_archived: bool, limit: i64) -> Resu
         )?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
         .collect::<SqlResult<_>>()?;
-    for (endpoint, name, kind, path) in links {
+    let hub = "api:all".to_string();
+    let mut endpoints: HashSet<String> = HashSet::new();
+    for (endpoint, _, kind, path) in links {
         let Some(file) = files.get(&path) else { continue };
         if kind == "calls" && is_test(&path) {
             continue;
         }
-        nodes.entry(endpoint.clone()).or_insert_with(|| json!({"id": endpoint, "label": name, "kind": "endpoint"}));
-        edges.entry((file.clone(), endpoint.clone(), kind.clone())).or_insert_with(|| format!("{kind}:{file}:{endpoint}"));
+        endpoints.insert(endpoint);
+        edges.entry((file.clone(), hub.clone(), kind.clone())).or_insert_with(|| format!("{kind}:{file}:{hub}"));
+    }
+    if !endpoints.is_empty() {
+        nodes.insert(hub.clone(), json!({"id": hub, "label": "API", "kind": "api", "children": endpoints.len()}));
     }
 
     let edges: Vec<Value> = edges
