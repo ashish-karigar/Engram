@@ -2,7 +2,7 @@ import type { ProjectApi } from "../api/client.ts";
 import { usePolling } from "../hooks/usePolling.ts";
 import { useEffect, useState } from "react";
 import type { GraphNode, ImpactResult, NodeDetail, Provenance } from "../api/types.ts";
-import { authorColor } from "./graph/model.ts";
+import { authorColor } from "./authorColor.ts";
 
 const day = (iso: string) => iso.slice(0, 10);
 

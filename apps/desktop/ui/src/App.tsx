@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { projectApi, projectsApi } from "./api/client.ts";
 import type { Connection, Graph, Project } from "./api/types.ts";
 import { AgentsPanel } from "./components/AgentsPanel.tsx";
@@ -6,9 +6,7 @@ import { AskBar } from "./components/AskBar.tsx";
 import { DocumentsPanel } from "./components/DocumentsPanel.tsx";
 import { ReviewPanel } from "./components/ReviewPanel.tsx";
 import { EmptyState } from "./components/EmptyState.tsx";
-import { ForceGraph, type GraphCommands } from "./components/graph/ForceGraph.tsx";
-import { GraphControls } from "./components/graph/GraphControls.tsx";
-import { loadSettings, saveSettings, type GraphSettings } from "./components/graph/settings.ts";
+import { MemoryGraph } from "./components/graph/MemoryGraph.tsx";
 import { NodeDrawer } from "./components/NodeDrawer.tsx";
 import { RequestLog } from "./components/RequestLog.tsx";
 import { SettingsPage } from "./components/SettingsPage.tsx";
@@ -27,12 +25,7 @@ function Workspace({ connection, project }: { connection: Connection; project: P
   const api = useMemo(() => projectApi(connection, project.id), [connection, project.id]);
   const [tab, setTab] = useState<Tab>("graph");
   const [selected, setSelected] = useState<string | null>(null);
-  const [graphSettings, setGraphSettings] = useState<GraphSettings>(loadSettings);
-  const [zoom, setZoom] = useState(1);
-  const commands = useRef<GraphCommands | null>(null);
-  const updateGraphSettings = useCallback((s: GraphSettings) => { setGraphSettings(s); saveSettings(s); }, []);
-  const archived = graphSettings.showArchived;
-  const { data: graph, error } = usePolling<Graph>(() => api.graph(archived), 3000, [api, archived]);
+  const { data: graph, error } = usePolling<Graph>(() => api.graph(false), 3000, [api]);
   const { data: stats } = usePolling(() => api.stats(), 3000, [api]);
   const select = useCallback((id: string | null) => setSelected(id), []);
 
@@ -64,8 +57,7 @@ function Workspace({ connection, project }: { connection: Connection; project: P
         {tab === "graph" && (
           <div className={`graph ${selected ? "with-drawer" : ""}`}>
             {error && <div className="banner err">{error}</div>}
-            {graph && <ForceGraph graph={graph} settings={graphSettings} selectedId={selected} onSelect={select} onZoom={setZoom} commands={commands} />}
-            <GraphControls graph={graph} settings={graphSettings} onChange={updateGraphSettings} selectedId={selected} zoom={zoom} commands={commands} />
+            {graph && <MemoryGraph graph={graph} selectedId={selected} onSelect={select} />}
             {graph && graph.nodes.length === 0 && <div className="graph-empty">No memories yet. Connect an agent, or add documents.</div>}
             {selected && <NodeDrawer api={api} id={selected} onClose={() => setSelected(null)} onOpen={setSelected} />}
           </div>
