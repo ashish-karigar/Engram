@@ -76,7 +76,9 @@ fn parse(agent: Agent, line: &str, session_id: &mut String) -> Vec<Turn> {
     }
 }
 
-fn record(conn: &Connection, agent: Agent, actor_id: &str, turn: &Turn, op_id: String) -> Result<String> {
+/// Store one turn as an `agent.turn` (or `agent.compacted`) event in its session. Returns the
+/// session's external ref, which `rebuild_transcript` takes. Public for importers and evaluation.
+pub fn record_turn(conn: &Connection, agent: Agent, actor_id: &str, turn: &Turn, op_id: String) -> Result<String> {
     let external = format!("{}:{}", agent.id(), turn.session_id);
     let session = session_row(conn, actor_id, &external, &turn.ts)?;
     let text: String = scrub(&turn.text).chars().take(MAX_TEXT).collect();
@@ -136,7 +138,7 @@ pub fn sync_sessions(conn: &Connection, embedder: &dyn Embedder, root: &Path, so
             for line in text.split_inclusive('\n') {
                 for (i, turn) in parse(agent, line, &mut session_id).into_iter().enumerate() {
                     let op_id = format!("turn:{}:{}:{at}:{i}", agent.id(), key);
-                    let external = record(conn, agent, &actor_id, &turn, op_id)?;
+                    let external = record_turn(conn, agent, &actor_id, &turn, op_id)?;
                     changed.insert((agent.id().to_string(), external));
                     if turn.compaction { report.compactions += 1 } else { report.turns += 1 }
                 }

@@ -32,6 +32,8 @@ pub struct OpResult {
 }
 
 const DEFAULT_BUDGET: usize = 1200;
+/// Document chunks considered per search before ranking and the cutoff.
+const CHUNK_CANDIDATES: usize = 12;
 /// Snippet length shown per chunk; `format_chunk` trims to the same length.
 const SNIPPET_CHARS: usize = 280;
 
@@ -164,7 +166,7 @@ fn render(items: &[Item]) -> (String, Vec<Value>) {
 
 /// Memories and document chunks on one scale (see `relevance`): each ranker's own score, blended
 /// with how much of the query's distinctive vocabulary the item contains.
-fn gather(ctx: &Ctx, query: &str, mode: &str, as_of: Option<String>) -> Result<Vec<(Item, f64)>> {
+fn gather(ctx: &Ctx, query: &str, mode: &str, as_of: Option<String>, chunk_candidates: usize) -> Result<Vec<(Item, f64)>> {
     let vocab = vocabulary(ctx.conn, query)?;
     let mut items: Vec<(Item, f64)> = vec![];
     if mode != "documents" {
@@ -176,7 +178,7 @@ fn gather(ctx: &Ctx, query: &str, mode: &str, as_of: Option<String>) -> Result<V
         }));
     }
     if mode != "memories" {
-        let hits = search_chunks(ctx.conn, Some(ctx.embedder), query, 12)?;
+        let hits = search_chunks(ctx.conn, Some(ctx.embedder), query, chunk_candidates)?;
         let top = hits.first().map(|h| h.score).unwrap_or(1.0);
         items.extend(hits.into_iter().map(|mut h| {
             let prior = source_prior(&h);
@@ -190,11 +192,34 @@ fn gather(ctx: &Ctx, query: &str, mode: &str, as_of: Option<String>) -> Result<V
     Ok(items)
 }
 
+/// One entry of the full ranking behind `search`, before the cutoff and token budget.
+pub struct Ranked {
+    /// A memory (`mem_…`) or chunk (`chk_…`) id.
+    pub id: String,
+    /// The chunk's document; None for memories.
+    pub document_id: Option<String>,
+    pub score: f64,
+}
+
+/// The ranking `search` draws from, best first, without the cutoff: for evaluation (recall@K needs
+/// a longer list than an agent is shown) and for callers that page through results.
+pub fn rank(ctx: &Ctx, query: &str, mode: &str, chunk_candidates: usize) -> Result<Vec<Ranked>> {
+    let mut items = gather(ctx, query, mode, None, chunk_candidates)?;
+    items.sort_by(|a, b| b.1.total_cmp(&a.1));
+    Ok(items
+        .into_iter()
+        .map(|(item, score)| match item {
+            Item::Memory(m) => Ranked { id: m.memory.id, document_id: None, score },
+            Item::Chunk(c) => Ranked { id: c.chunk_id, document_id: Some(c.document_id), score },
+        })
+        .collect())
+}
+
 pub fn op_search(ctx: &Ctx, req: SearchReq) -> Result<OpResult> {
     let mode = req.mode.clone().unwrap_or_else(|| "hybrid".into());
     let request = json!({"query": req.query, "budget": req.budget, "asOf": req.as_of, "mode": mode});
     logged(ctx, "search", request, || {
-        let picked = fit(cut(gather(ctx, &req.query, &mode, req.as_of.clone())?), req.budget.unwrap_or(DEFAULT_BUDGET));
+        let picked = fit(cut(gather(ctx, &req.query, &mode, req.as_of.clone(), CHUNK_CANDIDATES)?), req.budget.unwrap_or(DEFAULT_BUDGET));
         let (text, returned) = render(&picked);
         let text = if text.is_empty() { "Nothing relevant in memory or documents.".to_string() } else { text };
         Ok((OpResult { text, data: Value::Array(returned.clone()) }, returned))
@@ -206,7 +231,7 @@ pub fn op_brief(ctx: &Ctx, req: BriefReq) -> Result<OpResult> {
         let o = orientation(ctx.conn, 12, 6)?;
         let profile = build_profile(ctx.conn, 6)?;
         let mut items = match &req.task {
-            Some(task) => gather(ctx, task, "hybrid", None)?.into_iter().map(|(i, v)| (i, v + 1.0)).collect(),
+            Some(task) => gather(ctx, task, "hybrid", None, CHUNK_CANDIDATES)?.into_iter().map(|(i, v)| (i, v + 1.0)).collect(),
             None => vec![],
         };
         let seen: Vec<String> = items.iter().filter_map(|(i, _)| match i { Item::Memory(m) => Some(m.memory.id.clone()), _ => None }).collect();
