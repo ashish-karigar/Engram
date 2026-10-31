@@ -31,8 +31,9 @@ and serves small, token-budgeted answers over MCP and HTTP. One app watches many
 | `engram-embed` | `Embedder` trait (built-in hashing, Ollama, OpenAI-compatible), vectors in SQLite, exact top-k, RRF. | core |
 | `engram-rag` | Documents: extractors (markdown, HTML, PDF, text, code), heading/AST-aware chunking, ingest pipeline, hybrid chunk search. | core, embed |
 | `engram-sessions` | Parsers for Claude Code, Codex and Muse session logs; incremental sync; transcripts. | core, capture, embed, rag |
+| `engram-code` | Languages (Python, Rust, TypeScript, JavaScript/JSX): symbols with spans, imports, resolution (incl. Cargo workspaces). | – |
 | `engram-capture` | Watch files and git, scrub secrets, save uncommitted work to a git ref. | core |
-| `engram-understand` | Index Python (tree-sitter), group events into tasks, extract and verify memories, notes. | core, capture |
+| `engram-understand` | Code graph from `engram-code`, group events into tasks, extract and verify memories, notes. | core, capture, code |
 | `engram-serve` | Hybrid recall over memories and documents, profile, token-budget packer, MCP server, HTTP API, per-agent tokens. | core, understand, embed, rag |
 | `engram-daemon` | Runs many projects, owns the server, agent connectors, `engram` CLI. | all above |
 | `apps/desktop` | Tauri shell (runs the daemon in-process) and the React UI in `ui/`. | daemon (HTTP only from UI) |
@@ -85,7 +86,7 @@ reinforces it; facts can carry `expires_at`; a project profile splits standing f
 | Keyword recall | FTS5 + BM25, weighted columns, stopwords dropped | Built into SQLite, no service |
 | Semantic recall | Embeddings + exact top-k with a size-k heap, O(n·d + n log k) | Correct, simple; ANN index later |
 | Combine rankers | Reciprocal Rank Fusion (k = 60) | Uses ranks only, so BM25 and cosine scales never need calibrating |
-| Chunking | Markdown by heading path; Python by top-level symbol (tree-sitter); other code by overlapping line windows | Chunks follow meaning, not character counts |
+| Chunking | Markdown by heading path; Python, Rust, TS/JS by top-level symbol (tree-sitter); other code by overlapping line windows | Chunks follow meaning, not character counts |
 | Offline embeddings | Signed feature hashing of words, bigrams and 4-grams (FNV-1a) | No model download; deterministic; lexical, not deep semantics |
 | Neighbour walk | Recursive CTE, per-hop score decay, edge-type filter | One query, depth-bounded, no graph DB |
 | Fit a token budget | Greedy by value density (score / tokens) | Knapsack approximation; O(n log n) |

@@ -64,21 +64,37 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
   ctx.restore();
 }
 
-/** Labels fade in with zoom (Obsidian's "text fade threshold"); focused ones always show. */
+/** Short label: file nodes show their file name; the full path is in the drawer. */
+function shortLabel(n: SimNode): string {
+  const text = n.kind === "file" ? n.label.slice(n.label.lastIndexOf("/") + 1) : n.label;
+  return text.length > 40 ? `${text.slice(0, 38)}…` : text;
+}
+
+/**
+ * Labels fade in with zoom (Obsidian's "text fade threshold"). Focused labels always show.
+ * Overlapping labels are culled greedily, most-connected first, so the view stays readable.
+ */
 function labels(ctx: CanvasRenderingContext2D, cam: Camera, nodes: SimNode[], s: GraphSettings, focus: Focus) {
   const size = 11.5 / cam.k;
   ctx.font = `${size}px Inter, -apple-system, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  for (const n of nodes) {
+  const zoomAlpha = Math.min(1, Math.max(0, (cam.k - s.textFade * 0.6) / (s.textFade * 0.4)));
+  const placed: [number, number, number, number][] = [];
+  const order = [...nodes].sort((a, b) => Number(focus.neighbours.has(b.id)) - Number(focus.neighbours.has(a.id)) || b.degree - a.degree);
+  for (const n of order) {
     const focused = focus.id !== null && focus.neighbours.has(n.id);
-    const zoomAlpha = Math.min(1, Math.max(0, (cam.k - s.textFade * 0.6) / (s.textFade * 0.4)));
-    const alpha = focused ? 1 : focus.id ? 0 : n.degree >= 6 ? Math.max(zoomAlpha, 0.85) : zoomAlpha;
+    const hub = n.degree >= 8 && cam.k > s.textFade * 0.35;
+    const alpha = focused ? 1 : focus.id ? 0 : hub ? Math.max(zoomAlpha, 0.85) : zoomAlpha;
     if (alpha <= 0.02) continue;
+    const text = shortLabel(n);
+    const w = ctx.measureText(text).width, h = size * 1.2;
+    const x = n.x! - w / 2, y = n.y! + n.radius * s.nodeSize + 3 / cam.k;
+    if (!focused && placed.some(([px, py, pw, ph]) => x < px + pw && px < x + w && y < py + ph && py < y + h)) continue;
+    placed.push([x, y, w, h]);
     ctx.globalAlpha = alpha;
     ctx.fillStyle = n.id === focus.selected ? "#ffffff" : "#c9d1e3";
-    const text = n.label.length > 42 ? `${n.label.slice(0, 40)}…` : n.label;
-    ctx.fillText(text, n.x!, n.y! + n.radius * s.nodeSize + 3 / cam.k);
+    ctx.fillText(text, n.x!, y);
   }
   ctx.globalAlpha = 1;
 }

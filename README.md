@@ -13,7 +13,7 @@ repository was written during the event.
 
 1. **Capture**: a watcher records file changes and git commits. Uncommitted work is saved to
    `refs/engram/snapshots` (code stays in git, never in Engram's database).
-2. **Understand**: tree-sitter indexes Python; events are grouped into tasks; a model extracts decisions
+2. **Understand**: tree-sitter indexes Python, Rust, TypeScript and JavaScript (symbols and imports, Cargo workspaces included); events are grouped into tasks; a model extracts decisions
    and reasons, and each is accepted only if its quote appears in the evidence.
 3. **Remember**: memories are versioned and time-bounded; newer facts supersede older ones; stale
    episodes decay and are archived.
@@ -33,7 +33,7 @@ Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Decisions: [docs/ACTION_PL
 Requires Rust (stable), Node 20+, and git.
 
 ```bash
-cargo test --workspace            # 65 tests, including a two-project, two-agent end-to-end run
+cargo test --workspace            # 70 tests, including a two-project, two-agent end-to-end run
 npm install
 npm run app:dev                   # desktop app (Tauri) with hot reload
 npm run app:build                 # release bundle
@@ -64,6 +64,7 @@ Embeddings default to a built-in offline model (no download). For semantic quali
 
 ```
 crates/core        schema, event log, memories, graph, decay, review
+crates/code        languages: symbols, imports, import resolution
 crates/embed       embedders, vector store, top-k, rank fusion
 crates/rag         documents: extractors, chunking, ingest pipeline, hybrid chunk search
 crates/capture     git helpers, secret scrubber, snapshot ref, file watcher

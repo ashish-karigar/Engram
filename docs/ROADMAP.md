@@ -39,6 +39,10 @@ Deadline: Nov 4, 9 PM ET. Phases are ordered so each one leaves a working, demoa
 | MCP OAuth, team spaces, chat widgets | Token-per-agent MCP | Paid sync tier |
 | SMFS (memory as a folder) | — | Not planned for the hackathon |
 
+## Code languages
+
+Python, Rust, TypeScript and JavaScript/JSX: symbols, imports (relative, `crate::`, `super::`, workspace crates) and AST-aware chunks. Others: line-window chunks only.
+
 ## Engram-only (the differentiators)
 
 - Watches files and git; uncommitted work saved on `refs/engram/snapshots`.
