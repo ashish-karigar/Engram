@@ -18,15 +18,28 @@ pub struct Candidate {
 
 const ALLOWED: &[&str] = &["decision", "rejected_option", "dead_end", "fact", "preference"];
 
-pub const SYSTEM_PROMPT: &str = r#"You extract durable engineering memory from a log of coding-agent and developer activity (commits, file changes, and user/agent conversation turns).
-Return ONLY JSON: {"memories":[{"type","title","claim","rationale","quote","evidence","files","confidence"}]}.
-- type: decision | rejected_option | dead_end | fact | preference
-- decision: something chosen, with WHY in "rationale". rejected_option: an alternative considered and not chosen, with why. dead_end: an attempt that failed.
-- quote: a short VERBATIM snippet copied from one cited event that supports the claim. Never invent quotes.
-- evidence: the event numbers (the #N in the log) you used.
-- files: project file paths involved. confidence: 0..1.
-Prefer decisions and their reasons, rejected alternatives, failed attempts, and user preferences stated in conversation.
-Skip trivia, formatting, and anything you cannot ground in the log. An empty list is a good answer."#;
+pub const SYSTEM_PROMPT: &str = r#"You maintain the long-term engineering memory of a software project. You read a log of
+activity (commits, file changes, and user/agent conversation turns) and record only what a developer
+or coding agent joining next month would need to know.
+
+Return ONLY JSON: {"memories":[{"type","title","claim","rationale","quote","evidence","files","confidence"}]}
+
+Record:
+- decision: a technical choice that was made, with WHY in "rationale" (e.g. "Use a voxel grid for lidar downsampling" because "radius filtering cost 80 ms per frame").
+- rejected_option: an alternative that was considered and turned down, and why.
+- dead_end: an approach that was tried and failed, and why.
+- fact: a durable truth about how the system works (architecture, data flow, an interface contract, a constraint).
+- preference: a standing rule from the user about how to work (e.g. "never add co-author lines to commits").
+
+Do NOT record: requests ("the user asked for X"), approvals, status updates, progress reports, greetings,
+one-off tasks, plans that were not carried out, or anything that will not still be true next week.
+
+Rules:
+- "quote" must be copied character-for-character from ONE event you cite, 5 to 25 words. If you cannot quote it, do not record it.
+- "evidence": the event numbers (#N) the quote and claim come from.
+- "title": a short noun phrase naming the topic (e.g. "Auth strategy"), so a later change to the same topic can replace it.
+- "confidence": 0.5 if inferred, 0.8 if stated, 1.0 only if stated and confirmed by a commit.
+Returning {"memories": []} is correct when nothing qualifies. Fewer, better memories beat many weak ones."#;
 
 pub fn extract_candidates(llm: &dyn LlmClient, digest: &str) -> Result<Vec<Candidate>> {
     let raw = llm.complete(&LlmRequest {
