@@ -4,10 +4,12 @@ use std::time::Duration;
 
 use engram_core::{Error, Result};
 use engram_embed::embedder::{Embedder, HashEmbedder, OllamaEmbedder, OpenAiEmbedder};
+use engram_embed::{LocalEmbedder, LocalModel};
 use engram_understand::llm::{LlmClient, MetaClient, OllamaClient};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::paths::app_data_dir;
 use crate::project::RuntimeOptions;
 use crate::secrets::write_private;
 
@@ -36,8 +38,10 @@ pub struct LlmSettings {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct EmbedSettings {
-    /// hash | ollama | openai
+    /// hash | local | ollama | openai
     pub provider: String,
+    /// For `local`: bge-small-q (default), bge-small or nomic. Runs inside Engram; no server.
+    pub local_model: String,
     pub ollama_host: String,
     pub ollama_model: String,
     pub openai_base_url: String,
@@ -86,6 +90,7 @@ impl Default for EmbedSettings {
     fn default() -> Self {
         EmbedSettings {
             provider: env("ENGRAM_EMBED").unwrap_or_else(|| "hash".into()),
+            local_model: env("ENGRAM_EMBED_LOCAL").unwrap_or_else(|| "bge-small-q".into()),
             ollama_host: env("OLLAMA_HOST").unwrap_or_else(|| "http://localhost:11434".into()),
             ollama_model: env("ENGRAM_EMBED_MODEL").unwrap_or_else(|| "nomic-embed-text".into()),
             openai_base_url: env("ENGRAM_EMBED_BASE_URL").unwrap_or_else(|| "https://api.openai.com/v1".into()),
@@ -165,7 +170,10 @@ impl Settings {
             if ok.contains(&v) { Ok(()) } else { Err(Error::msg(format!("{what} must be one of {}", ok.join(", ")))) }
         };
         one_of(&self.llm.provider, &["none", "meta", "ollama"], "model provider")?;
-        one_of(&self.embeddings.provider, &["hash", "ollama", "openai"], "embedding provider")?;
+        one_of(&self.embeddings.provider, &["hash", "local", "ollama", "openai"], "embedding provider")?;
+        if self.embeddings.provider == "local" && LocalModel::parse(&self.embeddings.local_model).is_none() {
+            return Err(Error::msg(format!("unknown built-in embedding model: {}", self.embeddings.local_model)));
+        }
         if self.memory.extract_every_secs < 10 || self.memory.snapshot_every_secs < 5 {
             return Err(Error::msg("intervals are too short"));
         }
@@ -190,6 +198,16 @@ impl Settings {
     pub fn embedder(&self) -> Arc<dyn Embedder> {
         let e = &self.embeddings;
         match (e.provider.as_str(), &e.openai_api_key) {
+            ("local", _) => {
+                let model = LocalModel::parse(&e.local_model).unwrap_or(LocalModel::BgeSmallQ);
+                match LocalEmbedder::load(model, app_data_dir().join("models"), 1) {
+                    Ok(local) => Arc::new(local),
+                    Err(err) => {
+                        eprintln!("engram: {err}; using built-in hashing until the model loads");
+                        Arc::new(HashEmbedder::default())
+                    }
+                }
+            }
             ("ollama", _) => Arc::new(OllamaEmbedder { host: e.ollama_host.clone(), model: e.ollama_model.clone() }),
             ("openai", Some(key)) => Arc::new(OpenAiEmbedder { base_url: e.openai_base_url.clone(), api_key: key.clone(), model: e.openai_model.clone() }),
             _ => Arc::new(HashEmbedder::default()),

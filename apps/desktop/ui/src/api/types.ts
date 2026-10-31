@@ -167,7 +167,7 @@ export interface ConnectResult {
 
 export interface AppSettings {
   llm: { provider: "none" | "meta" | "ollama"; metaBaseUrl: string; metaModel: string; metaApiKey: string | null; ollamaHost: string; ollamaModel: string };
-  embeddings: { provider: "hash" | "ollama" | "openai"; ollamaHost: string; ollamaModel: string; openaiBaseUrl: string; openaiModel: string; openaiApiKey: string | null };
+  embeddings: { provider: "hash" | "local" | "ollama" | "openai"; localModel: string; ollamaHost: string; ollamaModel: string; openaiBaseUrl: string; openaiModel: string; openaiApiKey: string | null };
   indexing: { sessions: boolean; indexDocs: boolean; indexCode: boolean; maxFileKb: number; ignore: string[] };
   memory: { extractEverySecs: number; decayEveryHours: number; snapshotEverySecs: number };
   dataDir?: string;

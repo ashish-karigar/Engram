@@ -22,7 +22,7 @@ that have run, with the commit and configuration that produced them.
 
 ## Suites
 
-### A. Conversational memory: LongMemEval-S *(planned)*
+### A. Conversational memory: LongMemEval-S *(in progress: dev split done)*
 
 [LongMemEval](https://arxiv.org/abs/2410.10813) gives each question a haystack of about 50 chat sessions
 (around 115k tokens) and marks which sessions hold the evidence (`answer_session_ids`). Categories:
@@ -38,6 +38,28 @@ abstention.
 - **Answer accuracy (needs a model):** retrieve, answer with an LLM, judge with an LLM, following the
   official protocol. The official judge is GPT-4o; if we use a different judge we say which.
 - **Also recorded:** tokens returned per question, latency p50/p95.
+- **Stricter scores reported next to it:** all@5 (every evidence session in the top 5, which multi-session
+  questions need), the random-guess baseline (with ~48 sessions per question, R@20 by chance is about 60%,
+  so R@5 is the informative number), and whether evidence reached the answer an agent actually receives
+  (after the cutoff and token budget).
+
+Run: `cargo run --release -p engram-eval -- longmemeval --data longmemeval_s_cleaned.json --split dev --embed bge-small-q`
+
+**Dev split (88 questions, abstention excluded), 2026-10-31.** Tuning set; the test split has not been run.
+
+| Embeddings | R@5 | R@10 | R@20 | all@5 | In agent's answer | Answer tokens |
+|---|---|---|---|---|---|---|
+| Random guess | 18.5 | — | 60.2 | — | — | — |
+| Word hashing (no model) | 90.9 | 96.6 | 97.7 | 76.1 | 89.8 | 467 |
+| bge-small-en-v1.5, int8 | **97.7** | **97.7** | **98.9** | **90.9** | **97.7** | 519 |
+
+By category with bge-small int8 (R@5 / all@5): knowledge update 100 / 100, multi-session 100 / 87.0,
+single-session assistant 100 / 100, preference 100 / 100, single-session user 100 / 100, temporal
+reasoning 90.9 / 77.3. Weakest: temporal reasoning, and gathering every session of a multi-session answer.
+Search latency with the model, one thread, no other load: 23 ms p50 (query embedding included).
+
+Not yet comparable to Supermemory's figure: theirs is reported on the full set with GPT-4o in the loop;
+ours is retrieval-only on dev. The test-split number will be reported once, after tuning ends.
 
 ### B. Code awareness: file localization on SWE-bench Lite *(planned)*
 
@@ -95,7 +117,7 @@ drop from 42–117 ms is that, not the ranking change.
 
 | Role | Candidates | Chosen by |
 |---|---|---|
-| Embeddings (in-process, no Ollama) | BAAI/bge-small-en-v1.5 (384 dims), nomic-embed-text-v1.5 (768 dims, long context, code-aware) | suites A–C dev split, then latency in D |
+| Embeddings (in-process, no Ollama) | BAAI/bge-small-en-v1.5 (384 dims; int8: 23 texts/s, 0.36 GB), nomic-embed-text-v1.5 (768 dims, long context, code-aware; 4 texts/s, 3.5 GB on this CPU; its int8 build is unusable because its vectors depend on the batch) | suites A–C dev split, then latency in D |
 | Reranker | BAAI/bge-reranker-base (cross-encoder) | suites A–C dev split, with and without |
 | Extraction and inferred memories | Muse Spark (when credits arrive); Meta Llama 3.3 70B via an OpenAI-compatible host until then | precision of extracted memories on a hand-checked sample, grounding rejection rate |
 

@@ -9,7 +9,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::{Parser, Subcommand, ValueEnum};
-use engram_embed::{Embedder, HashEmbedder};
+use engram_embed::{Embedder, HashEmbedder, LocalEmbedder, LocalModel};
+
+/// Model weights are shared with the app: `ENGRAM_MODELS`, else the app's data folder.
+fn models_dir() -> PathBuf {
+    std::env::var_os("ENGRAM_MODELS").map(PathBuf::from).unwrap_or_else(|| {
+        PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join("Library/Application Support/Engram/models")
+    })
+}
 
 #[derive(Parser)]
 #[command(name = "engram-eval", about = "Run Engram's evaluation suites")]
@@ -31,12 +38,26 @@ pub enum Split {
 pub enum EmbedModel {
     /// Built-in feature hashing (lexical, no download).
     Hash,
+    /// BAAI/bge-small-en-v1.5, in-process.
+    BgeSmall,
+    /// BAAI/bge-small-en-v1.5, int8-quantized, in-process.
+    BgeSmallQ,
+    /// nomic-embed-text-v1.5, in-process.
+    Nomic,
 }
 
 impl EmbedModel {
     fn load(self) -> Arc<dyn Embedder> {
+        let local = |m| -> Arc<dyn Embedder> {
+            // ONNX Runtime already spreads one batch over several cores; a few instances keep them busy.
+            let instances = 3;
+            Arc::new(LocalEmbedder::load(m, models_dir(), instances).unwrap_or_else(|e| panic!("{e}")))
+        };
         match self {
             EmbedModel::Hash => Arc::new(HashEmbedder::default()),
+            EmbedModel::BgeSmall => local(LocalModel::BgeSmall),
+            EmbedModel::BgeSmallQ => local(LocalModel::BgeSmallQ),
+            EmbedModel::Nomic => local(LocalModel::NomicV15),
         }
     }
 }

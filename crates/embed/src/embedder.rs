@@ -7,7 +7,13 @@ use serde_json::{Value, json};
 pub trait Embedder: Send + Sync {
     /// Stable identifier, stored next to every vector (e.g. `hash-384`, `ollama:nomic-embed-text`).
     fn model_id(&self) -> String;
+    /// Vectors for stored text (chunks, memories).
     fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>>;
+    /// Vectors for search queries. Models trained with separate query and document instructions
+    /// override this; for the rest it is the same as `embed`.
+    fn embed_query(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
+        self.embed(texts)
+    }
 }
 
 /// Built-in, offline embedder: signed feature hashing of words and character trigrams.

@@ -55,7 +55,7 @@ fn semantic_ranking(conn: &Connection, embedder: &dyn Embedder, query: &str) -> 
     if !missing.is_empty() {
         let _ = embed_and_store(conn, embedder, "memory", &missing);
     }
-    let Ok(mut v) = embedder.embed(&[query.to_string()]) else { return Ok(vec![]) };
+    let Ok(mut v) = embedder.embed_query(&[query.to_string()]) else { return Ok(vec![]) };
     if v.is_empty() {
         return Ok(vec![]);
     }

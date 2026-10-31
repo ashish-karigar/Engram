@@ -92,8 +92,14 @@ export function SettingsPage({ api }: { api: Api }) {
         <div className="s-card">
           <h3>Embeddings</h3>
           <p className="muted">Turn documents and memories into vectors for semantic search. Switching models re-embeds everything on save.</p>
-          <Choice value={emb.provider} options={[["hash", "Built-in (offline)"], ["ollama", "Ollama"], ["openai", "OpenAI-compatible"]]} onChange={(provider) => set("embeddings", { provider })} />
-          {emb.provider === "hash" && <p className="faint">No download, no network. Matches words and word parts; use Ollama for meaning-level search.</p>}
+          <Choice value={emb.provider} options={[["local", "Built-in model"], ["hash", "Word matching (no model)"], ["ollama", "Ollama"], ["openai", "OpenAI-compatible"]]} onChange={(provider) => set("embeddings", { provider })} />
+          {emb.provider === "local" && (
+            <>
+              <Choice value={emb.localModel} options={[["bge-small-q", "bge-small, quantized (fast, 0.4 GB)"], ["bge-small", "bge-small (1.6 GB)"], ["nomic", "nomic-embed v1.5 (slow, 3.5 GB)"]]} onChange={(localModel) => set("embeddings", { localModel })} />
+              <p className="faint">Runs inside Engram on the CPU; no server. Weights download once (130–550 MB) into the data folder. Search understands meaning, not just words.</p>
+            </>
+          )}
+          {emb.provider === "hash" && <p className="faint">No download, no network. Matches words and word parts only.</p>}
           {emb.provider === "ollama" && (
             <div className="s-grid">
               <Field label="Host"><input className="field" value={emb.ollamaHost} onChange={(e) => set("embeddings", { ollamaHost: e.target.value })} /></Field>
