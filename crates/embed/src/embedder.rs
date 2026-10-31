@@ -32,9 +32,11 @@ fn features(text: &str) -> Vec<(String, f32)> {
     let lower = text.to_lowercase();
     let words: Vec<&str> = lower.split(|c: char| !c.is_alphanumeric()).filter(|w| w.len() > 1).collect();
     let mut out: Vec<(String, f32)> = words.iter().map(|w| (format!("w:{w}"), 1.0)).collect();
-    for w in &words {
-        let padded: Vec<char> = format!("^{w}$").chars().collect();
-        out.extend(padded.windows(3).map(|g| (format!("g:{}", g.iter().collect::<String>()), 0.5)));
+    // Character 4-grams of the word stem catch "downsample" ~ "downsampling" without
+    // over-weighting common endings like "-tion".
+    for w in words.iter().filter(|w| w.chars().count() >= 4) {
+        let padded: Vec<char> = format!("^{w}").chars().collect();
+        out.extend(padded.windows(4).map(|g| (format!("g:{}", g.iter().collect::<String>()), 0.4)));
     }
     out.extend(words.windows(2).map(|p| (format!("b:{} {}", p[0], p[1]), 0.7)));
     out
@@ -42,7 +44,7 @@ fn features(text: &str) -> Vec<(String, f32)> {
 
 impl Embedder for HashEmbedder {
     fn model_id(&self) -> String {
-        format!("hash-v1-{}", self.dim)
+        format!("hash-v2-{}", self.dim)
     }
 
     fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {

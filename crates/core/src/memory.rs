@@ -221,14 +221,17 @@ fn tokenize(query: &str) -> Vec<String> {
     query.split(|c: char| !(c.is_alphanumeric() || c == '_')).filter(|s| !s.is_empty()).map(String::from).collect()
 }
 
-pub fn search_memories(conn: &Connection, query: &str, opts: &SearchOpts) -> Result<Vec<SearchHit>> {
+/// Build a safe FTS5 MATCH expression: words are quoted (no operator injection), question words are
+/// dropped unless nothing else remains, and terms are OR-ed so BM25 does the ranking.
+pub fn fts_query(query: &str) -> Option<String> {
     let words = tokenize(query);
     let content: Vec<&String> = words.iter().filter(|w| !STOP_WORDS.contains(&w.to_lowercase().as_str())).collect();
     let terms: Vec<&String> = if content.is_empty() { words.iter().collect() } else { content };
-    if terms.is_empty() {
-        return Ok(vec![]);
-    }
-    let matcher = terms.iter().map(|t| format!("\"{t}\"")).collect::<Vec<_>>().join(" OR ");
+    (!terms.is_empty()).then(|| terms.iter().map(|t| format!("\"{t}\"")).collect::<Vec<_>>().join(" OR "))
+}
+
+pub fn search_memories(conn: &Connection, query: &str, opts: &SearchOpts) -> Result<Vec<SearchHit>> {
+    let Some(matcher) = fts_query(query) else { return Ok(vec![]) };
     let mut stmt = conn.prepare(
         "SELECT m.*, bm25(memories_fts, 4.0, 2.0, 1.0, 1.0) AS rank
          FROM memories_fts JOIN memories m ON m.rowid = memories_fts.rowid
