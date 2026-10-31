@@ -10,11 +10,31 @@ export interface SimNode extends SimulationNodeDatum {
   degree: number;
   radius: number;
   color: string;
+  /** Third axis, used only while the graph is rotatable. */
+  z?: number;
+  vz?: number;
+  fz?: number | null;
+  /** Zoomable map: children it can open into, open or not, its part, who wrote most of it. */
+  children: number;
+  expanded: boolean;
+  area?: string;
+  owner?: string;
+  /** API bodies: the part that serves them; groups and endpoints: their API body. */
+  serves?: string;
+  hub?: string;
+  /** Screen-plane position after rotation and perspective (see projection.ts). */
+  sx?: number;
+  sy?: number;
+  depth?: number;
+  scale?: number;
+  fade?: number;
 }
 
 export interface SimLink extends SimulationLinkDatum<SimNode> {
   id: string;
   type: string;
+  /** How many fine-grained edges it stands for (zoomable map), 1 otherwise. */
+  count: number;
   source: SimNode;
   target: SimNode;
 }
@@ -44,7 +64,7 @@ export function neighbourhood(adj: Map<string, Set<string>>, root: string, depth
   return seen;
 }
 
-type Position = Pick<SimNode, "x" | "y" | "vx" | "vy">;
+type Position = Pick<SimNode, "x" | "y" | "z" | "vx" | "vy" | "vz">;
 
 /**
  * Apply filters and build simulation objects. Positions of nodes that survive a refresh are kept,
@@ -60,7 +80,25 @@ export function buildScene(graph: Graph, s: GraphSettings, selected: string | nu
     (!query || n.label.toLowerCase().includes(query)) &&
     (!local || local.has(n.id)));
   const kept = new Set(keep.map((n) => n.id));
-  const edges = graph.edges.filter((e) => kept.has(e.source) && kept.has(e.target));
+
+  // Containment: sun (part) → planets (files) → moons (functions, classes) → their methods.
+  const parents = new Map(graph.edges.filter((e) => e.type === "contains").map((e) => [e.target, e.source]));
+  // A hidden node hands its links to its nearest visible parent, so hiding functions turns
+  // function → endpoint calls into file → endpoint calls instead of cutting the network apart.
+  const lift = (id: string): string | undefined => {
+    for (let cur: string | undefined = id; cur; cur = parents.get(cur)) if (kept.has(cur)) return cur;
+    return undefined;
+  };
+  const merged = new Map<string, { id: string; source: string; target: string; type: string; count: number }>();
+  for (const e of graph.edges) {
+    const [a, b] = e.type === "contains" ? [lift(e.source), kept.has(e.target) ? e.target : undefined] : [lift(e.source), lift(e.target)];
+    if (!a || !b || a === b) continue;
+    const id = `${a}>${b}:${e.type}`;
+    const found = merged.get(id);
+    if (found) found.count += e.count ?? 1;
+    else merged.set(id, { id, source: a, target: b, type: e.type, count: e.count ?? 1 });
+  }
+  const edges = [...merged.values()];
   const degree = new Map<string, number>();
   for (const e of edges) {
     degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
@@ -68,31 +106,38 @@ export function buildScene(graph: Graph, s: GraphSettings, selected: string | nu
   }
   if (!s.showOrphans) keep = keep.filter((n) => (degree.get(n.id) ?? 0) > 0 || n.id === selected);
 
+  // Everything a node holds (a part: its files and functions), so suns outweigh their planets.
+  const inside = new Map<string, number>();
+  for (const child of parents.keys()) {
+    if (!kept.has(child)) continue;
+    for (let p = parents.get(child); p; p = parents.get(p)) inside.set(p, (inside.get(p) ?? 0) + 1);
+  }
   const nodes: SimNode[] = keep.map((n) => {
     const d = degree.get(n.id) ?? 0;
-    const prior = previous.get(n.id) ?? placeNear(n.id, adj, previous);
-    return { id: n.id, label: n.label, kind: n.kind, status: n.status ?? "", degree: d, radius: radiusFor(n.kind, d), color: cssColor(n.kind), ...prior };
+    const prior = previous.get(n.id) ?? placeNear(n.id, adj, previous, parents.get(n.id));
+    const children = n.children ?? 0;
+    const color = s.colorBy === "author" ? authorColor(n.owner?.who) : cssColor(n.kind);
+    return {
+      id: n.id, label: n.label, kind: n.kind, status: n.status ?? "", degree: d, radius: radiusFor(d + (inside.get(n.id) ?? 0)), color,
+      children, expanded: n.expanded ?? false, area: n.area, owner: n.owner?.who, serves: n.serves, hub: n.hub, ...prior,
+    };
   });
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const links: SimLink[] = edges
     .filter((e) => byId.has(e.source) && byId.has(e.target))
-    .map((e) => ({ id: e.id, type: e.type, source: byId.get(e.source)!, target: byId.get(e.target)! }));
+    .map((e) => ({ id: e.id, type: e.type, count: e.count, source: byId.get(e.source)!, target: byId.get(e.target)! }));
   return { nodes, links, adj };
 }
 
-function placeNear(id: string, adj: Map<string, Set<string>>, previous: Map<string, Position>): Position {
-  for (const n of adj.get(id) ?? []) {
+function placeNear(id: string, adj: Map<string, Set<string>>, previous: Map<string, Position>, parent?: string): Position {
+  for (const n of [...(parent ? [parent] : []), ...(adj.get(id) ?? [])]) {
     const p = previous.get(n);
-    if (p?.x !== undefined && p.y !== undefined) return { x: p.x + (Math.random() - 0.5) * 30, y: p.y + (Math.random() - 0.5) * 30 };
+    if (p?.x !== undefined && p.y !== undefined) {
+      const jitter = () => (Math.random() - 0.5) * 30;
+      return { x: p.x + jitter(), y: p.y + jitter(), ...(p.z !== undefined && { z: p.z + jitter() }) };
+    }
   }
   return {};
-}
-
-/** Memories are the point of the graph, so they stay prominent; code nodes stay small. */
-function radiusFor(kind: string, degree: number): number {
-  if (kind === "file") return 2.5 + Math.sqrt(degree) * 0.9;
-  if (kind === "module") return 4.5 + Math.sqrt(degree) * 1.1;
-  return 5 + Math.sqrt(degree) * 1.8;
 }
 
 /** Agents keep their colours everywhere; people get stable colours from a hash of their name. */
@@ -105,4 +150,9 @@ export function authorColor(who?: string): string {
   let h = 0;
   for (const c of who) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return PEOPLE[h % PEOPLE.length]!;
+}
+
+/** Obsidian-style: a node grows with its links and what it holds, so parts become the hubs. */
+function radiusFor(weight: number): number {
+  return Math.min(36, 2.5 + Math.sqrt(weight) * 1.3);
 }

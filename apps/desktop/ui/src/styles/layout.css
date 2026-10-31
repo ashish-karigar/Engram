@@ -272,8 +272,3 @@ kbd { font: 10px var(--mono); color: var(--faint); border: 1px solid var(--line-
 .endpoints .faint { font-size: 11px; margin-top: 2px; }
 .method { font-weight: 600; }
 .method.get { color: #47c394; } .method.post { color: #f0a35e; } .method.patch, .method.put { color: #6d8dff; } .method.delete { color: #ef6a62; }
-
-/* ---- 3D graph ---- */
-.force-graph-3d { position: absolute; inset: 0; cursor: grab; }
-.g3-tip { background: rgba(17,21,29,.94); border: 1px solid var(--line-strong); border-radius: 8px; padding: 5px 9px; font: 12px var(--font); color: var(--text); display: flex; flex-direction: column; gap: 1px; }
-.g3-tip span { color: var(--muted); font-size: 11px; }
