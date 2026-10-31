@@ -87,7 +87,7 @@ export function buildScene(graph: Graph, s: GraphSettings, selected: string | nu
   const nodes: SimNode[] = keep.map((n) => {
     const d = degree.get(n.id) ?? 0;
     const prior = previous.get(n.id) ?? placeNear(n.id, adj, previous);
-    return { id: n.id, label: n.label, kind: n.kind, status: n.status ?? "", degree: d, radius: radiusFor(n.kind, d, inside.get(n.id) ?? n.children ?? 0), color: cssColor(n.kind), ...prior };
+    return { id: n.id, label: n.label, kind: n.kind, status: n.status ?? "", degree: d, radius: radiusFor(n.kind, d, inside.get(n.id) ?? n.children ?? 0, n.label.split("/").length - 1), color: cssColor(n.kind), ...prior };
   });
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const links: SimLink[] = edges
@@ -123,10 +123,13 @@ function descendants(graph: Graph): Map<string, number> {
   return count;
 }
 
-/** Memories stay prominent; a folder grows with everything inside it, so `backend` is the biggest. */
-function radiusFor(kind: string, degree: number, inside: number): number {
+/**
+ * Memories stay prominent. A folder grows with everything inside it and shrinks with each level
+ * down, so top-level parts like `frontend` and `backend` clearly dominate their subfolders.
+ */
+function radiusFor(kind: string, degree: number, inside: number, depth: number): number {
   if (kind === "file") return 2.5 + Math.sqrt(degree) * 0.9;
-  if (kind === "module") return 4 + Math.sqrt(inside) * 1.3;
+  if (kind === "module") return Math.max(4, (4 + Math.sqrt(inside) * 1.3) * (depth === 0 ? 1.3 : 0.75 ** depth));
   if (kind === "api") return 6 + Math.sqrt(inside) * 1.6;
   return 5 + Math.sqrt(degree) * 1.8;
 }
