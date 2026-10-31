@@ -176,6 +176,7 @@ export function MemoryGraph({ graph, selectedId, onSelect }: Props) {
       observer.disconnect();
       s.stop();
       cancelAnimationFrame(frame.current);
+      frame.current = 0;
       el.removeEventListener("pointerdown", down);
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerup", up);
