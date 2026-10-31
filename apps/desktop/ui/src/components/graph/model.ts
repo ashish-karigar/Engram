@@ -12,6 +12,8 @@ export interface SimNode extends SimulationNodeDatum {
   color: string;
   /** The top-level folder this node sits in (`frontend`, `backend`); itself for that folder. */
   part?: string;
+  /** Where its cluster sits across the screen: -1 left (calls the API), 1 right (serves it), 0 middle. */
+  side?: number;
   /** Third axis, used only while the graph is rotatable. */
   z?: number;
   vz?: number;
@@ -87,11 +89,14 @@ export function buildScene(graph: Graph, s: GraphSettings, selected: string | nu
 
   const inside = descendants(graph);
   const parts = topFolders(graph);
+  const sides = partSides(graph, parts);
   const nodes: SimNode[] = keep.map((n) => {
     const d = degree.get(n.id) ?? 0;
     const prior = previous.get(n.id) ?? placeNear(n.id, adj, previous);
+    const part = parts.get(n.id);
     return {
-      id: n.id, label: n.label, kind: n.kind, status: n.status ?? "", degree: d, part: parts.get(n.id),
+      id: n.id, label: n.label, kind: n.kind, status: n.status ?? "", degree: d, part,
+      side: n.kind === "api" ? 0 : part !== undefined ? sides.get(part) : undefined,
       radius: radiusFor(n.kind, d, inside.get(n.id) ?? n.children ?? 0, n.label.split("/").length - 1), color: cssColor(n.kind), ...prior,
     };
   });
@@ -124,6 +129,24 @@ function topFolders(graph: Graph): Map<string, string> {
     top.set(id, root);
   }
   return top;
+}
+
+/**
+ * Which side of the screen each top-level folder belongs on: the code that calls the API on the
+ * left, the code that serves it on the right. A folder that does both, or neither, gets no side.
+ */
+function partSides(graph: Graph, parts: Map<string, string>): Map<string, number> {
+  const calls = new Set<string>(), serves = new Set<string>();
+  for (const e of graph.edges) {
+    const part = parts.get(e.source);
+    if (!part || !e.target.startsWith("api:")) continue;
+    if (e.type === "calls") calls.add(part);
+    if (e.type === "serves") serves.add(part);
+  }
+  const sides = new Map<string, number>();
+  for (const p of calls) if (!serves.has(p)) sides.set(p, -1);
+  for (const p of serves) if (!calls.has(p)) sides.set(p, 1);
+  return sides;
 }
 
 /** How many files and folders sit anywhere inside each folder, following `contains` edges. */

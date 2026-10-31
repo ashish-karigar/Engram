@@ -317,9 +317,10 @@ function toDimensions(nodes: SimNode[], dims: 2 | 3, view: React.MutableRefObjec
 /**
  * Each top-level folder is the centre of its own cluster: everything inside `backend` drifts gently
  * towards the `backend` node, and that node is drawn firmly to the middle of what it holds.
- * Nodes outside any folder (memories, the API) are left alone.
+ * Clusters that call the API are drawn to the left and those that serve it to the right, with the
+ * API held in the middle. Memories, outside any folder, are left alone.
  */
-function forcePart(member = 0.06, root = 1) {
+function forcePart(member = 0.06, root = 1, spread = 850) {
   let nodes: SimNode[] = [];
   let byId = new Map<string, SimNode>();
   const force = (alpha: number) => {
@@ -347,6 +348,11 @@ function forcePart(member = 0.06, root = 1) {
       n.vx = (n.vx ?? 0) + (target.x - (n.x ?? 0)) * k * alpha;
       n.vy = (n.vy ?? 0) + (target.y - (n.y ?? 0)) * k * alpha;
       if (n.z !== undefined) n.vz = (n.vz ?? 0) + (target.z - n.z) * k * alpha;
+    }
+    // Across the screen: callers of the API to the left, servers to the right, the API between.
+    for (const n of nodes) {
+      if (n.side === undefined) continue;
+      n.vx = (n.vx ?? 0) + (n.side * spread - (n.x ?? 0)) * (n.side === 0 ? 0.3 : 0.12) * alpha;
     }
   };
   force.initialize = (ns: SimNode[]) => {
