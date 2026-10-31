@@ -7,6 +7,7 @@ pub mod format;
 pub mod http;
 pub mod mcp;
 pub mod ops;
+pub mod profile;
 pub mod project;
 pub mod recall;
 pub mod tokens;

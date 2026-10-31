@@ -88,6 +88,7 @@ async fn end_to_end_two_projects_two_agents_recovery() {
         &[
             ("perception/lidar.py", "def voxel_filter(points): pass\n"),
             ("perception/fusion.py", "from perception.lidar import voxel_filter\nclass Fusion: pass\n"),
+            ("docs/design.md", "# Perception design\n\n## Lidar\n\nlidar.py downsamples with a voxel grid because radius filtering missed the 100ms frame budget.\n"),
         ],
         "Use voxel grid filter instead of radius filter for lidar downsampling",
     );
@@ -135,6 +136,13 @@ async fn end_to_end_two_projects_two_agents_recovery() {
     let answer = api.post(&api.admin, &format!("/p/{drive_id}/api/search"), json!({"query": "why not radius filter lidar"})).await;
     let text = answer["text"].as_str().unwrap();
     assert!(text.contains("voxel grid") && text.contains("80ms"), "{text}");
+
+    // Project documents and code are indexed as searchable chunks, linked to the code they mention.
+    let docs = api.get(&api.admin, &format!("/p/{drive_id}/api/documents")).await;
+    let titles: Vec<&str> = docs.as_array().unwrap().iter().map(|d| d["title"].as_str().unwrap()).collect();
+    assert!(titles.contains(&"docs/design.md") && titles.contains(&"perception/lidar.py"), "{titles:?}");
+    let grounded = api.post(&api.admin, &format!("/p/{drive_id}/api/search"), json!({"query": "lidar frame budget", "mode": "documents"})).await;
+    assert!(grounded["text"].as_str().unwrap().contains("Perception design > Lidar"));
 
     // Uncommitted work survives on the hidden ref.
     std::fs::write(drive.path().join("perception/planner.py"), "def plan(): pass\n").unwrap();

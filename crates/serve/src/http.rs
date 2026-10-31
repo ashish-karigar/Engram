@@ -15,9 +15,9 @@ use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-use crate::api::{graph_data, node_detail, request_log, stats, timeline};
+use crate::api::{documents, graph_data, node_detail, request_log, review_queue, stats, timeline};
 use crate::mcp::handle_body;
-use crate::ops::{op_brief, op_expand, op_note, op_search};
+use crate::ops::{Ctx, op_add_document, op_brief, op_expand, op_note, op_profile, op_search};
 use crate::project::{ProjectManager, ProjectRef};
 use crate::tokens::verify_token;
 
@@ -177,20 +177,34 @@ fn project_route(
     };
     let tail: Vec<&str> = tail.iter().map(String::as_str).collect();
     let limit = query_param(query, "limit").and_then(|v| v.parse().ok()).unwrap_or(100);
+    let ctx = Ctx { conn: &conn, actor: &actor, embedder: project.embedder.as_ref() };
     let op = |r: Result<crate::ops::OpResult>| r.map(|o| reply(StatusCode::OK, &json!({"text": o.text, "data": o.data})));
     let json_ok = |r: Result<Value>| r.map(|v| reply(StatusCode::OK, &v));
 
     match (method, tail.as_slice()) {
-        (&Method::POST, ["mcp"]) => Ok(match handle_body(&conn, &actor, &body) {
+        (&Method::POST, ["mcp"]) => Ok(match handle_body(&ctx, &body) {
             Some(out) => reply(StatusCode::OK, &out),
             None => reply(StatusCode::ACCEPTED, &Value::Null),
         }),
         (_, ["mcp"]) => Ok(fail(StatusCode::METHOD_NOT_ALLOWED, "use POST")),
-        (&Method::POST, ["api", "brief"]) => op(op_brief(&conn, &actor, parse(if body.is_null() { json!({}) } else { body })?)),
-        (&Method::POST, ["api", "search"]) => op(op_search(&conn, &actor, parse(body)?)),
-        (&Method::POST, ["api", "expand"]) => op(op_expand(&conn, &actor, parse(body)?)),
-        (&Method::POST, ["api", "note"]) => op(op_note(&conn, &actor, parse(body)?)),
+        (&Method::POST, ["api", "brief"]) => op(op_brief(&ctx, parse(if body.is_null() { json!({}) } else { body })?)),
+        (&Method::POST, ["api", "search"]) => op(op_search(&ctx, parse(body)?)),
+        (&Method::POST, ["api", "expand"]) => op(op_expand(&ctx, parse(body)?)),
+        (&Method::POST, ["api", "note"]) => op(op_note(&ctx, parse(body)?)),
+        (&Method::POST, ["api", "documents"]) => op(op_add_document(&ctx, parse(body)?)),
+        (&Method::POST, ["api", "documents", "delete"]) => {
+            engram_rag::document::delete_document(&conn, body["id"].as_str().unwrap_or(""))?;
+            Ok(reply(StatusCode::OK, &json!({"ok": true})))
+        }
+        (&Method::GET, ["api", "documents"]) => json_ok(documents(&conn, limit)),
+        (&Method::GET, ["api", "profile"]) => op(op_profile(&ctx)),
+        (&Method::GET, ["api", "review"]) => json_ok(review_queue(&conn)),
+        (&Method::POST, ["api", "review"]) => {
+            let memory = engram_core::memory::review(&conn, body["id"].as_str().unwrap_or(""), body["action"].as_str().unwrap_or(""))?;
+            Ok(reply(StatusCode::OK, &serde_json::to_value(memory)?))
+        }
         (&Method::POST, ["api", "connect"]) => {
+            drop(ctx);
             drop(conn);
             let agent = body["agent"].as_str().unwrap_or("");
             let outcome = state.manager.connect(id, agent, body["apply"].as_bool().unwrap_or(false))?;

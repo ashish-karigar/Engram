@@ -1,7 +1,10 @@
 use std::path::Path;
 
 use engram_core::Result;
+use std::sync::Arc;
+
 use engram_core::db::SharedDb;
+use engram_embed::Embedder;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
@@ -16,6 +19,8 @@ pub struct ProjectInfo {
 pub struct ProjectRef {
     pub info: ProjectInfo,
     pub db: SharedDb,
+    /// The project's embedding model, shared by search and document ingest.
+    pub embedder: Arc<dyn Embedder>,
 }
 
 #[derive(Debug, Serialize)]

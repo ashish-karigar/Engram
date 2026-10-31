@@ -5,16 +5,26 @@ use engram_core::events::Actor;
 use engram_core::graph::{ExpandOpts, expand, get_entity};
 use engram_core::memory::{get_memories, get_memory, history, record_access};
 use engram_core::{Connection, Error, Result};
+use engram_embed::Embedder;
+use engram_rag::document::get_document;
+use engram_rag::{ChunkHit, DocumentInput, ingest, search_chunks};
 use engram_understand::notes::{NoteContext, NoteInput, record_note};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::brief::orientation;
 use crate::budget::{Packable, estimate_tokens, pack_by_density};
-use crate::format::format_memory;
+use crate::format::{format_chunk, format_memory};
+use crate::profile::build_profile;
 use crate::recall::{RecallItem, RecallOpts, recall};
 
-/// The four operations every agent gets, whether it connects over MCP or plain HTTP.
+/// What every operation needs: the project's database, who is asking, and the embedding model.
+pub struct Ctx<'a> {
+    pub conn: &'a Connection,
+    pub actor: &'a Actor,
+    pub embedder: &'a dyn Embedder,
+}
+
 pub struct OpResult {
     pub text: String,
     pub data: Value,
@@ -28,6 +38,8 @@ pub struct SearchReq {
     pub query: String,
     pub budget: Option<usize>,
     pub as_of: Option<String>,
+    /// `hybrid` (default): memories and documents; `memories`; or `documents`.
+    pub mode: Option<String>,
 }
 
 #[derive(Default, Deserialize)]
@@ -42,85 +54,133 @@ pub struct ExpandReq {
     pub depth: Option<i64>,
 }
 
-/// What came back and why, for the request log.
-fn returned(items: &[RecallItem]) -> Vec<Value> {
-    items.iter().map(|i| json!({"id": i.memory.id, "score": (i.score * 1000.0).round() / 1000.0, "reason": i.reason})).collect()
+#[derive(Deserialize)]
+pub struct AddDocumentReq {
+    pub title: String,
+    pub content: String,
+    /// Stable id: adding again with the same id updates the document.
+    pub id: Option<String>,
 }
 
-/// Run an operation, time it, and write the request-log entry.
-fn logged(
-    conn: &Connection,
-    actor: &Actor,
-    tool: &str,
-    request: Value,
-    run: impl FnOnce() -> Result<(OpResult, Vec<Value>)>,
-) -> Result<OpResult> {
+/// Run an operation, time it, and write the request-log entry with what came back and why.
+fn logged(ctx: &Ctx, tool: &str, request: Value, run: impl FnOnce() -> Result<(OpResult, Vec<Value>)>) -> Result<OpResult> {
     let started = Instant::now();
-    let latency = || Some(started.elapsed().as_millis() as i64);
     let record = |returned: Vec<Value>, tokens: Option<i64>, error: Option<String>| AccessRecord {
-        actor_id: Some(actor.id.clone()),
+        actor_id: Some(ctx.actor.id.clone()),
         tool: tool.into(),
         request: request.clone(),
         returned: Value::Array(returned),
         tokens_out: tokens,
-        latency_ms: latency(),
+        latency_ms: Some(started.elapsed().as_millis() as i64),
         error,
         ..Default::default()
     };
     match run() {
         Ok((result, returned)) => {
-            let ids: Vec<String> = returned.iter().filter_map(|r| r["id"].as_str()).filter(|id| id.starts_with("mem_")).map(String::from).collect();
-            record_access(conn, &ids)?;
-            log_access(conn, record(returned, Some(estimate_tokens(&result.text) as i64), None))?;
+            let ids: Vec<String> =
+                returned.iter().filter_map(|r| r["id"].as_str()).filter(|id| id.starts_with("mem_")).map(String::from).collect();
+            record_access(ctx.conn, &ids)?;
+            log_access(ctx.conn, record(returned, Some(estimate_tokens(&result.text) as i64), None))?;
             Ok(result)
         }
         Err(err) => {
-            log_access(conn, record(vec![], None, Some(err.to_string())))?;
+            log_access(ctx.conn, record(vec![], None, Some(err.to_string())))?;
             Err(err)
         }
     }
 }
 
-fn pack_items(items: Vec<RecallItem>, budget: usize) -> Vec<RecallItem> {
-    let packable = items
-        .into_iter()
-        .map(|item| Packable { value: item.score, cost: estimate_tokens(&format_memory(&item.memory, Some(&item.reason))), item })
-        .collect();
-    let (mut packed, _) = pack_by_density(packable, budget);
-    packed.sort_by(|a, b| b.score.total_cmp(&a.score));
-    packed
+/// Something that can go into a context budget.
+enum Item {
+    Memory(RecallItem),
+    Chunk(ChunkHit),
 }
 
-pub fn op_search(conn: &Connection, actor: &Actor, req: SearchReq) -> Result<OpResult> {
-    let request = json!({"query": req.query, "budget": req.budget, "asOf": req.as_of});
-    logged(conn, actor, "search", request, || {
-        let opts = RecallOpts { as_of: req.as_of.clone(), ..Default::default() };
-        let picked = pack_items(recall(conn, &req.query, &opts)?, req.budget.unwrap_or(DEFAULT_BUDGET));
-        let text = if picked.is_empty() {
-            "No matching memories.".to_string()
-        } else {
-            picked.iter().map(|i| format_memory(&i.memory, Some(&i.reason))).collect::<Vec<_>>().join("\n")
-        };
-        let data = Value::Array(returned(&picked));
-        Ok((OpResult { text, data }, returned(&picked)))
+impl Item {
+    fn line(&self) -> String {
+        match self {
+            Item::Memory(m) => format_memory(&m.memory, Some(&m.reason)),
+            Item::Chunk(c) => format_chunk(c),
+        }
+    }
+    fn returned(&self) -> Value {
+        match self {
+            Item::Memory(m) => json!({"id": m.memory.id, "score": round(m.score), "reason": m.reason}),
+            Item::Chunk(c) => json!({"id": c.chunk_id, "score": round(c.score), "reason": c.reason, "document": c.title}),
+        }
+    }
+}
+
+fn round(x: f64) -> f64 {
+    (x * 1000.0).round() / 1000.0
+}
+
+fn pack(items: Vec<(Item, f64)>, budget: usize) -> Vec<Item> {
+    let packable = items.into_iter().map(|(item, value)| Packable { cost: estimate_tokens(&item.line()), value, item }).collect();
+    pack_by_density(packable, budget).0
+}
+
+fn render(items: &[Item]) -> (String, Vec<Value>) {
+    let memories: Vec<String> = items.iter().filter(|i| matches!(i, Item::Memory(_))).map(Item::line).collect();
+    let chunks: Vec<String> = items.iter().filter(|i| matches!(i, Item::Chunk(_))).map(Item::line).collect();
+    let mut sections = vec![];
+    if !memories.is_empty() {
+        sections.push(format!("Memories:\n{}", memories.join("\n")));
+    }
+    if !chunks.is_empty() {
+        sections.push(format!("From documents:\n{}", chunks.join("\n")));
+    }
+    (sections.join("\n\n"), items.iter().map(Item::returned).collect())
+}
+
+/// Memories and document chunks scored on one scale: memories first by default, since they are
+/// distilled; chunks are the grounding.
+fn gather(ctx: &Ctx, query: &str, mode: &str, as_of: Option<String>) -> Result<Vec<(Item, f64)>> {
+    let mut items: Vec<(Item, f64)> = vec![];
+    if mode != "documents" {
+        let opts = RecallOpts { as_of, ..Default::default() };
+        items.extend(recall(ctx.conn, Some(ctx.embedder), query, &opts)?.into_iter().map(|m| {
+            let v = m.score;
+            (Item::Memory(m), v)
+        }));
+    }
+    if mode != "memories" {
+        let hits = search_chunks(ctx.conn, Some(ctx.embedder), query, 8)?;
+        let top = hits.first().map(|h| h.score).unwrap_or(1.0);
+        items.extend(hits.into_iter().map(|h| {
+            let v = 0.8 * h.score / top;
+            (Item::Chunk(h), v)
+        }));
+    }
+    Ok(items)
+}
+
+pub fn op_search(ctx: &Ctx, req: SearchReq) -> Result<OpResult> {
+    let mode = req.mode.clone().unwrap_or_else(|| "hybrid".into());
+    let request = json!({"query": req.query, "budget": req.budget, "asOf": req.as_of, "mode": mode});
+    logged(ctx, "search", request, || {
+        let picked = pack(gather(ctx, &req.query, &mode, req.as_of.clone())?, req.budget.unwrap_or(DEFAULT_BUDGET));
+        let (text, returned) = render(&picked);
+        let text = if text.is_empty() { "Nothing relevant in memory or documents.".to_string() } else { text };
+        Ok((OpResult { text, data: Value::Array(returned.clone()) }, returned))
     })
 }
 
-pub fn op_brief(conn: &Connection, actor: &Actor, req: BriefReq) -> Result<OpResult> {
-    logged(conn, actor, "brief", json!({"task": req.task, "budget": req.budget}), || {
-        let o = orientation(conn, 12, 6)?;
-        let relevant = match &req.task {
-            Some(task) => recall(conn, task, &RecallOpts { limit: Some(10), ..Default::default() })?,
+pub fn op_brief(ctx: &Ctx, req: BriefReq) -> Result<OpResult> {
+    logged(ctx, "brief", json!({"task": req.task, "budget": req.budget}), || {
+        let o = orientation(ctx.conn, 12, 6)?;
+        let profile = build_profile(ctx.conn, 6)?;
+        let mut items = match &req.task {
+            Some(task) => gather(ctx, task, "hybrid", None)?.into_iter().map(|(i, v)| (i, v + 1.0)).collect(),
             None => vec![],
         };
-        let seen: Vec<String> = relevant.iter().map(|r| r.memory.id.clone()).collect();
-        let boosted = relevant.into_iter().map(|r| RecallItem { score: r.score + 1.0, ..r });
-        let background = o.memories.iter().filter(|m| !seen.contains(&m.id)).enumerate().map(|(i, m)| RecallItem {
-            memory: m.clone(),
-            score: 0.5 / (1.0 + i as f64 * 0.2),
-            reason: "recent".into(),
-        });
-        let picked = pack_items(boosted.chain(background).collect(), req.budget.unwrap_or(DEFAULT_BUDGET));
+        let seen: Vec<String> = items.iter().filter_map(|(i, _)| match i { Item::Memory(m) => Some(m.memory.id.clone()), _ => None }).collect();
+        let standing = profile.static_facts.iter().chain(&profile.dynamic).filter(|m| !seen.contains(&m.id));
+        items.extend(standing.enumerate().map(|(i, m)| {
+            (Item::Memory(RecallItem { memory: m.clone(), score: 0.6 / (1.0 + i as f64 * 0.2), reason: "profile".into() }), 0.6 / (1.0 + i as f64 * 0.2))
+        }));
+        let picked = pack(items, req.budget.unwrap_or(DEFAULT_BUDGET));
+        let (body, returned) = render(&picked);
 
         let mut lines: Vec<String> = vec![];
         if !o.modules.is_empty() {
@@ -128,9 +188,8 @@ pub fn op_brief(conn: &Connection, actor: &Actor, req: BriefReq) -> Result<OpRes
             lines.extend(o.modules.iter().map(|m| format!("- {} ({} files)", m.name, m.files)));
             lines.push(String::new());
         }
-        if !picked.is_empty() {
-            lines.push("What to know:".into());
-            lines.extend(picked.iter().map(|i| format_memory(&i.memory, Some(&i.reason))));
+        if !body.is_empty() {
+            lines.push(body);
             lines.push(String::new());
         }
         if !o.activity.is_empty() {
@@ -139,28 +198,57 @@ pub fn op_brief(conn: &Connection, actor: &Actor, req: BriefReq) -> Result<OpRes
         }
         let text = lines.join("\n").trim().to_string();
         let text = if text.is_empty() { "Memory is empty so far.".to_string() } else { text };
-        let data = json!({"modules": o.modules, "activity": o.activity, "picked": returned(&picked)});
-        Ok((OpResult { text, data }, returned(&picked)))
+        Ok((OpResult { text, data: json!({"modules": o.modules, "activity": o.activity, "picked": returned}) }, returned))
     })
 }
 
-/// Open one node: a memory's full story (reasons, history, evidence) or an entity's connections.
-pub fn op_expand(conn: &Connection, actor: &Actor, req: ExpandReq) -> Result<OpResult> {
-    logged(conn, actor, "expand", json!({"id": req.id, "depth": req.depth}), || {
-        let opts = ExpandOpts { max_depth: req.depth.unwrap_or(1), limit: 40, ..Default::default() };
-        let reached: Vec<_> = expand(conn, std::slice::from_ref(&req.id), &opts)?.into_iter().filter(|n| n.id != req.id).collect();
-        let memory_ids: Vec<String> = reached.iter().filter(|n| n.id.starts_with("mem_")).map(|n| n.id.clone()).collect();
-        let memories = get_memories(conn, &memory_ids)?;
-        let mut lines: Vec<String> = vec![];
+pub fn op_profile(ctx: &Ctx) -> Result<OpResult> {
+    logged(ctx, "profile", json!({}), || {
+        let p = build_profile(ctx.conn, 8)?;
+        let section = |name: &str, ms: &[engram_core::memory::Memory]| {
+            if ms.is_empty() { String::new() } else { format!("{name}:\n{}", ms.iter().map(|m| format_memory(m, None)).collect::<Vec<_>>().join("\n")) }
+        };
+        let text = [section("Standing (holds until replaced)", &p.static_facts), section("Current focus (last 7 days)", &p.dynamic)]
+            .into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n\n");
+        let returned: Vec<Value> = p.static_facts.iter().chain(&p.dynamic).map(|m| json!({"id": m.id, "reason": "profile"})).collect();
+        let data = json!({"static": p.static_facts, "dynamic": p.dynamic});
+        Ok((OpResult { text: if text.is_empty() { "No profile yet.".into() } else { text }, data }, returned))
+    })
+}
 
-        if let Some(me) = get_memory(conn, &req.id)? {
+fn expand_document(ctx: &Ctx, id: &str) -> Result<Vec<String>> {
+    if id.starts_with("chk_") {
+        let row: (String, String, Option<String>, String, Option<i64>, Option<i64>) = ctx.conn.query_row(
+            "SELECT d.title, c.context, d.path, c.content, c.start_line, c.end_line FROM chunks c JOIN documents d ON d.id = c.document_id WHERE c.id = ?",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+        ).map_err(|_| Error::msg(format!("unknown node: {id}")))?;
+        let place = row.2.map(|p| format!(" ({p}:{}-{})", row.4.unwrap_or(0), row.5.unwrap_or(0))).unwrap_or_default();
+        return Ok(vec![format!("{}{place}", row.1), row.3]);
+    }
+    let doc = get_document(ctx.conn, id)?.ok_or_else(|| Error::msg(format!("unknown node: {id}")))?;
+    let mut lines = vec![format!("Document {} ({}, {} chunks, v{})", doc.title, doc.mime, doc.chunk_count, doc.version)];
+    let mut stmt = ctx.conn.prepare("SELECT id, COALESCE(heading, '(start)') FROM chunks WHERE document_id = ? ORDER BY ordinal")?;
+    let sections: Vec<String> = stmt.query_map([id], |r| Ok(format!("- {} ({})", r.get::<_, String>(1)?, r.get::<_, String>(0)?)))?.collect::<engram_core::rusqlite::Result<_>>()?;
+    lines.push("Sections:".into());
+    lines.extend(sections);
+    Ok(lines)
+}
+
+/// Open one node: a memory's full story, a document or chunk, or a code entity's connections.
+pub fn op_expand(ctx: &Ctx, req: ExpandReq) -> Result<OpResult> {
+    logged(ctx, "expand", json!({"id": req.id, "depth": req.depth}), || {
+        let mut lines: Vec<String> = vec![];
+        if req.id.starts_with("doc_") || req.id.starts_with("chk_") {
+            lines = expand_document(ctx, &req.id)?;
+        } else if let Some(me) = get_memory(ctx.conn, &req.id)? {
             lines.push(format_memory(&me, None));
-            let versions = history(conn, &req.id)?;
+            let versions = history(ctx.conn, &req.id)?;
             if versions.len() > 1 {
                 lines.push("History:".into());
                 lines.extend(versions.iter().map(|v| format!("  v{} [{}] {}", v.version, v.status, v.claim)));
             }
-            let evidence: Vec<String> = conn
+            let evidence: Vec<String> = ctx.conn
                 .prepare("SELECT event_seq FROM memory_evidence WHERE memory_id = ?")?
                 .query_map([&req.id], |r| Ok(format!("#{}", r.get::<_, i64>(0)?)))?
                 .collect::<engram_core::rusqlite::Result<_>>()?;
@@ -168,18 +256,29 @@ pub fn op_expand(conn: &Connection, actor: &Actor, req: ExpandReq) -> Result<OpR
                 lines.push(format!("Evidence events: {}", evidence.join(", ")));
             }
         } else {
-            let entity = get_entity(conn, &req.id)?.ok_or_else(|| Error::msg(format!("unknown node: {}", req.id)))?;
+            let entity = get_entity(ctx.conn, &req.id)?.ok_or_else(|| Error::msg(format!("unknown node: {}", req.id)))?;
             lines.push(format!("{} {}", entity.kind, entity.qualified_name));
         }
-        let mut code = vec![];
-        for n in reached.iter().filter(|n| n.id.starts_with("ent_")) {
-            if let Some(e) = get_entity(conn, &n.id)? {
-                code.push(format!("- {} {} ({})", e.kind, e.qualified_name, e.id));
+
+        let reach_from = if req.id.starts_with("chk_") {
+            ctx.conn.query_row("SELECT document_id FROM chunks WHERE id = ?", [&req.id], |r| r.get(0)).unwrap_or_else(|_| req.id.clone())
+        } else {
+            req.id.clone()
+        };
+        let opts = ExpandOpts { max_depth: req.depth.unwrap_or(1), limit: 40, ..Default::default() };
+        let reached: Vec<_> = expand(ctx.conn, std::slice::from_ref(&reach_from), &opts)?.into_iter().filter(|n| n.id != reach_from).collect();
+        let memories = get_memories(ctx.conn, &reached.iter().filter(|n| n.id.starts_with("mem_")).map(|n| n.id.clone()).collect::<Vec<_>>())?;
+        let mut related = vec![];
+        for n in &reached {
+            if let Some(e) = get_entity(ctx.conn, &n.id)? {
+                related.push(format!("- {} {} ({})", e.kind, e.qualified_name, e.id));
+            } else if let Some(d) = get_document(ctx.conn, &n.id)? {
+                related.push(format!("- document {} ({})", d.title, d.id));
             }
         }
-        if !code.is_empty() {
-            lines.push("Connected code:".into());
-            lines.extend(code);
+        if !related.is_empty() {
+            lines.push("Connected code and documents:".into());
+            lines.extend(related);
         }
         if !memories.is_empty() {
             lines.push("Connected memories:".into());
@@ -190,12 +289,35 @@ pub fn op_expand(conn: &Connection, actor: &Actor, req: ExpandReq) -> Result<OpR
     })
 }
 
-pub fn op_note(conn: &Connection, actor: &Actor, note: NoteInput) -> Result<OpResult> {
-    logged(conn, actor, "note", serde_json::to_value(&note)?, || {
-        let ctx = NoteContext { actor_id: actor.id.clone(), session_id: None, commit_sha: None };
-        let (saved, event_seq) = record_note(conn, &note, &ctx)?;
-        let text = format!("Saved ({}): {}", saved.action.as_str(), saved.memory.id);
-        let data = json!({"action": saved.action.as_str(), "memory": saved.memory, "eventSeq": event_seq});
+pub fn op_note(ctx: &Ctx, note: NoteInput) -> Result<OpResult> {
+    logged(ctx, "note", serde_json::to_value(&note)?, || {
+        let nctx = NoteContext { actor_id: ctx.actor.id.clone(), session_id: None, commit_sha: None };
+        let (saved, event_seq) = record_note(ctx.conn, &note, &nctx)?;
+        let extends = saved.extends.as_deref().map(|p| format!(", extends {p}")).unwrap_or_default();
+        let text = format!("Saved ({}{extends}): {}", saved.action.as_str(), saved.memory.id);
+        let data = json!({"action": saved.action.as_str(), "memory": saved.memory, "eventSeq": event_seq, "extends": saved.extends});
         Ok((OpResult { text, data }, vec![json!({"id": saved.memory.id, "reason": saved.action.as_str()})]))
+    })
+}
+
+/// Store a document an agent wrote or found (spec, design note, research). It is chunked,
+/// embedded and searchable immediately.
+pub fn op_add_document(ctx: &Ctx, req: AddDocumentReq) -> Result<OpResult> {
+    let request = json!({"title": req.title, "id": req.id, "chars": req.content.chars().count()});
+    logged(ctx, "add_document", request, || {
+        let name = if req.title.contains('.') { req.title.clone() } else { format!("{}.md", req.title) };
+        let input = DocumentInput {
+            external_id: req.id.clone().map(|id| format!("agent:{id}")),
+            title: req.title.clone(),
+            source: "agent".into(),
+            path: None,
+            file_name: name,
+            bytes: req.content.clone().into_bytes(),
+            metadata: json!({"addedBy": ctx.actor.name}),
+        };
+        let out = ingest(ctx.conn, ctx.embedder, input)?;
+        let text = format!("Document {} ({}): {} chunks, status {}", out.document.id, out.action.as_str(), out.document.chunk_count, out.document.status);
+        let returned = vec![json!({"id": out.document.id, "reason": out.action.as_str()})];
+        Ok((OpResult { text, data: serde_json::to_value(&out.document)? }, returned))
     })
 }

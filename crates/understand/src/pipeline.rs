@@ -15,7 +15,7 @@ use crate::tasks::{Task, group_tasks};
 use crate::verify::verify_candidate;
 
 const CURSOR_KEY: &str = "understand.cursor";
-const SKIP_KINDS: &[&str] = &["snapshot.created", "agent.note"];
+const SKIP_KINDS: &[&str] = &["snapshot.created", "agent.note", "document.ingested"];
 
 pub struct PipelineOptions<'a> {
     pub llm: &'a dyn LlmClient,

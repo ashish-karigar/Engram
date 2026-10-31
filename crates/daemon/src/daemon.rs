@@ -50,7 +50,7 @@ impl Daemon {
             return Ok(existing);
         }
         let project = RunningProject::start(root, &self.base, &self.runtime)?;
-        let handle = ProjectRef { info: project.info.clone(), db: project.db.clone() };
+        let handle = project.handle();
         self.projects.lock().unwrap().insert(project.info.id.clone(), project);
         Ok(handle)
     }
@@ -71,13 +71,13 @@ impl Daemon {
 impl ProjectManager for Daemon {
     fn list(&self) -> Vec<ProjectRef> {
         let mut all: Vec<_> =
-            self.projects.lock().unwrap().values().map(|p| ProjectRef { info: p.info.clone(), db: p.db.clone() }).collect();
+            self.projects.lock().unwrap().values().map(RunningProject::handle).collect();
         all.sort_by(|a, b| a.info.name.cmp(&b.info.name));
         all
     }
 
     fn get(&self, id: &str) -> Option<ProjectRef> {
-        self.projects.lock().unwrap().get(id).map(|p| ProjectRef { info: p.info.clone(), db: p.db.clone() })
+        self.projects.lock().unwrap().get(id).map(RunningProject::handle)
     }
 
     fn add(&self, root: &Path) -> Result<ProjectRef> {

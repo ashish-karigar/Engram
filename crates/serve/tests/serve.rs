@@ -9,6 +9,7 @@ use engram_core::{Connection, Error, Result};
 use engram_serve::budget::{Packable, estimate_tokens, pack_by_density};
 use engram_serve::recall::{RecallOpts, recall};
 use engram_serve::tokens::{issue_token, verify_token};
+use engram_embed::HashEmbedder;
 use engram_serve::{ConnectOutcome, ProjectInfo, ProjectManager, ProjectRef, start_server};
 use serde_json::{Value, json};
 
@@ -27,7 +28,7 @@ impl ProjectManager for TestManager {
     fn add(&self, root: &Path) -> Result<ProjectRef> {
         let id = format!("p{}", self.projects.lock().unwrap().len() + 1);
         let info = ProjectInfo { id: id.clone(), name: root.to_string_lossy().into(), root: root.to_string_lossy().into() };
-        let project = ProjectRef { info, db: shared(open_memory()?) };
+        let project = ProjectRef { info, db: shared(open_memory()?), embedder: Arc::new(HashEmbedder::default()) };
         self.projects.lock().unwrap().insert(id, project.clone());
         Ok(project)
     }
@@ -70,7 +71,7 @@ async fn fixture() -> Fixture {
     let (claude, _) = issue_token(&db, "agent", "claude-code").unwrap();
     let (codex, _) = issue_token(&db, "agent", "codex").unwrap();
     let info = ProjectInfo { id: "p1".into(), name: "drive".into(), root: "/tmp/drive".into() };
-    let manager = Arc::new(TestManager { projects: Mutex::new(HashMap::from([("p1".to_string(), ProjectRef { info, db: shared(db) })])) });
+    let manager = Arc::new(TestManager { projects: Mutex::new(HashMap::from([("p1".to_string(), ProjectRef { info, db: shared(db), embedder: Arc::new(HashEmbedder::default()) })])) });
     let server = start_server(manager.clone(), "admin-secret".into(), 0).await.unwrap();
     Fixture { url: server.url.clone(), admin: "admin-secret".into(), claude, codex, manager, _server: server }
 }
@@ -112,7 +113,7 @@ fn packing_prefers_dense_items_and_respects_the_budget() {
 fn recall_reaches_memories_through_the_graph_and_ignores_question_words() {
     let db = open_memory().unwrap();
     seed(&db);
-    let titles = |q: &str| recall(&db, q, &RecallOpts::default()).unwrap().into_iter().map(|i| i.memory.title).collect::<Vec<_>>();
+    let titles = |q: &str| recall(&db, None, q, &RecallOpts::default()).unwrap().into_iter().map(|i| i.memory.title).collect::<Vec<_>>();
     let auth = titles("backend auth");
     assert_eq!(auth[0], "Auth strategy");
     assert!(auth.contains(&"Login redirect loop".to_string()), "reached via web/login.py imports backend/auth.py");
@@ -165,7 +166,7 @@ async fn two_agents_share_one_memory_over_mcp() {
     let tools = rpc(f.claude.clone(), 2, "tools/list", json!({})).await;
     let mut names: Vec<_> = tools["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap().to_string()).collect();
     names.sort();
-    assert_eq!(names, ["brief", "expand", "note", "search"]);
+    assert_eq!(names, ["add_document", "brief", "expand", "note", "profile", "search"]);
 
     let args = json!({"type": "decision", "title": "Token expiry", "claim": "Access tokens last 15 minutes", "rationale": "limit blast radius", "files": ["backend/auth.py"]});
     rpc(f.claude.clone(), 3, "tools/call", json!({"name": "note", "arguments": args})).await;
@@ -175,7 +176,7 @@ async fn two_agents_share_one_memory_over_mcp() {
 
     let brief = rpc(f.codex.clone(), 5, "tools/call", json!({"name": "brief", "arguments": {"task": "change auth from session to token"}})).await;
     let brief_text = brief["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(brief_text.contains("Auth strategy") && brief_text.contains("What to know"));
+    assert!(brief_text.contains("Auth strategy") && brief_text.contains("Memories:"));
 
     let id = text.split_whitespace().find_map(|w| w.trim_matches(|c| c == '(' || c == ',').strip_prefix("mem_").map(|_| w.trim_matches(|c| c == '(' || c == ','))).unwrap().to_string();
     let open = rpc(f.codex.clone(), 6, "tools/call", json!({"name": "expand", "arguments": {"id": id}})).await;
@@ -219,4 +220,53 @@ async fn ui_endpoints_return_graph_node_detail_and_timeline() {
     let (_, detail) = get(&f, &f.admin, &format!("/p/p1/api/node?id={}", node["id"].as_str().unwrap())).await;
     assert_eq!(detail["memory"]["title"], "Auth strategy");
     assert_eq!(detail["memory"]["type"], "decision");
+}
+
+#[tokio::test]
+async fn documents_are_searchable_alongside_memories() {
+    let f = fixture().await;
+    let doc = "# Auth design\n\n## Sessions\n\nBoth sites share one domain, so signed session cookies work for site A and site B.\n\n## Tokens\n\nThe mobile app cannot hold cookies; it would need bearer tokens.";
+    let (status, added) = post(&f, &f.claude, "/p/p1/api/documents", json!({"title": "auth-design.md", "content": doc, "id": "auth-design"})).await;
+    assert_eq!(status, 200);
+    assert!(added["text"].as_str().unwrap().contains("created"));
+
+    let (_, both) = post(&f, &f.codex, "/p/p1/api/search", json!({"query": "why session cookies for auth"})).await;
+    let text = both["text"].as_str().unwrap();
+    assert!(text.contains("Memories:") && text.contains("From documents:"), "{text}");
+    assert!(text.contains("Auth design > Sessions"));
+
+    let (_, docs_only) = post(&f, &f.codex, "/p/p1/api/search", json!({"query": "mobile bearer tokens", "mode": "documents"})).await;
+    let docs_text = docs_only["text"].as_str().unwrap();
+    assert!(!docs_text.contains("Memories:") && docs_text.contains("Tokens"));
+
+    let chunk = docs_only["data"][0]["id"].as_str().unwrap().to_string();
+    let (_, opened) = post(&f, &f.codex, "/p/p1/api/expand", json!({"id": chunk})).await;
+    assert!(opened["text"].as_str().unwrap().contains("cannot hold cookies"));
+
+    let (_, listed) = get(&f, &f.admin, "/p/p1/api/documents").await;
+    assert_eq!(listed[0]["status"], "done");
+    let (_, graph) = get(&f, &f.admin, "/p/p1/api/graph").await;
+    assert!(graph["nodes"].as_array().unwrap().iter().any(|n| n["kind"] == "document"));
+    let (_, stats) = get(&f, &f.admin, "/p/p1/api/stats").await;
+    assert_eq!(stats["documents"], 1);
+}
+
+#[tokio::test]
+async fn profile_and_review_endpoints_work() {
+    let f = fixture().await;
+    let (_, profile) = get(&f, &f.admin, "/p/p1/api/profile").await;
+    assert!(profile["text"].as_str().unwrap().contains("Auth strategy"));
+    {
+        let project = f.manager.get("p1").unwrap();
+        let db = project.db.lock().unwrap();
+        let parents: Vec<String> = db.prepare("SELECT id FROM memories LIMIT 2").unwrap().query_map([], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect();
+        engram_core::memory::derive(&db, &parents, NewMemory::new("fact", "Guess", "Auth and billing share a session check")).unwrap();
+    }
+    let (_, queue) = get(&f, &f.admin, "/p/p1/api/review").await;
+    let id = queue[0]["memory"]["id"].as_str().unwrap().to_string();
+    assert_eq!(queue[0]["parentCount"], 2);
+    let (_, approved) = post(&f, &f.admin, "/p/p1/api/review", json!({"id": id, "action": "approve"})).await;
+    assert_eq!(approved["isInference"], false);
+    let (_, empty) = get(&f, &f.admin, "/p/p1/api/review").await;
+    assert!(empty.as_array().unwrap().is_empty());
 }

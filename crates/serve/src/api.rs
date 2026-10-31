@@ -35,6 +35,14 @@ pub fn graph_data(conn: &Connection, include_archived: bool, limit: i64) -> Resu
         nodes.insert(id.clone(), json!({"id": id, "label": name, "kind": kind}));
     }
 
+    let documents: Vec<(String, String, String)> = conn
+        .prepare("SELECT id, title, source FROM documents WHERE status = 'done' ORDER BY updated_at DESC LIMIT 150")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<SqlResult<_>>()?;
+    for (id, title, source) in documents {
+        nodes.insert(id.clone(), json!({"id": id, "label": title, "kind": "document", "status": source}));
+    }
+
     let all = serde_json::to_string(&nodes.keys().collect::<Vec<_>>())?;
     let edges: Vec<Value> = conn
         .prepare(
@@ -47,6 +55,13 @@ pub fn graph_data(conn: &Connection, include_archived: bool, limit: i64) -> Resu
 }
 
 pub fn node_detail(conn: &Connection, id: &str) -> Result<Value> {
+    if let Some(doc) = engram_rag::document::get_document(conn, id)? {
+        let chunks: Vec<Value> = conn
+            .prepare("SELECT id, heading, start_line, end_line, substr(content, 1, 400) FROM chunks WHERE document_id = ? ORDER BY ordinal")?
+            .query_map([id], |r| Ok(json!({"id": r.get::<_, String>(0)?, "heading": r.get::<_, Option<String>>(1)?, "startLine": r.get::<_, Option<i64>>(2)?, "endLine": r.get::<_, Option<i64>>(3)?, "preview": r.get::<_, String>(4)?})))?
+            .collect::<SqlResult<_>>()?;
+        return Ok(json!({"type": "document", "document": doc, "chunks": chunks}));
+    }
     if let Some(memory) = get_memory(conn, id)? {
         let evidence: Vec<Value> = conn
             .prepare("SELECT e.seq, e.ts, e.kind, e.payload FROM memory_evidence me JOIN events e ON e.seq = me.event_seq WHERE me.memory_id = ?")?
@@ -71,6 +86,9 @@ pub fn stats(conn: &Connection) -> Result<Value> {
         "archived": count("SELECT COUNT(*) FROM memories WHERE status = 'archived'")?,
         "entities": count("SELECT COUNT(*) FROM entities WHERE status = 'active'")?,
         "requests": count("SELECT COUNT(*) FROM access_log")?,
+        "documents": count("SELECT COUNT(*) FROM documents WHERE status = 'done'")?,
+        "chunks": count("SELECT COUNT(*) FROM chunks")?,
+        "inferred": count("SELECT COUNT(*) FROM memories WHERE is_inference = 1 AND reviewed_at IS NULL AND status = 'current'")?,
     }))
 }
 
@@ -80,4 +98,12 @@ pub fn timeline(conn: &Connection, limit: i64) -> Result<Value> {
 
 pub fn request_log(conn: &Connection, limit: i64) -> Result<Value> {
     Ok(serde_json::to_value(recent_access(conn, None, limit)?)?)
+}
+
+pub fn documents(conn: &Connection, limit: i64) -> Result<Value> {
+    Ok(serde_json::to_value(engram_rag::document::list_documents(conn, None, limit)?)?)
+}
+
+pub fn review_queue(conn: &Connection) -> Result<Value> {
+    Ok(serde_json::to_value(engram_core::memory::list_inferred(conn, 50)?)?)
 }

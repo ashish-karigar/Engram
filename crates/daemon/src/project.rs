@@ -11,7 +11,10 @@ use engram_capture::{Capture, CaptureOptions, start_capture};
 use engram_core::db::{SharedDb, open, shared};
 use engram_core::decay::archive_stale;
 use engram_core::{Connection, Result};
-use engram_serve::ProjectInfo;
+use engram_embed::{Embedder, embedder_from_env};
+use engram_embed::store::{embed_and_store, memories_missing};
+use engram_rag::project::{ingest_file, should_index};
+use engram_serve::{ProjectInfo, ProjectRef};
 use engram_understand::codeindex::index_python;
 use engram_understand::llm::LlmClient;
 use engram_understand::pipeline::{PipelineOptions, run_pipeline};
@@ -24,6 +27,8 @@ pub type LlmFactory = Arc<dyn Fn() -> Option<Box<dyn LlmClient>> + Send + Sync>;
 #[derive(Clone)]
 pub struct RuntimeOptions {
     pub llm: LlmFactory,
+    /// Embedding model for documents and memories (`ENGRAM_EMBED`, default: built-in hashing).
+    pub embedder: Arc<dyn Embedder>,
     pub pipeline_every: Duration,
     pub decay_every: Duration,
     pub capture_debounce: Duration,
@@ -34,6 +39,7 @@ impl Default for RuntimeOptions {
     fn default() -> Self {
         RuntimeOptions {
             llm: Arc::new(engram_understand::llm::client_from_env),
+            embedder: Arc::from(embedder_from_env()),
             pipeline_every: Duration::from_secs(60),
             decay_every: Duration::from_secs(6 * 3600),
             capture_debounce: Duration::from_millis(500),
@@ -47,15 +53,31 @@ pub struct RunningProject {
     pub info: ProjectInfo,
     pub paths: ProjectPaths,
     pub db: SharedDb,
+    pub embedder: Arc<dyn Embedder>,
     capture: Option<Capture>,
     stop: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
 }
 
+/// Files git would track (committed or new, minus ignored), optionally filtered by pathspec.
+fn list_files(root: &Path, pathspec: Option<&str>) -> Vec<String> {
+    let mut args = vec!["ls-files", "--cached", "--others", "--exclude-standard"];
+    args.extend(pathspec);
+    git(root, &args).map(|out| out.lines().map(String::from).collect()).unwrap_or_default()
+}
+
 fn list_python(root: &Path) -> Vec<String> {
-    git(root, &["ls-files", "--cached", "--others", "--exclude-standard", "*.py"])
-        .map(|out| out.lines().map(String::from).collect())
-        .unwrap_or_default()
+    list_files(root, Some("*.py"))
+}
+
+/// Keep the document index in step with the folder: new and changed files are (re)ingested,
+/// deleted ones removed. Unchanged files are skipped by content hash.
+fn sync_documents(conn: &Connection, embedder: &dyn Embedder, root: &Path, paths: &[String]) {
+    for path in paths.iter().filter(|p| should_index(p)) {
+        if let Err(err) = ingest_file(conn, embedder, root, path) {
+            eprintln!("engram: could not index {path}: {err}");
+        }
+    }
 }
 
 fn reindex(conn: &Connection, root: &Path, changed: Option<&[String]>) {
@@ -80,12 +102,13 @@ impl RunningProject {
         let mut capture_opts = CaptureOptions::new(db.clone(), &paths.root);
         capture_opts.debounce = opts.capture_debounce;
         capture_opts.snapshot_interval = opts.snapshot_interval;
-        let (db_path, change_root) = (paths.db.clone(), paths.root.clone());
+        let (db_path, change_root, change_embedder) = (paths.db.clone(), paths.root.clone(), opts.embedder.clone());
         capture_opts.on_change = Some(Box::new(move |changes| {
             // A separate connection keeps indexing from blocking agent requests.
             let paths: Vec<String> = changes.iter().map(|c| c.path.clone()).collect();
             if let Ok(conn) = open(&db_path) {
                 reindex(&conn, &change_root, Some(&paths));
+                sync_documents(&conn, change_embedder.as_ref(), &change_root, &paths);
             }
         }));
         let capture = start_capture(capture_opts)?;
@@ -93,7 +116,11 @@ impl RunningProject {
         let stop = Arc::new(AtomicBool::new(false));
         let worker = spawn_upkeep(&paths, opts.clone(), stop.clone());
         let info = ProjectInfo { id: paths.id.clone(), name: paths.name.clone(), root: paths.root.to_string_lossy().into() };
-        Ok(RunningProject { info, paths, db, capture: Some(capture), stop, worker: Some(worker) })
+        Ok(RunningProject { info, paths, db, embedder: opts.embedder.clone(), capture: Some(capture), stop, worker: Some(worker) })
+    }
+
+    pub fn handle(&self) -> ProjectRef {
+        ProjectRef { info: self.info.clone(), db: self.db.clone(), embedder: self.embedder.clone() }
     }
 
     pub fn stop(mut self) {
@@ -114,6 +141,8 @@ fn spawn_upkeep(paths: &ProjectPaths, opts: RuntimeOptions, stop: Arc<AtomicBool
     let (db_path, root) = (paths.db.clone(), paths.root.clone());
     std::thread::spawn(move || {
         let Ok(conn) = open(&db_path) else { return };
+        // First pass: index the project's documents and code as searchable chunks.
+        sync_documents(&conn, opts.embedder.as_ref(), &root, &list_files(&root, None));
         let llm = (opts.llm)();
         let (mut last_pipeline, mut last_decay) = (Instant::now(), Instant::now());
         while !stop.load(Ordering::SeqCst) {
@@ -124,6 +153,11 @@ fn spawn_upkeep(paths: &ProjectPaths, opts: RuntimeOptions, stop: Arc<AtomicBool
                 let mut pipeline = PipelineOptions::new(llm);
                 pipeline.get_diff = Some(&diff);
                 let _ = run_pipeline(&conn, &pipeline);
+            }
+            if let Ok(missing) = memories_missing(&conn, &opts.embedder.model_id(), 200) {
+                if !missing.is_empty() {
+                    let _ = embed_and_store(&conn, opts.embedder.as_ref(), "memory", &missing);
+                }
             }
             if last_decay.elapsed() >= opts.decay_every {
                 last_decay = Instant::now();
