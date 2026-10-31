@@ -68,13 +68,13 @@ export function GraphControls({ graph, settings: s, onChange, selectedId, zoom, 
       <div className="graph-camera">
         <span className="seg mode">
           <button className={s.mode === "2d" ? "on" : ""} onClick={() => set("mode", "2d")}>2D</button>
-          <button className={s.mode === "3d" ? "on" : ""} onClick={() => set("mode", "3d")}>3D</button>
+          <button className={s.mode === "3d" ? "on" : ""} onClick={() => set("mode", "3d")} title="Drag empty space to rotate; Shift-drag to pan">3D</button>
         </span>
         <button onClick={() => commands.current?.fit()}>Fit <kbd>Z</kbd></button>
         <button onClick={() => commands.current?.center()}>Center <kbd>C</kbd></button>
         <span className="zoom">
           <button onClick={() => commands.current?.zoomBy(1 / 1.25)}>−</button>
-          {s.mode === "2d" ? `${Math.round(zoom * 100)}%` : "zoom"}
+          {Math.round(zoom * 100)}%
           <button onClick={() => commands.current?.zoomBy(1.25)}>+</button>
         </span>
       </div>

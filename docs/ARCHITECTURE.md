@@ -20,7 +20,7 @@ and serves small, token-budgeted answers over MCP and HTTP. One app watches many
  │             serve: recall · budget · MCP · HTTP (/p/<project>/…)      │
  └──────────────────────────────────┬────────────────────────────────────┘
                                     ▼
-                      desktop app (Tauri + React + Cytoscape)
+                      desktop app (Tauri + React, canvas graph)
 ```
 
 ## Crates
@@ -115,8 +115,8 @@ entry format unverified), Claude Code (`claude mcp add`).
 ## Why Rust + Tauri
 Engram is an always-on background process, so idle memory and startup matter. A Rust daemon plus
 Tauri keeps it small, ships as one binary with no Node requirement, and the daemon runs inside the
-desktop app process. The UI is web technology because the graph is drawn by Cytoscape; it only speaks
-HTTP, so the shell is replaceable.
+desktop app process. The UI is web technology (React, with the graph drawn on a canvas by a d3-force simulation in 2D or 3D);
+it only speaks HTTP, so the shell is replaceable.
 
 ## Agent conversations
 

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use engram_core::access::recent_access;
 use engram_core::events::recent_events;
@@ -10,7 +10,8 @@ use serde_json::{Value, json};
 
 /// Read-only JSON views for the desktop UI.
 pub fn graph_data(conn: &Connection, include_archived: bool, limit: i64) -> Result<Value> {
-    let mut nodes: HashMap<String, Value> = HashMap::new();
+    // Ordered by id, so the same graph always serializes the same way and clients can tell real changes.
+    let mut nodes: BTreeMap<String, Value> = BTreeMap::new();
     let memories: Vec<(String, String, String, String, i64)> = conn
         .prepare(
             "SELECT id, type, title, status, is_hub FROM memories

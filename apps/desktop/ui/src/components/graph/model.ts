@@ -10,6 +10,16 @@ export interface SimNode extends SimulationNodeDatum {
   degree: number;
   radius: number;
   color: string;
+  /** Third axis, used only while the graph is rotatable. */
+  z?: number;
+  vz?: number;
+  fz?: number | null;
+  /** Screen-plane position after rotation and perspective (see projection.ts). */
+  sx?: number;
+  sy?: number;
+  depth?: number;
+  scale?: number;
+  fade?: number;
 }
 
 export interface SimLink extends SimulationLinkDatum<SimNode> {
@@ -44,7 +54,7 @@ export function neighbourhood(adj: Map<string, Set<string>>, root: string, depth
   return seen;
 }
 
-type Position = Pick<SimNode, "x" | "y" | "vx" | "vy">;
+type Position = Pick<SimNode, "x" | "y" | "z" | "vx" | "vy" | "vz">;
 
 /**
  * Apply filters and build simulation objects. Positions of nodes that survive a refresh are kept,
@@ -83,7 +93,10 @@ export function buildScene(graph: Graph, s: GraphSettings, selected: string | nu
 function placeNear(id: string, adj: Map<string, Set<string>>, previous: Map<string, Position>): Position {
   for (const n of adj.get(id) ?? []) {
     const p = previous.get(n);
-    if (p?.x !== undefined && p.y !== undefined) return { x: p.x + (Math.random() - 0.5) * 30, y: p.y + (Math.random() - 0.5) * 30 };
+    if (p?.x !== undefined && p.y !== undefined) {
+      const jitter = () => (Math.random() - 0.5) * 30;
+      return { x: p.x + jitter(), y: p.y + jitter(), ...(p.z !== undefined && { z: p.z + jitter() }) };
+    }
   }
   return {};
 }

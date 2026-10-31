@@ -41,7 +41,7 @@ Deadline: Nov 4, 9 PM ET. Phases are ordered so each one leaves a working, demoa
 
 ## Code languages
 
-Python, Rust, TypeScript and JavaScript/JSX: symbols, imports (relative, `crate::`, `super::`, workspace crates; Python absolute imports in `src/` layouts and sub-projects via path-suffix matching) and AST-aware chunks; folders link into a tree. Others: line-window chunks only. Graph views: 2D canvas and 3D (three.js).
+Python, Rust, TypeScript and JavaScript/JSX: symbols, imports (relative, `crate::`, `super::`, workspace crates; Python absolute imports in `src/` layouts and sub-projects via path-suffix matching) and AST-aware chunks; folders link into a tree. Others: line-window chunks only. Graph: one canvas renderer; 3D runs the same layout on three axes (d3-force-3d) and rotates by drag, with identical labels, highlighting and controls.
 
 ## Engram-only (the differentiators)
 
