@@ -27,6 +27,37 @@ use crate::settings::{IndexSettings, ignored};
 /// How often agent session logs are checked for new turns. Reads only appended bytes.
 const SESSIONS_EVERY: Duration = Duration::from_secs(10);
 
+/// A local model holds most of the machine's memory while loaded, so extraction runs in short
+/// bursts: at most `LOCAL_BURST` tasks, then every project rests for `LOCAL_REST` while the model
+/// unloads. Hosted models have no such limit.
+const LOCAL_BURST: usize = 3;
+const LOCAL_REST: Duration = Duration::from_secs(5 * 60);
+
+/// Whose turn it is with the local model: one project at a time, and nobody while it rests.
+struct LocalTurn {
+    busy: bool,
+    resumes_at: Option<Instant>,
+}
+static LOCAL_TURN: std::sync::Mutex<LocalTurn> = std::sync::Mutex::new(LocalTurn { busy: false, resumes_at: None });
+
+fn claim_local_turn() -> bool {
+    let mut turn = LOCAL_TURN.lock().unwrap_or_else(|e| e.into_inner());
+    if turn.busy || turn.resumes_at.is_some_and(|t| Instant::now() < t) {
+        return false;
+    }
+    turn.busy = true;
+    true
+}
+
+/// End a turn; if the model was used, everyone rests while it unloads.
+fn release_local_turn(used_model: bool) {
+    let mut turn = LOCAL_TURN.lock().unwrap_or_else(|e| e.into_inner());
+    turn.busy = false;
+    if used_model {
+        turn.resumes_at = Some(Instant::now() + LOCAL_REST);
+    }
+}
+
 /// Builds the extraction model. A factory, so each project thread owns its own client.
 pub type LlmFactory = Arc<dyn Fn() -> Option<Box<dyn LlmClient>> + Send + Sync>;
 
@@ -178,12 +209,19 @@ fn spawn_upkeep(paths: &ProjectPaths, opts: RuntimeOptions, stop: Arc<AtomicBool
         let mut last_sessions = Instant::now() - SESSIONS_EVERY;
         while !stop.load(Ordering::SeqCst) {
             std::thread::sleep(Duration::from_millis(100));
-            if let Some(llm) = llm.as_deref().filter(|_| last_pipeline.elapsed() >= opts.pipeline_every) {
+            let due = last_pipeline.elapsed() >= opts.pipeline_every;
+            if let Some(llm) = llm.as_deref().filter(|l| due && (!l.is_local() || claim_local_turn())) {
                 last_pipeline = Instant::now();
                 let diff = |sha: &str| git(&root, &["show", "--stat", "--patch", "--format=", sha]).unwrap_or_default();
                 let mut pipeline = PipelineOptions::new(llm);
                 pipeline.get_diff = Some(&diff);
-                let _ = run_pipeline(&conn, &pipeline);
+                if llm.is_local() {
+                    pipeline.max_tasks = Some(LOCAL_BURST);
+                }
+                let report = run_pipeline(&conn, &pipeline);
+                if llm.is_local() {
+                    release_local_turn(report.is_ok_and(|r| r.tasks > 0 || r.error.is_some()));
+                }
             }
             if opts.index.sessions && last_sessions.elapsed() >= SESSIONS_EVERY {
                 last_sessions = Instant::now();

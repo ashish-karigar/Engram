@@ -189,3 +189,18 @@ fn conversations_are_extracted_like_commits() {
     let report = run_pipeline(&db, &PipelineOptions::new(&llm)).unwrap();
     assert_eq!((report.tasks, report.created), (1, 1));
 }
+
+#[test]
+fn max_tasks_stops_early_and_leaves_the_rest_for_the_next_run() {
+    let db = open_memory().unwrap();
+    // Three commits an hour apart are three separate tasks.
+    for hour in 10..13 {
+        let payload = json!({"sha": format!("c{hour}"), "subject": "change", "files": ["a.py"], "author": "a"});
+        append_event(&db, NewEvent { ts: Some(format!("2026-10-30T{hour}:00:00Z")), ..NewEvent::new("git.commit", payload) }).unwrap();
+    }
+    let llm = ScriptedClient::new(vec!["{\"memories\":[]}".into()]);
+    let mut opts = PipelineOptions::new(&llm);
+    opts.max_tasks = Some(2);
+    assert_eq!(run_pipeline(&db, &opts).unwrap().tasks, 2);
+    assert_eq!(run_pipeline(&db, &opts).unwrap().tasks, 1);
+}

@@ -14,6 +14,10 @@ pub struct LlmRequest {
 pub trait LlmClient: Send + Sync {
     fn name(&self) -> String;
     fn complete(&self, req: &LlmRequest) -> Result<String>;
+    /// True when the model runs on this machine and competes with the user for memory.
+    fn is_local(&self) -> bool {
+        false
+    }
 }
 
 fn post_json(url: &str, body: Value, bearer: Option<&str>) -> Result<Value> {
@@ -68,11 +72,16 @@ impl LlmClient for OllamaClient {
         format!("ollama:{}", self.model)
     }
 
+    fn is_local(&self) -> bool {
+        true
+    }
+
     fn complete(&self, req: &LlmRequest) -> Result<String> {
         let url = format!("{}/api/chat", self.host.trim_end_matches('/'));
         // Ollama's default context window is ~4k tokens and silently truncates longer prompts.
+        // A short keep_alive frees the model's memory soon after a batch instead of after 5 minutes.
         let body = json!({
-            "model": self.model, "stream": false, "messages": messages(req), "format": "json",
+            "model": self.model, "stream": false, "messages": messages(req), "format": "json", "keep_alive": "20s",
             "options": {"num_ctx": 16384, "temperature": 0.1}
         });
         let data = post_json(&url, body, None)?;

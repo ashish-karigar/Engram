@@ -224,6 +224,10 @@ impl LlmClient for OneAtATime {
         self.inner.name()
     }
 
+    fn is_local(&self) -> bool {
+        self.inner.is_local()
+    }
+
     fn complete(&self, req: &engram_understand::llm::LlmRequest) -> Result<String> {
         let _turn = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         self.inner.complete(req)

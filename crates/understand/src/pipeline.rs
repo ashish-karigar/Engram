@@ -22,11 +22,13 @@ pub struct PipelineOptions<'a> {
     pub get_diff: Option<DiffProvider<'a>>,
     pub batch_limit: i64,
     pub idle_gap_ms: i64,
+    /// Stop after this many model calls; the rest waits for the next run.
+    pub max_tasks: Option<usize>,
 }
 
 impl<'a> PipelineOptions<'a> {
     pub fn new(llm: &'a dyn LlmClient) -> Self {
-        PipelineOptions { llm, get_diff: None, batch_limit: 500, idle_gap_ms: 10 * 60_000 }
+        PipelineOptions { llm, get_diff: None, batch_limit: 500, idle_gap_ms: 10 * 60_000, max_tasks: None }
     }
 }
 
@@ -73,6 +75,9 @@ pub fn run_pipeline(conn: &Connection, opts: &PipelineOptions) -> Result<Pipelin
     for task in group_tasks(&events, opts.idle_gap_ms) {
         let last = task.events.last().map_or(cursor, |e| e.seq);
         if is_significant(&task) {
+            if opts.max_tasks.is_some_and(|max| report.tasks >= max) {
+                break;
+            }
             if let Err(err) = process_task(conn, &task, opts, &author, &mut report) {
                 report.error = Some(err.to_string());
                 return Ok(report);
