@@ -5,7 +5,7 @@ use engram_core::events::Actor;
 use engram_core::graph::{ExpandOpts, expand, get_entity};
 use engram_core::memory::{get_memories, get_memory, history, record_access};
 use engram_core::{Connection, Error, Result};
-use engram_embed::Embedder;
+use engram_embed::{Embedder, Reranker};
 use engram_rag::document::get_document;
 use engram_rag::{ChunkHit, DocumentInput, ingest, search_chunks};
 use engram_understand::notes::{NoteContext, NoteInput, record_note};
@@ -24,6 +24,18 @@ pub struct Ctx<'a> {
     pub conn: &'a Connection,
     pub actor: &'a Actor,
     pub embedder: &'a dyn Embedder,
+    /// Optional second pass over the top results; see `Rerank`.
+    pub rerank: Option<Rerank<'a>>,
+}
+
+/// Re-score the best `top` results with a cross-encoder, then blend:
+/// `weight × reranker + (1 − weight) × first-pass score`. Results below `top` keep only their
+/// first-pass share, so they stay behind the re-scored ones.
+#[derive(Clone, Copy)]
+pub struct Rerank<'a> {
+    pub model: &'a dyn Reranker,
+    pub weight: f64,
+    pub top: usize,
 }
 
 pub struct OpResult {
@@ -165,8 +177,37 @@ fn render(items: &[Item]) -> (String, Vec<Value>) {
 }
 
 /// Memories and document chunks on one scale (see `relevance`): each ranker's own score, blended
-/// with how much of the query's distinctive vocabulary the item contains.
+/// with how much of the query's distinctive vocabulary the item contains; then the optional rerank.
 fn gather(ctx: &Ctx, query: &str, mode: &str, as_of: Option<String>, chunk_candidates: usize) -> Result<Vec<(Item, f64)>> {
+    let items = first_pass(ctx, query, mode, as_of, chunk_candidates)?;
+    match ctx.rerank {
+        Some(r) => rerank(r, query, items),
+        None => Ok(items),
+    }
+}
+
+/// What the reranker reads for an item: what it says, not its ids and dates.
+fn rerank_text(item: &Item) -> String {
+    match item {
+        Item::Memory(m) => format!("{}: {}. {}", m.memory.title, m.memory.claim, m.memory.rationale.as_deref().unwrap_or("")),
+        Item::Chunk(c) => format!("{}\n{}", c.heading.as_deref().unwrap_or(&c.title), c.content),
+    }
+}
+
+fn rerank(r: Rerank, query: &str, mut items: Vec<(Item, f64)>) -> Result<Vec<(Item, f64)>> {
+    items.sort_by(|a, b| b.1.total_cmp(&a.1));
+    let n = r.top.min(items.len());
+    let texts: Vec<String> = items[..n].iter().map(|(item, _)| rerank_text(item)).collect();
+    let scores = r.model.score(query, &texts)?;
+    for (i, (_, score)) in items.iter_mut().enumerate() {
+        let cross = scores.get(i).copied().unwrap_or(0.0) as f64;
+        *score = r.weight * cross + (1.0 - r.weight) * *score;
+    }
+    Ok(items)
+}
+
+/// Memories and document chunks on one scale, before any reranking.
+fn first_pass(ctx: &Ctx, query: &str, mode: &str, as_of: Option<String>, chunk_candidates: usize) -> Result<Vec<(Item, f64)>> {
     let vocab = vocabulary(ctx.conn, query)?;
     let mut items: Vec<(Item, f64)> = vec![];
     if mode != "documents" {

@@ -179,7 +179,7 @@ pub fn run(dir: &Path, sizes: &[usize], queries: usize) -> Result<()> {
         let quality = quality.iter().sum::<f64>() / quality.len().max(1) as f64;
 
         let actor = ensure_actor(&conn, "user", "engram-eval")?;
-        let ctx = Ctx { conn: &conn, actor: &actor, embedder: &embedder };
+        let ctx = Ctx { conn: &conn, actor: &actor, embedder: &embedder, rerank: None };
         let mut full_ms = vec![];
         for q in &texts {
             let t = Instant::now();

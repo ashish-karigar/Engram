@@ -239,7 +239,7 @@ fn shared_mcp(state: &AppState, token: &str, is_admin: bool, body: &Value) -> Re
         let project = pick_project(&state.manager.list(), &agent, cwd.as_deref())?;
         with_conn(&project, |conn| {
             let actor = ensure_actor(conn, kind, &agent)?;
-            let out = call_tool(&Ctx { conn, actor: &actor, embedder: project.embedder.as_ref() }, name, args)?;
+            let out = call_tool(&Ctx { conn, actor: &actor, embedder: project.embedder.as_ref(), rerank: None }, name, args)?;
             Ok(OpResult { text: format!("[project: {} · {}]\n{}", project.info.name, project.info.root, out.text), data: out.data })
         })
     };
@@ -271,7 +271,7 @@ fn project_route(
     };
     let tail: Vec<&str> = tail.iter().map(String::as_str).collect();
     let limit = query_param(query, "limit").and_then(|v| v.parse().ok()).unwrap_or(100);
-    let ctx = Ctx { conn, actor: &actor, embedder: project.embedder.as_ref() };
+    let ctx = Ctx { conn, actor: &actor, embedder: project.embedder.as_ref(), rerank: None };
     let op = |r: Result<crate::ops::OpResult>| r.map(|o| reply(StatusCode::OK, &json!({"text": o.text, "data": o.data})));
     let json_ok = |r: Result<Value>| r.map(|v| reply(StatusCode::OK, &v));
 

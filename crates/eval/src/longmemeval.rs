@@ -13,7 +13,8 @@ use engram_core::events::ensure_actor;
 use engram_core::{Connection, Error, Result};
 use engram_embed::Embedder;
 use engram_serve::budget::estimate_tokens;
-use engram_serve::ops::{Ctx, SearchReq, op_search, rank};
+use engram_embed::Reranker;
+use engram_serve::ops::{Ctx, Rerank, SearchReq, op_search, rank};
 use engram_sessions::sync::record_turn;
 use engram_sessions::transcript::rebuild_transcript;
 use engram_sessions::{Agent, Role, Turn};
@@ -112,14 +113,22 @@ fn sessions_by_document(conn: &Connection) -> Result<HashMap<String, String>> {
     Ok(out)
 }
 
-fn evaluate(q: &Question, embedder: &dyn Embedder) -> Result<Outcome> {
+/// Reranking settings for a run: the model, its blend weight and how many results it re-scores.
+pub struct RerankSetup {
+    pub model: Arc<dyn Reranker>,
+    pub weight: f64,
+    pub top: usize,
+}
+
+fn evaluate(q: &Question, embedder: &dyn Embedder, rerank_setup: Option<&RerankSetup>) -> Result<Outcome> {
     let conn = open_memory()?;
     let started = Instant::now();
     ingest(&conn, embedder, q)?;
     let ingest_ms = started.elapsed().as_secs_f64() * 1000.0;
     let sessions = sessions_by_document(&conn)?;
     let actor = ensure_actor(&conn, "user", "engram-eval")?;
-    let ctx = Ctx { conn: &conn, actor: &actor, embedder };
+    let rerank = rerank_setup.map(|r| Rerank { model: r.model.as_ref(), weight: r.weight, top: r.top });
+    let ctx = Ctx { conn: &conn, actor: &actor, embedder, rerank };
 
     let started = Instant::now();
     let ranked = rank(&ctx, &q.question, "hybrid", CANDIDATES)?;
@@ -169,7 +178,7 @@ fn evaluate(q: &Question, embedder: &dyn Embedder) -> Result<Outcome> {
     })
 }
 
-pub fn run(data: &Path, split: Split, embedder: Arc<dyn Embedder>, limit: Option<usize>, out: Option<&Path>) -> Result<()> {
+pub fn run(data: &Path, split: Split, embedder: Arc<dyn Embedder>, rerank: Option<RerankSetup>, limit: Option<usize>, out: Option<&Path>) -> Result<()> {
     let text = std::fs::read_to_string(data).map_err(|e| Error::msg(format!("{}: {e}", data.display())))?;
     let all: Vec<Question> = serde_json::from_str(&text)?;
     // Abstention questions have no evidence to retrieve; LongMemEval excludes them from retrieval scoring.
@@ -177,12 +186,13 @@ pub fn run(data: &Path, split: Split, embedder: Arc<dyn Embedder>, limit: Option
     if let Some(n) = limit {
         questions.truncate(n);
     }
-    eprintln!("LongMemEval-S: {} questions, embeddings {}", questions.len(), embedder.model_id());
+    let reranking = rerank.as_ref().map_or("none".into(), |r| format!("{} (weight {}, top {})", r.model.model_id(), r.weight, r.top));
+    eprintln!("LongMemEval-S: {} questions, embeddings {}, rerank {reranking}", questions.len(), embedder.model_id());
 
     let started = Instant::now();
     let outcomes: Vec<Outcome> = questions
         .par_iter()
-        .map(|q| evaluate(q, embedder.as_ref()).unwrap_or_else(|e| panic!("{}: {e}", q.question_id)))
+        .map(|q| evaluate(q, embedder.as_ref(), rerank.as_ref()).unwrap_or_else(|e| panic!("{}: {e}", q.question_id)))
         .collect();
 
     let mut groups: BTreeMap<String, Vec<&Outcome>> = BTreeMap::new();

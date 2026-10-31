@@ -1,6 +1,7 @@
 //! Engram's evaluation runner. Public benchmarks run against the real ingest and search code,
 //! in-process, with a fresh in-memory database per question. Rules and suites: docs/EVALUATION.md.
 
+mod cache;
 mod longmemeval;
 mod report;
 mod scale;
@@ -10,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::{Parser, Subcommand, ValueEnum};
-use engram_embed::{Embedder, HashEmbedder, LocalEmbedder, LocalModel};
+use engram_embed::{Embedder, HashEmbedder, LocalEmbedder, LocalModel, LocalReranker, RerankModel};
 
 /// Model weights are shared with the app: `ENGRAM_MODELS`, else the app's data folder.
 fn models_dir() -> PathBuf {
@@ -74,6 +75,15 @@ enum Suite {
         split: Split,
         #[arg(long, value_enum, default_value = "hash")]
         embed: EmbedModel,
+        /// Rerank the top results with a cross-encoder: jina-turbo or bge-reranker-base.
+        #[arg(long)]
+        rerank: Option<String>,
+        /// Share of the final score that comes from the reranker.
+        #[arg(long, default_value_t = 0.5)]
+        rerank_weight: f64,
+        /// How many top results the reranker re-scores.
+        #[arg(long, default_value_t = 20)]
+        rerank_top: usize,
         /// Only the first N questions of the split (for quick checks).
         #[arg(long)]
         limit: Option<usize>,
@@ -96,7 +106,24 @@ enum Suite {
 fn main() {
     let cli = Cli::parse();
     let result = match cli.suite {
-        Suite::Longmemeval { data, split, embed, limit, out } => longmemeval::run(&data, split, embed.load(), limit, out.as_deref()),
+        Suite::Longmemeval { data, split, embed, rerank, rerank_weight, rerank_top, limit, out } => {
+            let rerank = rerank.map(|name| {
+                let model = RerankModel::parse(&name).unwrap_or_else(|| panic!("unknown reranker: {name}"));
+                let loaded = LocalReranker::load(model, models_dir()).unwrap_or_else(|e| panic!("{e}"));
+                longmemeval::RerankSetup { model: Arc::new(loaded), weight: rerank_weight, top: rerank_top }
+            });
+            // Cache vectors next to the data, per model, so tuning runs do not re-embed.
+            let inner = embed.load();
+            let safe: String = inner.model_id().chars().map(|c| if c.is_alphanumeric() { c } else { '_' }).collect();
+            let file = data.with_file_name(format!("embed-cache-{safe}.bin"));
+            let cached = Arc::new(cache::CachedEmbedder::open(inner, file));
+            eprintln!("embedding cache: {} vectors", cached.cached());
+            let result = longmemeval::run(&data, split, cached.clone(), rerank, limit, out.as_deref());
+            if let Err(e) = cached.save() {
+                eprintln!("could not save the embedding cache: {e}");
+            }
+            result
+        }
         Suite::Scale { dir, sizes, queries } => scale::run(&dir, &sizes, queries),
     };
     if let Err(err) = result {

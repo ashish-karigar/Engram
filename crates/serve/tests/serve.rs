@@ -327,3 +327,38 @@ fn snippets_show_the_part_of_a_chunk_that_matches() {
     let text = format!("{}\nThe daemon listens on port 41741 by default.", "Unrelated setup notes. ".repeat(30));
     assert!(v.best_window(&text, 80).contains("41741"));
 }
+
+/// Prefers documents that mention "cookies", whatever the first pass thought.
+struct CookieReranker;
+impl engram_embed::Reranker for CookieReranker {
+    fn model_id(&self) -> String {
+        "test".into()
+    }
+    fn score(&self, _query: &str, documents: &[String]) -> Result<Vec<f32>> {
+        Ok(documents.iter().map(|d| if d.contains("cookies") { 1.0 } else { 0.0 }).collect())
+    }
+}
+
+#[test]
+fn reranking_reorders_the_top_results_by_the_cross_encoder() {
+    use engram_core::events::ensure_actor;
+    use engram_serve::ops::{Ctx, Rerank, rank};
+    let db = open_memory().unwrap();
+    let e = HashEmbedder::default();
+    let docs = [("a", "Auth tokens", "Auth uses bearer tokens for the mobile auth flow; auth auth auth."), ("b", "Sessions", "For auth the web app keeps signed cookies.")];
+    for (id, title, body) in docs {
+        engram_rag::ingest(&db, &e, engram_rag::DocumentInput {
+            external_id: Some(id.into()), title: title.into(), source: "upload".into(), path: None,
+            file_name: format!("{id}.md"), bytes: body.as_bytes().to_vec(), metadata: json!({}),
+        }).unwrap();
+    }
+    let actor = ensure_actor(&db, "user", "t").unwrap();
+    let doc_of = |r: &engram_serve::ops::Ranked| r.document_id.clone().unwrap();
+    let title_of = |id: String| db.query_row("SELECT title FROM documents WHERE id = ?", [id], |r| r.get::<_, String>(0)).unwrap();
+    let plain = Ctx { conn: &db, actor: &actor, embedder: &e, rerank: None };
+    assert_eq!(title_of(doc_of(&rank(&plain, "auth", "documents", 12).unwrap()[0])), "Auth tokens");
+    let reranked = Ctx { rerank: Some(Rerank { model: &CookieReranker, weight: 0.8, top: 10 }), ..plain };
+    assert_eq!(title_of(doc_of(&rank(&reranked, "auth", "documents", 12).unwrap()[0])), "Sessions");
+    let off = Ctx { rerank: Some(Rerank { model: &CookieReranker, weight: 0.0, top: 10 }), ..reranked };
+    assert_eq!(title_of(doc_of(&rank(&off, "auth", "documents", 12).unwrap()[0])), "Auth tokens", "weight 0 changes nothing");
+}
