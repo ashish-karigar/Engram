@@ -29,6 +29,8 @@ use crate::settings::{IndexSettings, ignored};
 const SESSIONS_EVERY: Duration = Duration::from_secs(10);
 /// How often new memories are checked for a missing vector (search also catches up on demand).
 const EMBED_EVERY: Duration = Duration::from_secs(5);
+/// How often commits are synced and changed files re-blamed for "who wrote what".
+const PROVENANCE_EVERY: Duration = Duration::from_secs(60);
 
 /// A local model holds most of the machine's memory while loaded, so extraction runs in short
 /// bursts: at most `LOCAL_BURST` tasks, then every project rests for `LOCAL_REST` while the model
@@ -216,6 +218,7 @@ fn spawn_upkeep(paths: &ProjectPaths, opts: RuntimeOptions, stop: Arc<AtomicBool
         let (mut last_pipeline, mut last_decay) = (Instant::now(), Instant::now());
         let mut last_sessions = Instant::now() - SESSIONS_EVERY;
         let mut last_embed = Instant::now();
+        let mut last_provenance = Instant::now() - PROVENANCE_EVERY;
         while !stop.load(Ordering::SeqCst) {
             std::thread::sleep(Duration::from_millis(100));
             let due = last_pipeline.elapsed() >= opts.pipeline_every;
@@ -244,6 +247,13 @@ fn spawn_upkeep(paths: &ProjectPaths, opts: RuntimeOptions, stop: Arc<AtomicBool
                     if !missing.is_empty() {
                         let _ = embed_and_store(&conn, opts.embedder.as_ref(), "memory", &missing);
                     }
+                }
+            }
+            if last_provenance.elapsed() >= PROVENANCE_EVERY {
+                last_provenance = Instant::now();
+                let code: Vec<String> = list_files(&root, None).into_iter().filter(|p| Lang::from_path(p).is_some() || NetLang::from_path(p).is_some()).collect();
+                if let Err(err) = engram_understand::provenance::refresh(&conn, &root, &code) {
+                    eprintln!("engram: provenance failed: {err}");
                 }
             }
             if last_decay.elapsed() >= opts.decay_every {

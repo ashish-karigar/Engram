@@ -92,6 +92,8 @@ pub struct Affected {
 #[derive(Debug, Serialize)]
 pub struct Impact {
     pub target: Node,
+    /// Who wrote the target and when (provenance), if known.
+    pub written_by: Option<String>,
     pub affected: Vec<Affected>,
     pub endpoints: Vec<String>,
     pub decisions: Vec<(String, String, String)>,
@@ -211,12 +213,17 @@ pub fn impact(conn: &Connection, target: &Node, depth: usize) -> Result<Impact> 
 
     let mut affected: Vec<Affected> = files.into_values().collect();
     affected.sort_by(|a, b| a.depth.cmp(&b.depth).then(a.area.cmp(&b.area)).then(a.file.cmp(&b.file)));
-    Ok(Impact { target: target.clone(), affected, endpoints, decisions })
+    let written_by = engram_understand::provenance::provenance_line(&engram_understand::provenance::provenance(conn, &target.id)?);
+    Ok(Impact { target: target.clone(), written_by, affected, endpoints, decisions })
 }
 
 /// Agent-facing text for an impact result.
 pub fn impact_text(i: &Impact, limit: usize) -> String {
-    let mut lines = vec![format!("Changing {} ({}) affects {} file(s):", i.target.name, i.target.kind, i.affected.len())];
+    let mut lines = vec![];
+    if let Some(who) = &i.written_by {
+        lines.push(format!("{}: {who}", i.target.name));
+    }
+    lines.push(format!("Changing {} ({}) affects {} file(s):", i.target.name, i.target.kind, i.affected.len()));
     let mut by_area: BTreeMap<String, Vec<&Affected>> = BTreeMap::new();
     for a in i.affected.iter().take(limit) {
         by_area.entry(a.area.clone().unwrap_or_else(|| "(no area)".into())).or_default().push(a);

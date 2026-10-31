@@ -256,3 +256,11 @@ kbd { font: 10px var(--mono); color: var(--faint); border: 1px solid var(--line-
 .impact-list code { font-size: 11.5px; color: var(--text); word-break: break-all; }
 .impact-list .faint { font-size: 11.5px; }
 .map-text { white-space: pre-wrap; font: 12px/1.55 var(--mono); color: var(--muted); margin: 10px 0 0; }
+
+/* ---- Zoomable map legend ---- */
+.graph-legend { position: absolute; left: 12px; bottom: 54px; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 11.5px; color: var(--muted); background: rgba(11,14,20,.72); padding: 6px 10px; border-radius: 8px; max-width: 70%; }
+.graph-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+.signature { white-space: pre-wrap; font: 12px/1.5 var(--mono); color: var(--text); background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin: 8px 0; }
+.authors { list-style: none; padding: 0; margin: 6px 0 10px; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
+.authors li { display: flex; flex-direction: column; gap: 3px; }
+.authors .bar { display: block; height: 5px; border-radius: 3px; }

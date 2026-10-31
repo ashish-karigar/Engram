@@ -14,6 +14,11 @@ export interface SimNode extends SimulationNodeDatum {
   z?: number;
   vz?: number;
   fz?: number | null;
+  /** Zoomable map: children it can open into, open or not, its part, who wrote most of it. */
+  children: number;
+  expanded: boolean;
+  area?: string;
+  owner?: string;
   /** Screen-plane position after rotation and perspective (see projection.ts). */
   sx?: number;
   sy?: number;
@@ -25,6 +30,8 @@ export interface SimNode extends SimulationNodeDatum {
 export interface SimLink extends SimulationLinkDatum<SimNode> {
   id: string;
   type: string;
+  /** How many fine-grained edges it stands for (zoomable map), 1 otherwise. */
+  count: number;
   source: SimNode;
   target: SimNode;
 }
@@ -81,12 +88,17 @@ export function buildScene(graph: Graph, s: GraphSettings, selected: string | nu
   const nodes: SimNode[] = keep.map((n) => {
     const d = degree.get(n.id) ?? 0;
     const prior = previous.get(n.id) ?? placeNear(n.id, adj, previous);
-    return { id: n.id, label: n.label, kind: n.kind, status: n.status ?? "", degree: d, radius: radiusFor(n.kind, d), color: cssColor(n.kind), ...prior };
+    const children = n.children ?? 0;
+    const color = s.colorBy === "author" ? authorColor(n.owner?.who) : cssColor(n.kind);
+    return {
+      id: n.id, label: n.label, kind: n.kind, status: n.status ?? "", degree: d, radius: radiusFor(n.kind, d, children), color,
+      children, expanded: n.expanded ?? false, area: n.area, owner: n.owner?.who, ...prior,
+    };
   });
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const links: SimLink[] = edges
     .filter((e) => byId.has(e.source) && byId.has(e.target))
-    .map((e) => ({ id: e.id, type: e.type, source: byId.get(e.source)!, target: byId.get(e.target)! }));
+    .map((e) => ({ id: e.id, type: e.type, count: e.count ?? 1, source: byId.get(e.source)!, target: byId.get(e.target)! }));
   return { nodes, links, adj };
 }
 
@@ -102,11 +114,26 @@ function placeNear(id: string, adj: Map<string, Set<string>>, previous: Map<stri
 }
 
 /** Memories are the point of the graph, so they stay prominent; code nodes stay small. */
-function radiusFor(kind: string, degree: number): number {
-  if (kind === "area") return 14 + Math.sqrt(degree) * 2.2;
+/** Agents keep their colours everywhere; people get stable colours from a hash of their name. */
+const PEOPLE = ["#e8cf5c", "#b184ff", "#3fb6c9", "#ef6a62", "#f0a35e", "#9fb4ff"];
+export function authorColor(who?: string): string {
+  if (!who) return "#3a4252";
+  const agent = { "Claude Code": "--a-claude-code", Codex: "--a-codex", "Muse Code": "--a-muse-code" }[who];
+  if (agent) return getComputedStyle(document.documentElement).getPropertyValue(agent).trim();
+  if (who === "uncommitted") return "#5b6478";
+  let h = 0;
+  for (const c of who) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return PEOPLE[h % PEOPLE.length]!;
+}
+
+function radiusFor(kind: string, degree: number, children = 0): number {
+  if (kind === "area") return 14 + Math.sqrt(degree + children) * 2.2;
+  if (kind === "dir") return 7 + Math.sqrt(children) * 1.6;
+  if (kind === "class" || kind === "struct" || kind === "trait") return 5 + Math.sqrt(children) * 1.2;
+  if (kind === "function" || kind === "method") return 3.2 + Math.sqrt(degree) * 0.5;
   if (kind === "service") return 7 + Math.sqrt(degree);
   if (kind === "endpoint") return 3.5 + Math.sqrt(degree) * 0.6;
-  if (kind === "file") return 2.5 + Math.sqrt(degree) * 0.9;
+  if (kind === "file") return children ? 4 + Math.sqrt(children) * 0.9 : 2.5 + Math.sqrt(degree) * 0.9;
   if (kind === "module") return 4.5 + Math.sqrt(degree) * 1.1;
   return 5 + Math.sqrt(degree) * 1.8;
 }

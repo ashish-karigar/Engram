@@ -17,6 +17,8 @@ interface Props {
   settings: GraphSettings;
   selectedId: string | null;
   onSelect(id: string | null): void;
+  /** Open or close a node of the zoomable map (double-click). */
+  onExpand?(id: string): void;
   onZoom(k: number): void;
   commands: React.MutableRefObject<GraphCommands | null>;
 }
@@ -32,7 +34,7 @@ type Drag =
  * In 3D the same layout runs on three axes and dragging empty space rotates it; drawing, labels and
  * highlighting are shared, so both modes look and behave the same.
  */
-export function ForceGraph({ graph, settings, selectedId, onSelect, onZoom, commands }: Props) {
+export function ForceGraph({ graph, settings, selectedId, onSelect, onExpand, onZoom, commands }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const sim = useRef<Simulation3D<SimNode, SimLink> | null>(null);
   const scene = useRef<{ nodes: SimNode[]; links: SimLink[]; adj: Map<string, Set<string>> }>({ nodes: [], links: [], adj: new Map() });
@@ -44,8 +46,8 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onZoom, comm
   /** Auto-fit stages: 0 = not yet, 1 = rough fit done, 2 = settled or the user took over. */
   const autoFit = useRef(0);
   const frame = useRef(0);
-  const live = useRef({ settings, selectedId, onSelect, onZoom });
-  live.current = { settings, selectedId, onSelect, onZoom };
+  const live = useRef({ settings, selectedId, onSelect, onExpand, onZoom });
+  live.current = { settings, selectedId, onSelect, onExpand, onZoom };
   const flat = () => live.current.settings.mode !== "3d";
 
   /** Rotate and project every node; in 3D also order them far to near for painting. */
@@ -203,7 +205,14 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onZoom, comm
     el.addEventListener("pointerup", up);
     el.addEventListener("pointerleave", leave);
     el.addEventListener("wheel", wheel, { passive: false });
-    el.addEventListener("dblclick", fit);
+    // Double-click a node to open or close it; empty space fits the view.
+    const dbl = (e: MouseEvent) => {
+      const r = el.getBoundingClientRect();
+      const node = hit(e.clientX - r.left, e.clientY - r.top);
+      if (node && (node.children > 0 || node.expanded) && live.current.onExpand) live.current.onExpand(node.id);
+      else fit();
+    };
+    el.addEventListener("dblclick", dbl);
     return () => {
       observer.disconnect();
       s.stop();
@@ -213,7 +222,7 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onZoom, comm
       el.removeEventListener("pointerup", up);
       el.removeEventListener("pointerleave", leave);
       el.removeEventListener("wheel", wheel);
-      el.removeEventListener("dblclick", fit);
+      el.removeEventListener("dblclick", dbl);
     };
   }, []);
 
@@ -262,7 +271,7 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onZoom, comm
     }
     render();
   }, [graphKey, settings.mode, settings.search, settings.hidden, settings.showOrphans, settings.local, settings.localDepth, localKey,
-      settings.linkDistance, settings.linkForce, settings.repel, settings.centerForce, settings.nodeSize, settings.view]);
+      settings.linkDistance, settings.linkForce, settings.repel, settings.centerForce, settings.nodeSize, settings.view, settings.colorBy]);
 
   // Display-only changes (selection, sizes, labels, arrows) just redraw.
   useEffect(render, [selectedId, settings.linkWidth, settings.textFade, settings.arrows]);
@@ -313,17 +322,21 @@ function flowColumns(links: SimLink[], settings: GraphSettings) {
   if (settings.view !== "architecture") return forceX<SimNode>(0).strength(centre);
   const calls = new Set<string>(), serves = new Set<string>();
   for (const l of links) {
-    if (l.type === "calls") calls.add(l.source.id);
+    // Credited to the part, even when the caller or handler is a function deep inside an opened part.
+    if (l.type === "calls") calls.add(l.source.area ?? l.source.id);
     if (l.type === "served by") serves.add(l.target.id);
+    if (l.type === "serves") serves.add(l.source.area ?? l.source.id);
   }
+  const areaColumn = new Map<string, number>();
   const column = (d: SimNode): number | null => {
     if (d.kind === "endpoint") return 0;
     if (d.kind === "service") return 2;
-    if (d.kind !== "area") return null;
-    if (serves.has(d.id)) return 1;
-    return calls.has(d.id) ? -1 : null;
+    if (d.kind === "area") return areaColumn.get(d.id) ?? null;
+    return d.area ? areaColumn.get(d.area) ?? null : null;
   };
-  return forceX<SimNode>((d) => (column(d) ?? 0) * COLUMN).strength((d) => (column(d) === null ? centre : 0.35));
+  for (const id of new Set([...serves, ...calls])) areaColumn.set(id, serves.has(id) ? 1 : -1);
+  // Opened folders, files and functions stay on their part's side, more loosely than the part itself.
+  return forceX<SimNode>((d) => (column(d) ?? 0) * COLUMN).strength((d) => (column(d) === null ? centre : d.kind === "area" || d.kind === "endpoint" || d.kind === "service" ? 0.35 : 0.12));
 }
 
 /**

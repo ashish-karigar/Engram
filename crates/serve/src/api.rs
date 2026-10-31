@@ -164,7 +164,11 @@ pub fn node_detail(conn: &Connection, id: &str) -> Result<Value> {
         return Ok(json!({"type": "memory", "memory": memory, "history": history(conn, id)?, "evidence": evidence}));
     }
     Ok(match get_entity(conn, id)? {
-        Some(entity) => json!({"type": "entity", "entity": entity}),
+        Some(entity) => {
+            let signature: Option<String> = conn.query_row("SELECT signature FROM code_symbols WHERE entity_id = ?", [id], |r| r.get(0)).ok();
+            let provenance = engram_understand::provenance::provenance(conn, id)?;
+            json!({"type": "entity", "entity": entity, "signature": signature, "provenance": provenance})
+        }
         None => Value::Null,
     })
 }

@@ -2,7 +2,7 @@
 
 The map, impact and every answer about code are only as good as what is stored underneath. This is
 the model: four layers over the same entities, each edge typed, weighted, time-bounded and traceable
-to where it came from. Layers marked *(proposed)* are designed here and not built yet.
+to where it came from.
 
 ## Entities
 
@@ -42,9 +42,10 @@ Raw facts are kept per file (`net_routes`, `net_calls`, `net_services`, `code_ca
 derived from them, so a re-index of one file refreshes its facts and the links are rebuilt, with no
 drift. Impact walks these edges backwards.
 
-## Layer 3: provenance, who wrote what *(proposed)*
+## Layer 3: provenance, who wrote what
 
-`code_history(entity_id, commit, ts, author, agent, session, lines_added, lines_removed)`:
+`commits(sha, ts, author, subject, files, agent, session, evidence)` and
+`code_history(entity_id, commit_sha, lines)`:
 - **From git:** per commit, which files changed (`git log --numstat`); per symbol, which commits
   touched its lines (`git blame` over its span, only for files that changed since the last pass).
 - **From agent sessions:** every Write/Edit tool call is already an event with the agent, session
@@ -61,10 +62,10 @@ drift. Impact walks these edges backwards.
 `documents` `describes` their own file and `mentions` others; agent conversations are documents.
 All bitemporal: a superseded decision keeps its history.
 
-## Views over the model *(zoomable map proposed)*
+## Views over the model
 
 - **Architecture:** parts, endpoints, services, memories (built).
-- **Zoom** *(proposed)*: expand a part into its modules, a module into files, a file into functions,
-  with edges summed at each level (e.g. "12 calls from `pages/` to `core/`"), so the map is detailed
-  where you look and readable everywhere else.
+- **Zoom:** double-click a part to open its folders, a folder its files, a file its classes and
+  functions; edges are summed at each level (e.g. "150 calls from `app/` to `services/`") and drawn
+  thicker for more. Colour by type or by author (who wrote most of each node).
 - **Impact:** a selection lights up everything that depends on it, at function level.

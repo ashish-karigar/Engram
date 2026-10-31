@@ -34,7 +34,11 @@ function Workspace({ connection, project }: { connection: Connection; project: P
   const updateGraphSettings = useCallback((s: GraphSettings) => { setGraphSettings(s); saveSettings(s); }, []);
   const archived = graphSettings.showArchived;
   const view = graphSettings.view;
-  const { data: graph, error } = usePolling<Graph>(() => (view === "architecture" ? api.architecture() : api.graph(archived)), 3000, [api, archived, view]);
+  // The architecture view is the zoomable map: which nodes are open is kept per project.
+  const [expanded, setExpanded] = useState<string[]>([]);
+  useEffect(() => setExpanded([]), [api]);
+  const toggle = useCallback((id: string) => setExpanded((e) => (e.includes(id) ? e.filter((x) => x !== id) : [...e, id])), []);
+  const { data: graph, error } = usePolling<Graph>(() => (view === "architecture" ? api.zoom(expanded) : api.graph(archived)), 3000, [api, archived, view, expanded.join(",")]);
   const { data: stats } = usePolling(() => api.stats(), 3000, [api]);
   const select = useCallback((id: string | null) => setSelected(id), []);
 
@@ -66,10 +70,13 @@ function Workspace({ connection, project }: { connection: Connection; project: P
         {tab === "graph" && (
           <div className={`graph ${selected ? "with-drawer" : ""}`}>
             {error && <div className="banner err">{error}</div>}
-            {graph && <ForceGraph graph={graph} settings={graphSettings} selectedId={selected} onSelect={select} onZoom={setZoom} commands={commands} />}
+            {graph && <ForceGraph graph={graph} settings={graphSettings} selectedId={selected} onSelect={select} onExpand={view === "architecture" ? toggle : undefined} onZoom={setZoom} commands={commands} />}
             <GraphControls graph={graph} settings={graphSettings} onChange={updateGraphSettings} selectedId={selected} zoom={zoom} commands={commands} />
             {graph && graph.nodes.length === 0 && <div className="graph-empty">No memories yet. Connect an agent, or add documents.</div>}
-            {selected && <NodeDrawer api={api} id={selected} onClose={() => setSelected(null)} onOpen={setSelected} />}
+            {selected && (
+              <NodeDrawer api={api} id={selected} onClose={() => setSelected(null)} onOpen={setSelected}
+                expandable={view === "architecture" ? graph?.nodes.find((n) => n.id === selected) : undefined} onExpand={toggle} />
+            )}
           </div>
         )}
         {tab === "documents" && <DocumentsPanel api={api} onOpen={(id) => { setSelected(id); setTab("graph"); }} />}

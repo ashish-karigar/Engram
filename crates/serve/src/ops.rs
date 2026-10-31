@@ -400,8 +400,28 @@ pub fn op_expand(ctx: &Ctx, req: ExpandReq) -> Result<OpResult> {
                 lines.push(format!("Evidence events: {}", evidence.join(", ")));
             }
         } else {
-            let entity = get_entity(ctx.conn, &req.id)?.ok_or_else(|| Error::msg(format!("unknown node: {}", req.id)))?;
+            // Code: by id, or by name (`jobs-api.ts::JobsApi.updateStatus`, a path, an endpoint).
+            let entity = match get_entity(ctx.conn, &req.id)? {
+                Some(e) => e,
+                None => {
+                    let n = crate::system::resolve_target(ctx.conn, &req.id)?;
+                    get_entity(ctx.conn, &n.id)?.ok_or_else(|| Error::msg(format!("unknown node: {}", req.id)))?
+                }
+            };
             lines.push(format!("{} {}", entity.kind, entity.qualified_name));
+            let signature: Option<(String, i64, i64)> = ctx.conn
+                .query_row("SELECT signature, start_line, end_line FROM code_symbols WHERE entity_id = ?", [&entity.id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .ok();
+            if let Some((sig, from, to)) = signature {
+                lines.push(format!("{sig}   (lines {from}-{to})"));
+            }
+            let p = engram_understand::provenance::provenance(ctx.conn, &entity.id)?;
+            if let Some(line) = engram_understand::provenance::provenance_line(&p) {
+                lines.push(format!("Provenance: {line}"));
+            }
+            for s in p.sessions.iter().take(5) {
+                lines.push(format!("  session: {} {}{}", s.agent, s.session, s.document_id.as_deref().map_or(String::new(), |d| format!(" (transcript {d})"))));
+            }
         }
 
         let reach_from = if req.id.starts_with("chk_") {

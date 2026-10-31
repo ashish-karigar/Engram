@@ -45,6 +45,15 @@ pub fn is_injected(text: &str) -> bool {
 }
 
 /// Pull file paths out of common tool inputs (`file_path`, `path`, `paths`, apply_patch headers).
+fn collect_strings<'a>(v: &'a serde_json::Value, out: &mut Vec<&'a str>) {
+    match v {
+        serde_json::Value::String(s) => out.push(s),
+        serde_json::Value::Array(items) => items.iter().for_each(|i| collect_strings(i, out)),
+        serde_json::Value::Object(map) => map.values().for_each(|i| collect_strings(i, out)),
+        _ => {}
+    }
+}
+
 pub fn files_from_input(input: &serde_json::Value) -> Vec<String> {
     let mut out = vec![];
     for key in ["file_path", "path", "notebook_path", "filePath"] {
@@ -55,7 +64,11 @@ pub fn files_from_input(input: &serde_json::Value) -> Vec<String> {
     for p in input["paths"].as_array().into_iter().flatten().filter_map(|p| p.as_str()) {
         out.push(p.to_string());
     }
-    for text in [input.as_str(), input["input"].as_str(), input["patch"].as_str()].into_iter().flatten() {
+    // Patches can sit anywhere in a tool's input: `input`, `patch`, or a shell `cmd` running
+    // `apply_patch` (Codex's exec tool). Scan every string.
+    let mut texts = vec![];
+    collect_strings(input, &mut texts);
+    for text in texts {
         for line in text.lines() {
             for marker in ["*** Update File: ", "*** Add File: ", "*** Delete File: "] {
                 if let Some(p) = line.strip_prefix(marker) {

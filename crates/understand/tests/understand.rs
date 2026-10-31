@@ -266,3 +266,44 @@ fn calls_resolve_through_imports_services_templates_and_module_paths() {
     let signature: String = db.query_row("SELECT signature FROM code_symbols WHERE name = 'run_once'", [], |r| r.get(0)).unwrap();
     assert_eq!(signature, "def run_once(job):");
 }
+
+#[test]
+fn commits_are_attributed_to_the_agent_that_edited_them_and_lines_to_functions() {
+    use engram_understand::provenance::{provenance, refresh};
+    let root = tempfile::tempdir().unwrap();
+    let git = |args: &[&str]| {
+        let ok = std::process::Command::new("git").arg("-C").arg(root.path())
+            .args(["-c", "user.name=Dev", "-c", "user.email=dev@example.com"]).args(args).status().unwrap().success();
+        assert!(ok, "git {args:?}");
+    };
+    git(&["init", "-q"]);
+    std::fs::write(root.path().join("app.py"), "def helper():\n    return 1\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "First, by hand"]);
+
+    // An agent edits app.py, then the change is committed.
+    let db = open_memory().unwrap();
+    let path = root.path().join("app.py").to_string_lossy().to_string();
+    let edit = json!({"agent": "claude-code", "session": "s-42", "role": "assistant", "text": "", "tools": [{"name": "Edit", "files": [path]}]});
+    append_event(&db, NewEvent { ts: Some(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)), ..NewEvent::new("agent.turn", edit) }).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    std::fs::write(root.path().join("app.py"), "def helper():\n    return 1\n\ndef added_by_agent():\n    return 2\n").unwrap();
+    git(&["commit", "-qam", "Add a function"]);
+
+    let files = vec!["app.py".to_string()];
+    let known: HashSet<String> = files.iter().cloned().collect();
+    index_code(&db, root.path(), &files, &Resolver::new(&known, &[]), None).unwrap();
+    refresh(&db, root.path(), &files).unwrap();
+
+    let (agent, evidence): (Option<String>, Option<String>) = db.query_row("SELECT agent, evidence FROM commits WHERE subject = 'Add a function'", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    assert_eq!((agent.as_deref(), evidence.as_deref()), (Some("claude-code"), Some("edited")));
+    let by_hand: Option<String> = db.query_row("SELECT agent FROM commits WHERE subject = 'First, by hand'", [], |r| r.get(0)).unwrap();
+    assert_eq!(by_hand, None, "no agent was active before the first commit");
+
+    let id = |name: &str| -> String { db.query_row("SELECT entity_id FROM code_symbols WHERE name = ?", [name], |r| r.get(0)).unwrap() };
+    let added = provenance(&db, &id("added_by_agent")).unwrap();
+    assert_eq!(added.contributors[0].who, "Claude Code");
+    assert_eq!(added.sessions[0].session, "s-42");
+    let helper = provenance(&db, &id("helper")).unwrap();
+    assert_eq!(helper.contributors[0].who, "Dev", "lines written by hand stay with their author");
+}

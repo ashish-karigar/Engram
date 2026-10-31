@@ -66,6 +66,21 @@ export interface GraphNode {
   /** Areas: folder and file count. */
   path?: string;
   files?: number;
+  /** Zoomable map: how many children it can open into, whether it is open, and its part. */
+  children?: number;
+  expanded?: boolean;
+  area?: string;
+  /** Who wrote most of it, from provenance. */
+  owner?: { who: string; share: number; lines: number };
+}
+
+export interface Provenance {
+  lines: number;
+  contributors: { who: string; lines: number; isAgent: boolean; evidence: string }[];
+  created: { sha: string; ts: string | null; who: string; subject: string } | null;
+  lastChanged: { sha: string; ts: string | null; who: string; subject: string } | null;
+  commits: number;
+  sessions: { agent: string; session: string; documentId: string | null }[];
 }
 
 export interface ImpactResult {
@@ -80,6 +95,8 @@ export interface GraphEdge {
   source: string;
   target: string;
   type: string;
+  /** Zoomable map: how many fine-grained edges this one stands for. */
+  count?: number;
 }
 
 export interface Graph {
@@ -113,7 +130,7 @@ export interface EvidenceEvent {
 
 export type NodeDetail =
   | { type: "memory"; memory: MemoryView; history: MemoryView[]; evidence: EvidenceEvent[] }
-  | { type: "entity"; entity: { id: string; kind: string; qualifiedName: string; path: string | null } }
+  | { type: "entity"; entity: { id: string; kind: string; qualifiedName: string; path: string | null }; signature?: string | null; provenance?: Provenance }
   | { type: "document"; document: DocumentView; chunks: ChunkPreview[]; focus?: string }
   | null;
 

@@ -2,6 +2,8 @@
 export interface GraphSettings {
   /** architecture: parts, endpoints, services and memories; code: files, modules and memories. */
   view: "architecture" | "code";
+  /** Colour nodes by what they are, or by who wrote most of them. */
+  colorBy: "type" | "author";
   mode: "2d" | "3d";
   search: string;
   hidden: string[];
@@ -21,6 +23,7 @@ export interface GraphSettings {
 
 export const DEFAULTS: GraphSettings = {
   view: "architecture",
+  colorBy: "type",
   mode: "2d",
   search: "",
   hidden: [],
@@ -43,6 +46,10 @@ export const GROUPS: { kind: string; label: string }[] = [
   { kind: "area", label: "Parts" },
   { kind: "endpoint", label: "Endpoints" },
   { kind: "service", label: "External services" },
+  { kind: "dir", label: "Folders" },
+  { kind: "class", label: "Classes" },
+  { kind: "function", label: "Functions" },
+  { kind: "method", label: "Methods" },
   { kind: "decision", label: "Decisions" },
   { kind: "rejected_option", label: "Rejected options" },
   { kind: "dead_end", label: "Dead ends" },

@@ -308,6 +308,10 @@ fn project_route(
         }
         (&Method::GET, ["api", "stats"]) => json_ok(stats(&conn)),
         (&Method::GET, ["api", "architecture"]) => json_ok(architecture_data(conn)),
+        (&Method::GET, ["api", "zoom"]) => {
+            let expanded: Vec<String> = query_param(query, "expanded").map(|e| e.split(',').filter(|s| !s.is_empty()).map(String::from).collect()).unwrap_or_default();
+            json_ok(crate::zoom::zoom_graph(conn, &expanded))
+        }
         (&Method::GET, ["api", "graph"]) => json_ok(graph_data(&conn, query_param(query, "archived").as_deref() == Some("1"), 300)),
         (&Method::GET, ["api", "node"]) => json_ok(node_detail(&conn, &query_param(query, "id").unwrap_or_default())),
         (&Method::GET, ["api", "events"]) => json_ok(timeline(&conn, limit)),

@@ -1,7 +1,8 @@
 import type { ProjectApi } from "../api/client.ts";
 import { usePolling } from "../hooks/usePolling.ts";
 import { useEffect, useState } from "react";
-import type { ImpactResult, NodeDetail } from "../api/types.ts";
+import type { GraphNode, ImpactResult, NodeDetail, Provenance } from "../api/types.ts";
+import { authorColor } from "./graph/model.ts";
 
 const day = (iso: string) => iso.slice(0, 10);
 
@@ -14,18 +15,36 @@ interface Props {
   id: string;
   onClose(): void;
   onOpen(id: string): void;
+  /** The node as shown in the zoomable map, when it can be opened. */
+  expandable?: GraphNode;
+  onExpand?(id: string): void;
 }
 
-export function NodeDrawer({ api, id, onClose, onOpen }: Props) {
-  const { data } = usePolling<NodeDetail>(() => api.node(id), 4000, [id]);
+export function NodeDrawer({ api, id, onClose, onOpen, expandable, onExpand }: Props) {
+  const folder = id.startsWith("dir:");
+  const { data } = usePolling<NodeDetail>(() => (folder ? Promise.resolve(null) : api.node(id)), 4000, [id]);
+  const openButton = expandable && onExpand && (expandable.children ?? 0) > 0 && (
+    <button className="btn" onClick={() => onExpand(id)}>{expandable.expanded ? "Close" : `Open (${expandable.children} inside)`}</button>
+  );
   return (
     <div className="drawer">
       <button className="btn ghost close" onClick={onClose}>✕</button>
-      {!data && <p className="muted">Loading…</p>}
+      {folder && (
+        <>
+          <Type kind="dir" />
+          <h3>{id.slice(4)}</h3>
+          {expandable?.owner && <p className="muted">Mostly written by {expandable.owner.who} ({Math.round(expandable.owner.share * 100)}% of {expandable.owner.lines.toLocaleString()} lines)</p>}
+          {openButton}
+        </>
+      )}
+      {!folder && !data && <p className="muted">Loading…</p>}
       {data?.type === "entity" && (
         <>
           <Type kind={data.entity.kind} />
           <h3>{data.entity.qualifiedName}</h3>
+          {data.signature && <pre className="signature">{data.signature}</pre>}
+          {openButton}
+          {data.provenance && data.provenance.lines > 0 && <ProvenanceBody p={data.provenance} onOpen={onOpen} />}
           {data.entity.kind === "area" ? <PartBody api={api} path={data.entity.qualifiedName} /> : data.entity.kind === "module" ? (
             <p className="muted">Folder. Memories that touch it are highlighted in the graph.</p>
           ) : <ImpactBody api={api} target={data.entity.qualifiedName} />}
@@ -34,6 +53,40 @@ export function NodeDrawer({ api, id, onClose, onOpen }: Props) {
       {data?.type === "memory" && <MemoryBody detail={data} onOpen={onOpen} />}
       {data?.type === "document" && <DocumentBody detail={data} />}
     </div>
+  );
+}
+
+/** Who wrote it: lines per author or agent, when it was created and last changed, and the agent
+ * sessions involved (each opens the conversation). */
+function ProvenanceBody({ p, onOpen }: { p: Provenance; onOpen(id: string): void }) {
+  const change = (c: NonNullable<Provenance["created"]>) => `${(c.ts ?? "").slice(0, 10)} · ${c.sha} · ${c.who}`;
+  return (
+    <>
+      <h4>Who wrote it</h4>
+      <ul className="authors">
+        {p.contributors.map((c) => (
+          <li key={c.who}>
+            <span className="bar" style={{ width: `${Math.max(4, (100 * c.lines) / p.lines)}%`, background: authorColor(c.who) }} />
+            <span>{c.who} <span className="faint">{c.lines} lines{c.evidence === "session" ? " · likely (was working here)" : c.evidence === "edited" ? " · edited these files" : ""}</span></span>
+          </li>
+        ))}
+      </ul>
+      {p.created && <p className="muted">Created {change(p.created)}<br />{p.created.subject}</p>}
+      {p.lastChanged && p.lastChanged.sha !== p.created?.sha && <p className="muted">Last changed {change(p.lastChanged)}<br />{p.lastChanged.subject}</p>}
+      {p.sessions.length > 0 && (
+        <>
+          <h4>Agent sessions</h4>
+          <ul className="impact-list">
+            {p.sessions.map((s) => (
+              <li key={s.session}>
+                {s.documentId ? <a style={{ cursor: "pointer" }} onClick={() => onOpen(s.documentId!)}>{s.agent} · open the conversation</a> : <span>{s.agent}</span>}
+                <span className="faint">{s.session}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </>
   );
 }
 

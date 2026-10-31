@@ -29,10 +29,12 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
 
   for (const l of links) {
     const hot = focus.id && (l.source.id === focus.id || l.target.id === focus.id);
-    ctx.strokeStyle = hot ? ACCENT : focus.id ? "rgba(255,255,255,0.04)" : l.type === "supersedes" ? "rgba(177,132,255,0.35)" : "rgba(200,210,235,0.16)";
-    ctx.lineWidth = (hot ? 1.6 : 1) * s.linkWidth / cam.k;
+    const contains = l.type === "contains";
+    ctx.strokeStyle = hot ? ACCENT : focus.id ? "rgba(255,255,255,0.04)" : l.type === "supersedes" ? "rgba(177,132,255,0.35)" : contains ? "rgba(200,210,235,0.09)" : "rgba(200,210,235,0.16)";
+    // A summed edge (34 calls between two folders) is drawn thicker than a single call.
+    ctx.lineWidth = (hot ? 1.6 : 1) * (1 + Math.log2(Math.max(1, l.count))) * s.linkWidth / cam.k;
     ctx.globalAlpha = Math.min(l.source.fade!, l.target.fade!);
-    ctx.setLineDash(l.type === "supersedes" || l.type === "derives" ? [4 / cam.k, 3 / cam.k] : []);
+    ctx.setLineDash(l.type === "supersedes" || l.type === "derives" || contains ? [4 / cam.k, 3 / cam.k] : []);
     ctx.beginPath();
     ctx.moveTo(l.source.sx!, l.source.sy!);
     ctx.lineTo(l.target.sx!, l.target.sy!);
@@ -47,7 +49,15 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
     ctx.beginPath();
     if (n.kind === "document" || n.kind === "module") roundedSquare(ctx, n.sx!, n.sy!, r * (n.kind === "module" ? 1.25 : 1));
     else ctx.arc(n.sx!, n.sy!, r, 0, Math.PI * 2);
-    if (n.status === "superseded") {
+    if (n.expanded) {
+      // An opened node is a hub for its children: hollow, so they read as its contents.
+      ctx.strokeStyle = n.color;
+      ctx.lineWidth = 2.2 / cam.k;
+      ctx.stroke();
+      ctx.globalAlpha *= 0.25;
+      ctx.fillStyle = n.color;
+      ctx.fill();
+    } else if (n.status === "superseded") {
       ctx.strokeStyle = n.color;
       ctx.lineWidth = 1.5 / cam.k;
       ctx.stroke();
@@ -57,7 +67,17 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
       ctx.fill();
       ctx.shadowBlur = 0;
     }
+    if (n.children > 0 && !n.expanded) {
+      // Can be opened (double-click): a thin outer ring.
+      ctx.beginPath();
+      ctx.arc(n.sx!, n.sy!, r + 3 / cam.k, 0, Math.PI * 2);
+      ctx.strokeStyle = n.color;
+      ctx.lineWidth = 1 / cam.k;
+      ctx.stroke();
+    }
     if (n.id === focus.selected) {
+      ctx.beginPath();
+      ctx.arc(n.sx!, n.sy!, r, 0, Math.PI * 2);
       ctx.strokeStyle = "#fff";
       ctx.lineWidth = 2 / cam.k;
       ctx.stroke();

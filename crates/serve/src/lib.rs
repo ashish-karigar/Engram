@@ -15,6 +15,7 @@ pub mod relevance;
 pub mod system;
 pub mod route;
 pub mod tokens;
+pub mod zoom;
 
 pub use http::{RunningServer, start_server};
 pub use project::{ConnectOutcome, ProjectInfo, ProjectManager, ProjectRef};
