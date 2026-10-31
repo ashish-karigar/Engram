@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Graph } from "../../api/types.ts";
 import type { GraphCommands } from "./ForceGraph.tsx";
+import { EDGE_COLORS } from "./draw.ts";
 import { authorColor } from "./model.ts";
 import { DEFAULTS, GROUPS, type GraphSettings } from "./settings.ts";
 
@@ -60,7 +61,10 @@ export function GraphControls({ graph, settings: s, onChange, selectedId, zoom, 
           {s.colorBy === "author" && [...authors.entries()].sort((a, b) => b[1] - a[1]).map(([who, lines]) => (
             <span key={who}><i style={{ background: authorColor(who) }} />{who} <span className="faint">{lines.toLocaleString()} lines</span></span>
           ))}
-          <span className="faint">Double-click a part, folder, file or class to open it</span>
+          {[...new Map(Object.values(EDGE_COLORS).map(([rgb, label]) => [label, rgb])).entries()].map(([label, rgb]) => (
+            <span key={label}><b className="line" style={{ background: `rgb(${rgb})` }} />{label}</span>
+          ))}
+          <span className="faint">Double-click a part, API, folder, file or class to open it</span>
         </div>
       )}
       <div className="graph-search">

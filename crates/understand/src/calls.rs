@@ -27,6 +27,17 @@ struct Sym {
     name: String,
 }
 
+/// Code can only call code in its own language family (a template calls its TypeScript component).
+fn family(file: &str) -> &'static str {
+    match file.rsplit('.').next().unwrap_or("") {
+        "py" => "python",
+        "rs" => "rust",
+        "ts" | "tsx" | "js" | "jsx" | "mjs" | "cjs" | "html" => "js",
+        "swift" => "swift",
+        _ => "other",
+    }
+}
+
 fn simple(name: &str) -> &str {
     name.rsplit(['.', ':']).next().unwrap_or(name)
 }
@@ -69,10 +80,16 @@ pub fn link_calls(conn: &Connection) -> Result<CallStats> {
     let mut linked: HashSet<(String, String)> = HashSet::new();
 
     for (file, caller, callee, receiver) in &sites {
-        let Some(named) = by_simple.get(callee.as_str()) else {
+        let Some(all_named) = by_simple.get(callee.as_str()) else {
             stats.outside_project += 1;
             continue;
         };
+        let named: Vec<&Sym> = all_named.iter().copied().filter(|s| family(&s.file) == family(file)).collect();
+        if named.is_empty() {
+            stats.outside_project += 1;
+            continue;
+        }
+        let named = &named;
         let caller_sym = caller.as_deref().and_then(|c| by_qualified.get(&(file.as_str(), c)));
         let caller_id = caller_sym.map(|s| s.id.clone()).or_else(|| file_ids.get(file).cloned());
         let Some(caller_id) = caller_id else { continue };

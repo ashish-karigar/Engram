@@ -16,6 +16,18 @@ export interface Focus {
 
 const ACCENT = "#7c97ff";
 
+/** What a line means, by colour (see the legend): rgb, used with an alpha. */
+export const EDGE_COLORS: Record<string, [string, string]> = {
+  imports: ["109,141,255", "imports"],
+  invokes: ["71,195,148", "function calls"],
+  calls: ["240,163,94", "HTTP calls"],
+  serves: ["240,163,94", "serves an API"],
+  "served by": ["240,163,94", "serves an API"],
+  uses: ["209,107,165", "uses a service"],
+  about: ["177,132,255", "a memory about it"],
+  touches: ["177,132,255", "a memory about it"],
+};
+
 /**
  * Draw one frame from projected positions (`sx`, `sy`; see projection.ts). Nodes arrive far to near,
  * so nearer ones paint on top. Sizes are divided by zoom where they should stay constant on screen.
@@ -30,7 +42,10 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
   for (const l of links) {
     const hot = focus.id && (l.source.id === focus.id || l.target.id === focus.id);
     const contains = l.type === "contains";
-    ctx.strokeStyle = hot ? ACCENT : focus.id ? "rgba(255,255,255,0.04)" : l.type === "supersedes" ? "rgba(177,132,255,0.35)" : contains ? "rgba(200,210,235,0.09)" : "rgba(200,210,235,0.16)";
+    const rgb = EDGE_COLORS[l.type]?.[0];
+    ctx.strokeStyle = focus.id && !hot ? "rgba(255,255,255,0.04)"
+      : rgb ? `rgba(${rgb},${hot ? 0.9 : 0.42})`
+      : hot ? ACCENT : l.type === "supersedes" ? "rgba(177,132,255,0.35)" : contains ? "rgba(200,210,235,0.09)" : "rgba(200,210,235,0.16)";
     // A summed edge (34 calls between two folders) is drawn thicker than a single call.
     ctx.lineWidth = (hot ? 1.6 : 1) * (1 + Math.log2(Math.max(1, l.count))) * s.linkWidth / cam.k;
     ctx.globalAlpha = Math.min(l.source.fade!, l.target.fade!);
@@ -47,7 +62,7 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
     const r = radius(n, s);
     ctx.globalAlpha = (lit(n.id) ? 1 : 0.18) * n.fade!;
     ctx.beginPath();
-    if (n.kind === "document" || n.kind === "module") roundedSquare(ctx, n.sx!, n.sy!, r * (n.kind === "module" ? 1.25 : 1));
+    if (n.kind === "document" || n.kind === "module" || n.kind === "api" || n.kind === "api_group") roundedSquare(ctx, n.sx!, n.sy!, r * (n.kind === "module" ? 1.25 : 1));
     else ctx.arc(n.sx!, n.sy!, r, 0, Math.PI * 2);
     if (n.expanded) {
       // An opened node is a hub for its children: hollow, so they read as its contents.
@@ -93,6 +108,7 @@ export const radius = (n: SimNode, s: GraphSettings) => n.radius * s.nodeSize * 
 
 /** Short label: file nodes show their file name; the full path is in the drawer. */
 function shortLabel(n: SimNode): string {
+  if ((n.kind === "api" || n.kind === "api_group") && n.children > 0 && !n.expanded) return `${n.label} · ${n.children}`;
   const text = n.kind === "file" ? n.label.slice(n.label.lastIndexOf("/") + 1) : n.label;
   return text.length > 40 ? `${text.slice(0, 38)}…` : text;
 }
@@ -112,7 +128,7 @@ function labels(ctx: CanvasRenderingContext2D, cam: Camera, nodes: SimNode[], s:
   for (const n of order) {
     const focused = focus.id !== null && focus.neighbours.has(n.id);
     // Parts and services are the landmarks: always labelled.
-    const hub = (n.degree >= 8 && cam.k > s.textFade * 0.35) || n.kind === "area" || n.kind === "service";
+    const hub = (n.degree >= 8 && cam.k > s.textFade * 0.35) || ["area", "service", "api", "api_group"].includes(n.kind);
     const alpha = (focused ? 1 : focus.id ? 0 : hub ? Math.max(zoomAlpha, 0.85) : zoomAlpha) * (focused ? 1 : n.fade!);
     if (alpha <= 0.02) continue;
     const text = shortLabel(n);

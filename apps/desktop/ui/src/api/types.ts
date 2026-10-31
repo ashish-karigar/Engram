@@ -70,6 +70,9 @@ export interface GraphNode {
   children?: number;
   expanded?: boolean;
   area?: string;
+  serves?: string;
+  hub?: string;
+  endpoints?: number;
   /** Who wrote most of it, from provenance. */
   owner?: { who: string; share: number; lines: number };
 }

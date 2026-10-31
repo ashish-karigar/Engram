@@ -19,6 +19,9 @@ export interface SimNode extends SimulationNodeDatum {
   expanded: boolean;
   area?: string;
   owner?: string;
+  /** API bodies: the part that serves them; groups and endpoints: their API body. */
+  serves?: string;
+  hub?: string;
   /** Screen-plane position after rotation and perspective (see projection.ts). */
   sx?: number;
   sy?: number;
@@ -85,14 +88,16 @@ export function buildScene(graph: Graph, s: GraphSettings, selected: string | nu
   }
   if (!s.showOrphans) keep = keep.filter((n) => (degree.get(n.id) ?? 0) > 0 || n.id === selected);
 
+  // A node that just appeared (a folder opened) starts next to its parent, not a random neighbour.
+  const parents = new Map(graph.edges.filter((e) => e.type === "contains").map((e) => [e.target, e.source]));
   const nodes: SimNode[] = keep.map((n) => {
     const d = degree.get(n.id) ?? 0;
-    const prior = previous.get(n.id) ?? placeNear(n.id, adj, previous);
+    const prior = previous.get(n.id) ?? placeNear(n.id, adj, previous, parents.get(n.id));
     const children = n.children ?? 0;
     const color = s.colorBy === "author" ? authorColor(n.owner?.who) : cssColor(n.kind);
     return {
       id: n.id, label: n.label, kind: n.kind, status: n.status ?? "", degree: d, radius: radiusFor(n.kind, d, children), color,
-      children, expanded: n.expanded ?? false, area: n.area, owner: n.owner?.who, ...prior,
+      children, expanded: n.expanded ?? false, area: n.area, owner: n.owner?.who, serves: n.serves, hub: n.hub, ...prior,
     };
   });
   const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -102,8 +107,8 @@ export function buildScene(graph: Graph, s: GraphSettings, selected: string | nu
   return { nodes, links, adj };
 }
 
-function placeNear(id: string, adj: Map<string, Set<string>>, previous: Map<string, Position>): Position {
-  for (const n of adj.get(id) ?? []) {
+function placeNear(id: string, adj: Map<string, Set<string>>, previous: Map<string, Position>, parent?: string): Position {
+  for (const n of [...(parent ? [parent] : []), ...(adj.get(id) ?? [])]) {
     const p = previous.get(n);
     if (p?.x !== undefined && p.y !== undefined) {
       const jitter = () => (Math.random() - 0.5) * 30;
@@ -128,6 +133,8 @@ export function authorColor(who?: string): string {
 
 function radiusFor(kind: string, degree: number, children = 0): number {
   if (kind === "area") return 14 + Math.sqrt(degree + children) * 2.2;
+  if (kind === "api") return 11 + Math.sqrt(children) * 2.4;
+  if (kind === "api_group") return 6 + Math.sqrt(children) * 1.4;
   if (kind === "dir") return 7 + Math.sqrt(children) * 1.6;
   if (kind === "class" || kind === "struct" || kind === "trait") return 5 + Math.sqrt(children) * 1.2;
   if (kind === "function" || kind === "method") return 3.2 + Math.sqrt(degree) * 0.5;

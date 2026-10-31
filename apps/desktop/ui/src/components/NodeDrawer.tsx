@@ -18,11 +18,14 @@ interface Props {
   /** The node as shown in the zoomable map, when it can be opened. */
   expandable?: GraphNode;
   onExpand?(id: string): void;
+  /** Parts in the current map, to find which part an API body belongs to. */
+  parts?: GraphNode[];
 }
 
-export function NodeDrawer({ api, id, onClose, onOpen, expandable, onExpand }: Props) {
+export function NodeDrawer({ api, id, onClose, onOpen, expandable, onExpand, parts = [] }: Props) {
   const folder = id.startsWith("dir:");
-  const { data } = usePolling<NodeDetail>(() => (folder ? Promise.resolve(null) : api.node(id)), 4000, [id]);
+  const apiNode = id.startsWith("api:") || id.startsWith("apigroup:");
+  const { data } = usePolling<NodeDetail>(() => (folder || apiNode ? Promise.resolve(null) : api.node(id)), 4000, [id]);
   const openButton = expandable && onExpand && (expandable.children ?? 0) > 0 && (
     <button className="btn" onClick={() => onExpand(id)}>{expandable.expanded ? "Close" : `Open (${expandable.children} inside)`}</button>
   );
@@ -37,7 +40,15 @@ export function NodeDrawer({ api, id, onClose, onOpen, expandable, onExpand }: P
           {openButton}
         </>
       )}
-      {!folder && !data && <p className="muted">Loading…</p>}
+      {apiNode && (
+        <>
+          <Type kind="api" />
+          <h3>{expandable?.label ?? id}</h3>
+          {openButton}
+          <EndpointTable api={api} hubId={id} parts={parts} />
+        </>
+      )}
+      {!folder && !apiNode && !data && <p className="muted">Loading…</p>}
       {data?.type === "entity" && (
         <>
           <Type kind={data.entity.kind} />
@@ -87,6 +98,46 @@ function ProvenanceBody({ p, onOpen }: { p: Provenance; onOpen(id: string): void
         </>
       )}
     </>
+  );
+}
+
+/** The endpoints in an API body (or one resource group of it): method, path, handler, callers. */
+function EndpointTable({ api, hubId, parts }: { api: ProjectApi; hubId: string; parts: GraphNode[] }) {
+  const { data } = usePolling(() => api.map(), 10_000, [api]);
+  if (!data) return <p className="muted">Loading…</p>;
+  const map = data.data as { endpoints: { name: string; handlers: string[]; callers: string[] }[] };
+  // `api:<part>` or `apigroup:api:<part>:/jobs`.
+  const [hub, resource] = hubId.startsWith("apigroup:") ? [hubId.slice(9, hubId.lastIndexOf(":")), hubId.slice(hubId.lastIndexOf(":") + 1)] : [hubId, null];
+  const partPath = parts.find((p) => `api:${p.id}` === hub)?.path;
+  const short = (q: string) => q.split("/").pop() ?? q;
+  const isTest = (q: string) => /(^|\/)tests?\//.test(q) || q.includes(".spec.") || /(^|\/)test_/.test(q);
+  const rows = map.endpoints.filter((e) => {
+    const served = e.handlers.length > 0;
+    const inPart = hub === "api:unserved" ? !served : served && partPath !== undefined && e.handlers.some((h) => partPath === "" || h.startsWith(`${partPath}/`));
+    const path = e.name.split(" ")[1] ?? "";
+    return inPart && (!resource || path === resource || path.startsWith(`${resource}/`));
+  });
+  return (
+    <table className="endpoints">
+      <tbody>
+        {rows.map((e) => {
+          const [method, path] = e.name.split(" ");
+          const callers = e.callers.filter((c) => !isTest(c));
+          const tests = e.callers.length - callers.length;
+          return (
+            <tr key={e.name}>
+              <td><code className={`method ${method?.toLowerCase()}`}>{method}</code></td>
+              <td>
+                <code>{path}</code>
+                <div className="faint">{e.handlers.map(short).join(", ") || "no handler here"}</div>
+                <div className="faint">← {callers.map(short).join(", ") || "no caller in the repo"}{tests ? ` · ${tests} test${tests > 1 ? "s" : ""}` : ""}</div>
+              </td>
+            </tr>
+          );
+        })}
+        {rows.length === 0 && <tr><td className="muted">No endpoints.</td></tr>}
+      </tbody>
+    </table>
   );
 }
 

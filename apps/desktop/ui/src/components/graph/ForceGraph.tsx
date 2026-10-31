@@ -243,16 +243,26 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onExpand, on
     if (modeChanged) toDimensions(next.nodes, dims, view);
     const structureChanged = next.nodes.length !== scene.current.nodes.length || next.links.length !== scene.current.links.length;
     scene.current = next;
+    if (location.search.includes("debuggraph")) (window as unknown as { __graph: unknown }).__graph = next;
     s.numDimensions(dims);
     s.nodes(next.nodes);
     // Big nodes (parts, services) push harder and sit further from what they link to, so a few
     // landmarks spread out with their endpoints and memories around them instead of piling up.
     const size = (d: SimNode) => Math.max(1, d.radius / 6);
+    // Links into an API body pull gently, so a busy server does not drag its API into its galaxy.
+    const toApi = (l: SimLink) => l.source.kind === "api" || l.target.kind === "api" || l.source.kind === "api_group" || l.target.kind === "api_group";
     s.force("link", forceLink<SimNode, SimLink>(next.links).id((d) => d.id)
-      .distance((l) => settings.linkDistance + (l.source.radius + l.target.radius) * 2.5).strength(settings.linkForce));
+      .distance((l) => settings.linkDistance + (l.source.radius + l.target.radius) * 2.5)
+      // Only links inside one galaxy shape it; links between parts, to APIs or to services pull
+      // gently, so galaxies stay where their anchors put them.
+      .strength((l) => {
+        const sameGalaxy = l.source.area !== undefined && l.source.area === l.target.area;
+        return toApi(l) || (settings.view === "architecture" && !sameGalaxy && l.type !== "contains" && l.type !== "about") ? settings.linkForce * 0.01 : settings.linkForce;
+      }));
     s.force("charge", forceManyBody<SimNode>().strength((d) => -settings.repel * 10 * size(d)).distanceMax(900));
-    s.force("x", flowColumns(next.links, settings));
-    s.force("y", forceY<SimNode>(0).strength(settings.centerForce * 0.06));
+    const galaxy = galaxyForces(next.nodes, next.links, settings);
+    s.force("x", galaxy.x);
+    s.force("y", galaxy.y);
     s.force("z", dims === 3 ? forceZ<SimNode>(0).strength(settings.centerForce * 0.06) : null);
     s.force("collide", forceCollide<SimNode>((d) => d.radius * settings.nodeSize + 10));
     if (structureChanged && localKey) autoFit.current = 0;
@@ -267,7 +277,10 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onExpand, on
     } else {
       // New nodes arriving in the background start beside a neighbour; a small nudge lets them
       // find their place without shoving the rest of the layout around.
-      s.alpha(structureChanged ? 0.1 : 0.15).restart();
+      // Nodes appearing (something was opened) need room to settle into their galaxy; background
+      // refreshes that only add a node or two keep the gentle nudge.
+      const added = next.nodes.filter((n) => !previous.has(n.id)).length;
+      s.alpha(added > 2 ? 0.6 : structureChanged ? 0.1 : 0.15).restart();
     }
     render();
   }, [graphKey, settings.mode, settings.search, settings.hidden, settings.showOrphans, settings.local, settings.localDepth, localKey,
@@ -309,34 +322,111 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onExpand, on
   return <canvas ref={canvas} className="force-graph" />;
 }
 
-/** Horizontal distance between the flow columns in the architecture view. */
-const COLUMN = 340;
+/** Spacing between galaxy anchors in the architecture view. */
+const COLUMN = 720;
+const ROW = 560;
 
 /**
- * Horizontal pull. In the architecture view, nodes line up as a flow, left to right: parts that only
- * call, endpoints, parts that serve, external services; memories and unconnected parts float. In the
- * code view, a gentle pull to the centre as before.
+ * Galaxy layout for the architecture view. Each part (area) is a galaxy anchored in place: parts
+ * that call APIs on the left, parts that serve them on the right, parts that do neither in the
+ * middle, stacked by size. Each API body sits between its callers and the part that serves it;
+ * external services form an outer column. Everything inside a part is pulled loosely to its anchor,
+ * so it clusters around its core and stays apart from other parts. Memories follow their links.
  */
-function flowColumns(links: SimLink[], settings: GraphSettings) {
+function galaxyForces(nodes: SimNode[], links: SimLink[], settings: GraphSettings) {
   const centre = settings.centerForce * 0.06;
-  if (settings.view !== "architecture") return forceX<SimNode>(0).strength(centre);
-  const calls = new Set<string>(), serves = new Set<string>();
-  for (const l of links) {
-    // Credited to the part, even when the caller or handler is a function deep inside an opened part.
-    if (l.type === "calls") calls.add(l.source.area ?? l.source.id);
-    if (l.type === "served by") serves.add(l.target.id);
-    if (l.type === "serves") serves.add(l.source.area ?? l.source.id);
+  if (settings.view !== "architecture") {
+    return { x: forceX<SimNode>(0).strength(centre), y: forceY<SimNode>(0).strength(centre) };
   }
-  const areaColumn = new Map<string, number>();
-  const column = (d: SimNode): number | null => {
-    if (d.kind === "endpoint") return 0;
-    if (d.kind === "service") return 2;
-    if (d.kind === "area") return areaColumn.get(d.id) ?? null;
-    return d.area ? areaColumn.get(d.area) ?? null : null;
+  const apiOf = (n: SimNode) => n.kind === "api" || n.kind === "api_group" || n.kind === "endpoint";
+  const callers = new Set<string>(), servers = new Set<string>();
+  const hubCallers = new Map<string, Set<string>>();
+  for (const l of links) {
+    const [a, b] = [l.source, l.target];
+    if (l.type === "calls" && apiOf(b) && a.area) {
+      const hubServes = b.kind === "api" ? b.serves : nodes.find((n) => n.id === b.hub)?.serves;
+      if (a.area !== hubServes) callers.add(a.area);
+      const hub = b.kind === "api" ? b.id : b.hub ?? b.id;
+      if (!hubCallers.has(hub)) hubCallers.set(hub, new Set());
+      hubCallers.get(hub)!.add(a.area);
+    }
+  }
+  for (const n of nodes) if (n.kind === "api" && n.serves) servers.add(n.serves);
+  const areas = nodes.filter((n) => n.kind === "area").sort((a, b) => b.children - a.children);
+  const column = (id: string) => (servers.has(id) ? 1 : callers.has(id) ? -1 : 0);
+  const anchors = new Map<string, { x: number; y: number }>();
+  // Parts that call or serve an API: callers on the left, servers on the right.
+  for (const col of [-1, 1]) {
+    const inCol = areas.filter((a) => column(a.id) === col);
+    inCol.forEach((a, i) => anchors.set(a.id, { x: col * COLUMN, y: (i - (inCol.length - 1) / 2) * ROW }));
+  }
+  // Parts that only use each other in-process (libraries, crates) are layered by dependency: what
+  // everything depends on at the bottom, what depends on everything at the top. Below the API row
+  // when there is one, centred otherwise.
+  const idle = areas.filter((a) => column(a.id) === 0);
+  const deps = new Map<string, Set<string>>();
+  for (const l of links) {
+    const [a, b] = [l.source.area, l.target.area];
+    if ((l.type === "imports" || l.type === "invokes") && a && b && a !== b) {
+      if (!deps.has(a)) deps.set(a, new Set());
+      deps.get(a)!.add(b);
+    }
+  }
+  const depth = new Map<string, number>();
+  const depthOf = (id: string, seen: Set<string>): number => {
+    if (depth.has(id)) return depth.get(id)!;
+    if (seen.has(id)) return 0;
+    seen.add(id);
+    const d = Math.max(-1, ...[...(deps.get(id) ?? [])].filter((x) => idle.some((a) => a.id === x)).map((x) => depthOf(x, seen))) + 1;
+    depth.set(id, d);
+    return d;
   };
-  for (const id of new Set([...serves, ...calls])) areaColumn.set(id, serves.has(id) ? 1 : -1);
-  // Opened folders, files and functions stay on their part's side, more loosely than the part itself.
-  return forceX<SimNode>((d) => (column(d) ?? 0) * COLUMN).strength((d) => (column(d) === null ? centre : d.kind === "area" || d.kind === "endpoint" || d.kind === "service" ? 0.35 : 0.12));
+  idle.forEach((a) => depthOf(a.id, new Set()));
+  const deepest = Math.max(0, ...idle.map((a) => depth.get(a.id) ?? 0));
+  const top = callers.size + servers.size > 0 ? ROW * 1.0 : -(deepest * ROW * 0.55) / 2;
+  for (let level = 0; level <= deepest; level++) {
+    const row = idle.filter((a) => (depth.get(a.id) ?? 0) === level);
+    row.forEach((a, i) => anchors.set(a.id, { x: (i - (row.length - 1) / 2) * COLUMN * 0.75, y: top + (deepest - level) * ROW * 0.55 }));
+  }
+  const hubs = nodes.filter((n) => n.kind === "api");
+  hubs.forEach((h, i) => {
+    const server = h.serves ? anchors.get(h.serves) : undefined;
+    // Its own part's tests call it too; only other parts decide where it sits.
+    const from = [...(hubCallers.get(h.id) ?? [])].filter((c) => c !== h.serves).map((c) => anchors.get(c)).filter(Boolean) as { x: number; y: number }[];
+    const cx = from.length ? from.reduce((s, p) => s + p.x, 0) / from.length : (server?.x ?? 0) - COLUMN;
+    const cy = from.length ? from.reduce((s, p) => s + p.y, 0) / from.length : 0;
+    anchors.set(h.id, server ? { x: (cx + server.x) / 2, y: (cy + server.y) / 2 } : { x: -COLUMN * 1.6, y: (i + 1) * ROW * 0.5 });
+  });
+  // An opened API body's resource groups sit on a ring around it; an opened group's endpoints on a
+  // smaller ring around the group. Fixed places, so labels never pile up.
+  const childrenOf = new Map<string, SimNode[]>();
+  for (const l of links) {
+    if (l.type === "contains" && (l.source.kind === "api" || l.source.kind === "api_group")) {
+      if (!childrenOf.has(l.source.id)) childrenOf.set(l.source.id, []);
+      childrenOf.get(l.source.id)!.push(l.target);
+    }
+  }
+  const ring = (parent: string, radius: number) => {
+    const centre = anchors.get(parent);
+    const kids = childrenOf.get(parent) ?? [];
+    if (!centre) return;
+    kids.forEach((k, i) => {
+      const a = (i / Math.max(1, kids.length)) * Math.PI * 2 - Math.PI / 2;
+      anchors.set(k.id, { x: centre.x + Math.cos(a) * radius, y: centre.y + Math.sin(a) * radius });
+      ring(k.id, 95);
+    });
+  };
+  for (const h of hubs) ring(h.id, 190);
+  const services = nodes.filter((n) => n.kind === "service");
+  services.forEach((s, i) => anchors.set(s.id, { x: 2 * COLUMN, y: (i - (services.length - 1) / 2) * 140 }));
+  // An opened API body's groups and endpoints cluster around it, like a galaxy's folders.
+  const at = (d: SimNode) => anchors.get(d.id) ?? (d.area ? anchors.get(d.area) : d.hub ? anchors.get(d.hub) : undefined);
+  // Members hold firmly to their galaxy; only the API body sits between galaxies.
+  const strength = (d: SimNode) => (d.kind === "api" ? 0.9 : anchors.has(d.id) ? 0.5 : d.area && anchors.has(d.area) ? 0.2 : d.hub && anchors.has(d.hub) ? 0.3 : centre);
+  return {
+    x: forceX<SimNode>((d) => at(d)?.x ?? 0).strength(strength),
+    y: forceY<SimNode>((d) => at(d)?.y ?? 0).strength(strength),
+  };
 }
 
 /**

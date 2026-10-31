@@ -113,6 +113,52 @@ pub fn zoom_graph(conn: &Connection, expanded: &[String]) -> Result<Value> {
         items.insert(id.clone(), Item { kind: kind.clone(), label, parent: Some(owner), path: Some(file.clone()), area });
     }
 
+    // APIs: each part that serves endpoints gets one API body between it and its callers; inside
+    // it, endpoints are grouped by resource (`/jobs`, `/access`); a group of one is skipped.
+    // Endpoints nothing here serves share one body. Calls lift to whatever level is open.
+    let mut hub_serves: HashMap<String, String> = HashMap::new();
+    let mut hub_size: HashMap<String, usize> = HashMap::new();
+    let mut stmt = conn.prepare(
+        "SELECT x.id, x.qualified_name, (SELECT e.src FROM edges e WHERE e.dst = x.id AND e.type = 'serves' LIMIT 1)
+           FROM entities x WHERE x.kind = 'endpoint' ORDER BY x.qualified_name",
+    )?;
+    let endpoints: Vec<(String, String, Option<String>)> = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<engram_core::rusqlite::Result<_>>()?;
+    let placed: Vec<(String, String, String, String)> = endpoints
+        .into_iter()
+        .map(|(id, name, handler)| {
+            let area = handler.and_then(|h| items.get(&h).and_then(|i| i.area.clone()));
+            let hub = area.as_ref().map_or("api:unserved".to_string(), |a| format!("api:{a}"));
+            let path = name.split_once(' ').map_or(name.as_str(), |(_, p)| p);
+            let resource = path.split('/').find(|s| !s.is_empty()).map_or("/".to_string(), |s| format!("/{s}"));
+            if let Some(a) = area {
+                hub_serves.insert(hub.clone(), a);
+            }
+            (id, name, hub, resource)
+        })
+        .collect();
+    let mut group_size: HashMap<(String, String), usize> = HashMap::new();
+    for (_, _, hub, resource) in &placed {
+        *group_size.entry((hub.clone(), resource.clone())).or_default() += 1;
+        *hub_size.entry(hub.clone()).or_default() += 1;
+    }
+    for hub in hub_size.keys() {
+        let label = match hub_serves.get(hub).and_then(|a| items.get(a)) {
+            Some(area) => format!("{} API", area.label),
+            None => "Called, not served here".to_string(),
+        };
+        items.insert(hub.clone(), Item { kind: "api".into(), label, parent: None, path: None, area: None });
+    }
+    for (id, name, hub, resource) in placed {
+        let parent = if group_size[&(hub.clone(), resource.clone())] > 1 {
+            let group = format!("apigroup:{hub}:{resource}");
+            items.entry(group.clone()).or_insert_with(|| Item { kind: "api_group".into(), label: resource.clone(), parent: Some(hub.clone()), path: None, area: None });
+            group
+        } else {
+            hub.clone()
+        };
+        items.insert(id, Item { kind: "endpoint".into(), label: name, parent: Some(parent), path: None, area: None });
+    }
+
     // Children counts, and what is visible: the roots plus children of expanded nodes.
     let mut children: HashMap<String, usize> = HashMap::new();
     for item in items.values() {
@@ -146,13 +192,28 @@ pub fn zoom_graph(conn: &Connection, expanded: &[String]) -> Result<Value> {
     let mut nodes: BTreeMap<String, Value> = BTreeMap::new();
     for id in &shown {
         let item = &items[id];
+        // API groups and endpoints know their API body, so calls into them count toward it.
+        let mut root = id.clone();
+        while let Some(p) = items.get(&root).and_then(|i| i.parent.clone()) {
+            root = p;
+        }
+        let hub = (item.kind == "api_group" || item.kind == "endpoint").then_some(root);
         nodes.insert(id.clone(), json!({
-            "id": id, "label": item.label, "kind": item.kind, "path": item.path, "area": item.area,
+            "id": id, "label": item.label, "kind": item.kind, "path": item.path, "area": item.area, "hub": hub,
             "children": children.get(id).copied().unwrap_or(0), "expanded": expanded.contains(id.as_str()),
         }));
     }
-    // Endpoints, services and memories are always visible.
-    let mut stmt = conn.prepare("SELECT id, kind, qualified_name FROM entities WHERE kind IN ('endpoint','service')")?;
+    for (hub, area) in &hub_serves {
+        if let Some(n) = nodes.get_mut(hub) {
+            n["serves"] = json!(area);
+            n["endpoints"] = json!(hub_size[hub]);
+        }
+    }
+    if let Some(n) = nodes.get_mut("api:unserved") {
+        n["endpoints"] = json!(hub_size["api:unserved"]);
+    }
+    // External services and memories are always visible.
+    let mut stmt = conn.prepare("SELECT id, kind, qualified_name FROM entities WHERE kind = 'service'")?;
     for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))? {
         let (id, kind, name) = row?;
         nodes.insert(id.clone(), json!({"id": id, "label": name, "kind": kind}));
