@@ -10,34 +10,13 @@ export interface Camera {
 export interface Focus {
   /** Node under the pointer or selected; its neighbourhood stays bright, the rest dims. */
   id: string | null;
-  /** Milliseconds, for the dots flowing along the focused node's lines. */
-  t: number;
   neighbours: Set<string>;
   selected: string | null;
 }
 
-/** What a line means, by colour (see the legend): rgb, used with an alpha. */
-export const EDGE_COLORS: Record<string, [string, string]> = {
-  contains: ["200,210,235", "contains"],
-  imports: ["109,141,255", "imports"],
-  invokes: ["71,195,148", "function calls"],
-  calls: ["240,163,94", "HTTP calls"],
-  serves: ["240,163,94", "serves an API"],
-  "served by": ["240,163,94", "serves an API"],
-  uses: ["209,107,165", "uses a service"],
-  about: ["177,132,255", "a memory about it"],
-  touches: ["177,132,255", "a memory about it"],
-  describes: ["232,207,92", "a document about it"],
-  mentions: ["232,207,92", "a document about it"],
-};
+const ACCENT = "#7c97ff";
 
-/** Every line at rest: one quiet colour, so the shape of the network reads first. */
-const REST = "rgba(190,200,225,0.13)";
-
-/**
- * Draw one frame from projected positions (`sx`, `sy`; see projection.ts). Nodes arrive far to near,
- * so nearer ones paint on top. Sizes are divided by zoom where they should stay constant on screen.
- */
+/** Draw one frame. Sizes are divided by zoom where they should stay constant on screen. */
 export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: Camera, nodes: SimNode[], links: SimLink[], s: GraphSettings, focus: Focus) {
   ctx.save();
   ctx.clearRect(0, 0, w, h);
@@ -45,44 +24,26 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
   ctx.scale(cam.k, cam.k);
   const lit = (id: string) => !focus.id || focus.neighbours.has(id);
 
-  // Quiet lines first, then the focused node's lines on top in the colour of what they are.
-  const hot: SimLink[] = [];
-  ctx.strokeStyle = focus.id ? "rgba(190,200,225,0.035)" : REST;
-  ctx.lineWidth = 0.8 * s.linkWidth / cam.k;
-  ctx.beginPath();
   for (const l of links) {
-    if (focus.id && (l.source.id === focus.id || l.target.id === focus.id)) { hot.push(l); continue; }
-    ctx.moveTo(l.source.sx!, l.source.sy!);
-    ctx.lineTo(l.target.sx!, l.target.sy!);
-  }
-  ctx.stroke();
-  for (const l of hot) {
-    const rgb = EDGE_COLORS[l.type]?.[0] ?? "124,151,255";
-    ctx.strokeStyle = `rgba(${rgb},0.85)`;
-    ctx.lineWidth = 1.6 * s.linkWidth / cam.k;
+    const hot = focus.id && (l.source.id === focus.id || l.target.id === focus.id);
+    ctx.strokeStyle = hot ? ACCENT : focus.id ? "rgba(255,255,255,0.04)" : l.type === "supersedes" ? "rgba(177,132,255,0.35)" : "rgba(200,210,235,0.16)";
+    ctx.lineWidth = (hot ? 1.6 : 1) * s.linkWidth / cam.k;
+    ctx.setLineDash(l.type === "supersedes" || l.type === "derives" ? [4 / cam.k, 3 / cam.k] : []);
     ctx.beginPath();
-    ctx.moveTo(l.source.sx!, l.source.sy!);
-    ctx.lineTo(l.target.sx!, l.target.sy!);
+    ctx.moveTo(l.source.x!, l.source.y!);
+    ctx.lineTo(l.target.x!, l.target.y!);
     ctx.stroke();
     if (s.arrows) arrow(ctx, l, cam.k, s);
-    flow(ctx, l, rgb, cam.k, focus.t);
   }
+  ctx.setLineDash([]);
 
   for (const n of nodes) {
-    const r = radius(n, s);
-    ctx.globalAlpha = (lit(n.id) ? 1 : 0.18) * n.fade!;
+    const r = n.radius * s.nodeSize;
+    ctx.globalAlpha = lit(n.id) ? 1 : 0.18;
     ctx.beginPath();
-    if (n.kind === "document" || n.kind === "module" || n.kind === "api" || n.kind === "api_group") roundedSquare(ctx, n.sx!, n.sy!, r * (n.kind === "module" ? 1.25 : 1));
-    else ctx.arc(n.sx!, n.sy!, r, 0, Math.PI * 2);
-    if (n.expanded) {
-      // An opened node is a hub for its children: hollow, so they read as its contents.
-      ctx.strokeStyle = n.color;
-      ctx.lineWidth = 2.2 / cam.k;
-      ctx.stroke();
-      ctx.globalAlpha *= 0.25;
-      ctx.fillStyle = n.color;
-      ctx.fill();
-    } else if (n.status === "superseded") {
+    if (n.kind === "document" || n.kind === "module") roundedSquare(ctx, n.x!, n.y!, r * (n.kind === "module" ? 1.25 : 1));
+    else ctx.arc(n.x!, n.y!, r, 0, Math.PI * 2);
+    if (n.status === "superseded") {
       ctx.strokeStyle = n.color;
       ctx.lineWidth = 1.5 / cam.k;
       ctx.stroke();
@@ -93,8 +54,6 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
       ctx.shadowBlur = 0;
     }
     if (n.id === focus.selected) {
-      ctx.beginPath();
-      ctx.arc(n.sx!, n.sy!, r, 0, Math.PI * 2);
       ctx.strokeStyle = "#fff";
       ctx.lineWidth = 2 / cam.k;
       ctx.stroke();
@@ -105,31 +64,8 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
   ctx.restore();
 }
 
-/**
- * Dots travelling along a line from its source to its target: away from the selected node for what
- * it uses or calls, toward it for what uses or calls it. Spaced by screen length, so long and short
- * lines move at the same pace.
- */
-function flow(ctx: CanvasRenderingContext2D, l: SimLink, rgb: string, k: number, t: number) {
-  const dx = l.target.sx! - l.source.sx!, dy = l.target.sy! - l.source.sy!;
-  const len = Math.hypot(dx, dy) * k;
-  if (len < 12) return;
-  const gap = 46, speed = 0.05;
-  const offset = ((t * speed) % gap) / len;
-  ctx.fillStyle = `rgb(${rgb})`;
-  for (let f = offset; f < 1; f += gap / len) {
-    ctx.beginPath();
-    ctx.arc(l.source.sx! + dx * f, l.source.sy! + dy * f, 2.2 / k, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
-
-/** Radius on screen: the node's size times perspective (1 in 2D). */
-export const radius = (n: SimNode, s: GraphSettings) => n.radius * s.nodeSize * (n.scale ?? 1);
-
 /** Short label: file nodes show their file name; the full path is in the drawer. */
 function shortLabel(n: SimNode): string {
-  if ((n.kind === "api" || n.kind === "api_group") && n.children > 0 && !n.expanded) return `${n.label} · ${n.children}`;
   const text = n.kind === "file" ? n.label.slice(n.label.lastIndexOf("/") + 1) : n.label;
   return text.length > 40 ? `${text.slice(0, 38)}…` : text;
 }
@@ -148,18 +84,17 @@ function labels(ctx: CanvasRenderingContext2D, cam: Camera, nodes: SimNode[], s:
   const order = [...nodes].sort((a, b) => Number(focus.neighbours.has(b.id)) - Number(focus.neighbours.has(a.id)) || b.degree - a.degree);
   for (const n of order) {
     const focused = focus.id !== null && focus.neighbours.has(n.id);
-    // Parts and services are the landmarks: always labelled.
-    const hub = (n.degree >= 8 && cam.k > s.textFade * 0.35) || ["area", "service", "api", "api_group"].includes(n.kind);
-    const alpha = (focused ? 1 : focus.id ? 0 : hub ? Math.max(zoomAlpha, 0.85) : zoomAlpha) * (focused ? 1 : n.fade!);
+    const hub = n.degree >= 8 && cam.k > s.textFade * 0.35;
+    const alpha = focused ? 1 : focus.id ? 0 : hub ? Math.max(zoomAlpha, 0.85) : zoomAlpha;
     if (alpha <= 0.02) continue;
     const text = shortLabel(n);
     const w = ctx.measureText(text).width, h = size * 1.2;
-    const x = n.sx! - w / 2, y = n.sy! + radius(n, s) + 3 / cam.k;
+    const x = n.x! - w / 2, y = n.y! + n.radius * s.nodeSize + 3 / cam.k;
     if (!focused && placed.some(([px, py, pw, ph]) => x < px + pw && px < x + w && y < py + ph && py < y + h)) continue;
     placed.push([x, y, w, h]);
     ctx.globalAlpha = alpha;
     ctx.fillStyle = n.id === focus.selected ? "#ffffff" : "#c9d1e3";
-    ctx.fillText(text, n.sx!, y);
+    ctx.fillText(text, n.x!, y);
   }
   ctx.globalAlpha = 1;
 }
@@ -170,10 +105,10 @@ function roundedSquare(ctx: CanvasRenderingContext2D, x: number, y: number, r: n
 }
 
 function arrow(ctx: CanvasRenderingContext2D, l: SimLink, k: number, s: GraphSettings) {
-  const dx = l.target.sx! - l.source.sx!, dy = l.target.sy! - l.source.sy!;
+  const dx = l.target.x! - l.source.x!, dy = l.target.y! - l.source.y!;
   const len = Math.hypot(dx, dy) || 1;
-  const tip = radius(l.target, s) + 2 / k;
-  const x = l.target.sx! - (dx / len) * tip, y = l.target.sy! - (dy / len) * tip;
+  const tip = l.target.radius * s.nodeSize + 2 / k;
+  const x = l.target.x! - (dx / len) * tip, y = l.target.y! - (dy / len) * tip;
   const a = Math.atan2(dy, dx), size = 6 / k;
   ctx.beginPath();
   ctx.moveTo(x, y);
@@ -189,7 +124,7 @@ export function fitCamera(nodes: SimNode[], w: number, h: number, pad = 60): Cam
   if (nodes.length === 0) return { x: w / 2, y: h / 2, k: 1 };
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const n of nodes) {
-    x0 = Math.min(x0, n.sx!); y0 = Math.min(y0, n.sy!); x1 = Math.max(x1, n.sx!); y1 = Math.max(y1, n.sy!);
+    x0 = Math.min(x0, n.x!); y0 = Math.min(y0, n.y!); x1 = Math.max(x1, n.x!); y1 = Math.max(y1, n.y!);
   }
   const k = Math.min(1.6, Math.max(0.15, Math.min((w - pad * 2) / Math.max(1, x1 - x0), (h - pad * 2) / Math.max(1, y1 - y0))));
   return { k, x: w / 2 - ((x0 + x1) / 2) * k, y: h / 2 - ((y0 + y1) / 2) * k };
