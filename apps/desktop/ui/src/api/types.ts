@@ -9,7 +9,40 @@ export interface Stats {
   archived: number;
   entities: number;
   requests: number;
+  documents: number;
+  chunks: number;
+  inferred: number;
 }
+
+export interface DocumentView {
+  id: string;
+  externalId: string;
+  title: string;
+  source: string;
+  path: string | null;
+  mime: string;
+  status: string;
+  error: string | null;
+  charCount: number;
+  chunkCount: number;
+  version: number;
+  updatedAt: string;
+}
+
+export interface ChunkPreview {
+  id: string;
+  heading: string | null;
+  startLine: number | null;
+  endLine: number | null;
+  preview: string;
+}
+
+export interface InferredMemory {
+  memory: MemoryView;
+  parentCount: number;
+}
+
+export type SearchMode = "hybrid" | "memories" | "documents";
 
 export interface Project {
   id: string;
@@ -50,6 +83,9 @@ export interface MemoryView {
   validTo: string | null;
   commitSha: string | null;
   confidence: number;
+  isInference: boolean;
+  reinforcement: number;
+  expiresAt: string | null;
 }
 
 export interface EvidenceEvent {
@@ -62,6 +98,7 @@ export interface EvidenceEvent {
 export type NodeDetail =
   | { type: "memory"; memory: MemoryView; history: MemoryView[]; evidence: EvidenceEvent[] }
   | { type: "entity"; entity: { id: string; kind: string; qualifiedName: string; path: string | null } }
+  | { type: "document"; document: DocumentView; chunks: ChunkPreview[]; focus?: string }
   | null;
 
 export interface EventEntry {

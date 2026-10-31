@@ -36,7 +36,7 @@ pub fn graph_data(conn: &Connection, include_archived: bool, limit: i64) -> Resu
     }
 
     let documents: Vec<(String, String, String)> = conn
-        .prepare("SELECT id, title, source FROM documents WHERE status = 'done' ORDER BY updated_at DESC LIMIT 150")?
+        .prepare("SELECT id, title, source FROM documents WHERE status = 'done' AND mime NOT LIKE 'text/x-%' ORDER BY updated_at DESC LIMIT 150")?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
         .collect::<SqlResult<_>>()?;
     for (id, title, source) in documents {
@@ -55,6 +55,17 @@ pub fn graph_data(conn: &Connection, include_archived: bool, limit: i64) -> Resu
 }
 
 pub fn node_detail(conn: &Connection, id: &str) -> Result<Value> {
+    if id.starts_with("chk_") {
+        let doc_id: Option<String> = conn.query_row("SELECT document_id FROM chunks WHERE id = ?", [id], |r| r.get(0)).ok();
+        let mut detail = match doc_id {
+            Some(doc_id) => node_detail(conn, &doc_id)?,
+            None => Value::Null,
+        };
+        if let Some(obj) = detail.as_object_mut() {
+            obj.insert("focus".into(), json!(id));
+        }
+        return Ok(detail);
+    }
     if let Some(doc) = engram_rag::document::get_document(conn, id)? {
         let chunks: Vec<Value> = conn
             .prepare("SELECT id, heading, start_line, end_line, substr(content, 1, 400) FROM chunks WHERE document_id = ? ORDER BY ordinal")?

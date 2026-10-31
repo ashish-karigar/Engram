@@ -1,5 +1,6 @@
 import type {
-  ConnectResult, Connection, EventEntry, Graph, NodeDetail, OpResult, Project, RequestEntry, Stats,
+  ConnectResult, Connection, DocumentView, EventEntry, Graph, InferredMemory, MemoryView, NodeDetail, OpResult, Project,
+  RequestEntry, SearchMode, Stats,
 } from "./types.ts";
 
 async function call<T>({ url, token }: Connection, path: string, init: RequestInit = {}): Promise<T> {
@@ -29,7 +30,13 @@ export const projectApi = (c: Connection, id: string) => {
     node: (nodeId: string) => call<NodeDetail>(c, `${base}/node?id=${encodeURIComponent(nodeId)}`),
     events: (limit = 80) => call<EventEntry[]>(c, `${base}/events?limit=${limit}`),
     requests: (limit = 80) => call<RequestEntry[]>(c, `${base}/requests?limit=${limit}`),
-    search: (query: string) => call<OpResult>(c, `${base}/search`, post({ query })),
+    search: (query: string, mode: SearchMode = "hybrid") => call<OpResult>(c, `${base}/search`, post({ query, mode })),
+    profile: () => call<OpResult>(c, `${base}/profile`),
+    documents: (limit = 500) => call<DocumentView[]>(c, `${base}/documents?limit=${limit}`),
+    addDocument: (title: string, content: string) => call<OpResult>(c, `${base}/documents`, post({ title, content })),
+    deleteDocument: (id: string) => call<{ ok: boolean }>(c, `${base}/documents/delete`, post({ id })),
+    review: () => call<InferredMemory[]>(c, `${base}/review`),
+    decide: (id: string, action: "approve" | "decline" | "undo") => call<MemoryView>(c, `${base}/review`, post({ id, action })),
     connect: (agent: string, apply: boolean) => call<ConnectResult>(c, `${base}/connect`, post({ agent, apply })),
   };
 };

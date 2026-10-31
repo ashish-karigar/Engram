@@ -29,6 +29,7 @@ export function NodeDrawer({ api, id, onClose, onOpen }: Props) {
         </>
       )}
       {data?.type === "memory" && <MemoryBody detail={data} onOpen={onOpen} />}
+      {data?.type === "document" && <DocumentBody detail={data} />}
     </div>
   );
 }
@@ -66,6 +67,25 @@ function MemoryBody({ detail, onOpen }: { detail: Extract<NodeDetail, { type: "m
           <li key={e.seq}><code>#{e.seq}</code> {e.kind} <span className="faint">{e.ts.slice(0, 19).replace("T", " ")}</span></li>
         ))}
       </ul>
+    </>
+  );
+}
+
+function DocumentBody({ detail }: { detail: Extract<NodeDetail, { type: "document" }> }) {
+  const { document: d, chunks, focus } = detail;
+  return (
+    <>
+      <Type kind="document" />
+      <h3>{d.title}</h3>
+      <p className="muted">{d.source} · {d.mime} · {d.chunkCount} chunks · v{d.version} · {d.status}</p>
+      {d.error && <p className="err">{d.error}</p>}
+      <h4>Sections</h4>
+      {chunks.map((c) => (
+        <div key={c.id} className={`chunk ${c.id === focus ? "focus" : ""}`} ref={(el) => { if (el && c.id === focus) el.scrollIntoView({ block: "center" }); }}>
+          <div>{c.heading ?? "(start)"} <span className="faint">{c.startLine ? `L${c.startLine}-${c.endLine}` : ""}</span></div>
+          <pre>{c.preview}</pre>
+        </div>
+      ))}
     </>
   );
 }

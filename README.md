@@ -19,7 +19,9 @@ repository was written during the event.
    episodes decay and are archived.
 4. **Recall**: keyword search finds entry nodes, a graph walk finds what is connected, a token-budget
    packer picks what fits. No model call at read time.
-5. **Observe**: every agent request is logged with what came back and why.
+5. **Ground in documents**: READMEs, design docs, PDFs and source files in the project are chunked,
+   embedded and searched next to memories ("SuperRAG", locally). Agents can add documents too.
+6. **Observe**: every agent request is logged with what came back and why.
 
 Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Decisions: [docs/ACTION_PLAN.md](docs/ACTION_PLAN.md).
 
@@ -28,7 +30,7 @@ Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Decisions: [docs/ACTION_PL
 Requires Rust (stable), Node 20+, and git.
 
 ```bash
-cargo test --workspace            # 39 tests, including a two-project, two-agent end-to-end run
+cargo test --workspace            # 57 tests, including a two-project, two-agent end-to-end run
 npm install
 npm run app:dev                   # desktop app (Tauri) with hot reload
 npm run app:build                 # release bundle
@@ -49,10 +51,16 @@ Extraction from commits is optional and configured with environment variables:
 `META_API_KEY` (Muse Spark; `META_BASE_URL`, `META_MODEL` to override) or `ENGRAM_LLM=ollama`.
 Without one, agent notes still work.
 
+Embeddings default to a built-in offline model (no download). For semantic quality, run Ollama and set
+`ENGRAM_EMBED=ollama` (uses `nomic-embed-text`), or `ENGRAM_EMBED=openai` with
+`ENGRAM_EMBED_BASE_URL` and `ENGRAM_EMBED_API_KEY`.
+
 ## Layout
 
 ```
-crates/core        schema, event log, memories, graph, decay
+crates/core        schema, event log, memories, graph, decay, review
+crates/embed       embedders, vector store, top-k, rank fusion
+crates/rag         documents: extractors, chunking, ingest pipeline, hybrid chunk search
 crates/capture     git helpers, secret scrubber, snapshot ref, file watcher
 crates/understand  Python index, task grouping, extraction, grounding, notes
 crates/serve       recall, budget packer, MCP server, HTTP API, tokens
@@ -66,7 +74,7 @@ Working and tested: capture, snapshots, Python indexing, extraction pipeline wit
 memory, graph recall, MCP + HTTP (checked with the official MCP TypeScript client), request log,
 connectors, multiple projects, desktop UI.
 
-Not done: vector search, adapters that read Codex/Muse session logs (agents use `note` instead),
+Not done: adapters that read Codex/Muse session logs (agents use `note` instead),
 cloud sync and billing. The desktop app launches and runs its daemon, but the native folder picker and
 the Codex/Muse/Claude connectors have not been exercised on a real machine. The Muse API base URL and
 model id defaults are unverified and configurable.

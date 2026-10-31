@@ -15,6 +15,7 @@ pub struct ChunkHit {
     pub document_id: String,
     pub title: String,
     pub path: Option<String>,
+    pub mime: String,
     pub heading: Option<String>,
     pub content: String,
     pub start_line: Option<i64>,
@@ -64,7 +65,7 @@ pub fn search_chunks(conn: &Connection, embedder: Option<&dyn Embedder>, query: 
 
 fn load_hit(conn: &Connection, id: &str, score: f64, reason: &str) -> Result<Option<ChunkHit>> {
     let mut stmt = conn.prepare(
-        "SELECT c.id, c.document_id, d.title, d.path, c.heading, c.content, c.start_line, c.end_line
+        "SELECT c.id, c.document_id, d.title, d.path, c.heading, c.content, c.start_line, c.end_line, d.mime
          FROM chunks c JOIN documents d ON d.id = c.document_id WHERE c.id = ?",
     )?;
     let mut rows = stmt.query([id])?;
@@ -74,6 +75,7 @@ fn load_hit(conn: &Connection, id: &str, score: f64, reason: &str) -> Result<Opt
         document_id: r.get(1)?,
         title: r.get(2)?,
         path: r.get(3)?,
+        mime: r.get(8)?,
         heading: r.get(4)?,
         content: r.get(5)?,
         start_line: r.get(6)?,

@@ -3,6 +3,8 @@ import { projectApi, projectsApi } from "./api/client.ts";
 import type { Connection, Graph, Project } from "./api/types.ts";
 import { AgentsPanel } from "./components/AgentsPanel.tsx";
 import { AskBar } from "./components/AskBar.tsx";
+import { DocumentsPanel } from "./components/DocumentsPanel.tsx";
+import { ReviewPanel } from "./components/ReviewPanel.tsx";
 import { EmptyState } from "./components/EmptyState.tsx";
 import { GraphView, Legend } from "./components/GraphView.tsx";
 import { NodeDrawer } from "./components/NodeDrawer.tsx";
@@ -12,8 +14,10 @@ import { Timeline } from "./components/Timeline.tsx";
 import { pickFolder, useDaemon } from "./hooks/useDaemon.ts";
 import { usePolling } from "./hooks/usePolling.ts";
 
-type Tab = "graph" | "timeline" | "requests" | "agents";
-const TABS: [Tab, string][] = [["graph", "Memory graph"], ["timeline", "Timeline"], ["requests", "Requests"], ["agents", "Agents"]];
+type Tab = "graph" | "documents" | "review" | "timeline" | "requests" | "agents";
+const TABS: [Tab, string][] = [
+  ["graph", "Memory graph"], ["documents", "Documents"], ["review", "Review"], ["timeline", "Timeline"], ["requests", "Requests"], ["agents", "Agents"],
+];
 const LAST_PROJECT = "engram.lastProject";
 
 function Workspace({ connection, project }: { connection: Connection; project: Project }) {
@@ -36,6 +40,7 @@ function Workspace({ connection, project }: { connection: Connection; project: P
         {stats && (
           <div className="chips">
             <span className="chip"><b>{stats.memories}</b>memories</span>
+            <span className="chip"><b>{stats.documents}</b>documents</span>
             <span className="chip"><b>{stats.entities}</b>code nodes</span>
             <span className="chip"><b>{stats.requests}</b>requests</span>
           </div>
@@ -43,7 +48,9 @@ function Workspace({ connection, project }: { connection: Connection; project: P
       </div>
       <nav className="tabs">
         {TABS.map(([id, label]) => (
-          <button key={id} className={`tab ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>{label}</button>
+          <button key={id} className={`tab ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>
+            {label}{id === "review" && stats?.inferred ? <span className="count">{stats.inferred}</span> : null}
+          </button>
         ))}
       </nav>
       <div className="content">
@@ -58,6 +65,8 @@ function Workspace({ connection, project }: { connection: Connection; project: P
             {selected && <NodeDrawer api={api} id={selected} onClose={() => setSelected(null)} onOpen={setSelected} />}
           </>
         )}
+        {tab === "documents" && <DocumentsPanel api={api} onOpen={(id) => { setSelected(id); setTab("graph"); }} />}
+        {tab === "review" && <ReviewPanel api={api} />}
         {tab === "timeline" && <Timeline api={api} />}
         {tab === "requests" && <RequestLog api={api} />}
         {tab === "agents" && <AgentsPanel api={api} />}

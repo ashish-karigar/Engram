@@ -115,9 +115,12 @@ fn round(x: f64) -> f64 {
     (x * 1000.0).round() / 1000.0
 }
 
+/// Choose what fits the budget by value per token, then present it by value, best first.
 fn pack(items: Vec<(Item, f64)>, budget: usize) -> Vec<Item> {
-    let packable = items.into_iter().map(|(item, value)| Packable { cost: estimate_tokens(&item.line()), value, item }).collect();
-    pack_by_density(packable, budget).0
+    let packable = items.into_iter().map(|(item, value)| Packable { cost: estimate_tokens(&item.line()), value, item: (item, value) }).collect();
+    let mut picked = pack_by_density(packable, budget).0;
+    picked.sort_by(|a, b| b.1.total_cmp(&a.1));
+    picked.into_iter().map(|(item, _)| item).collect()
 }
 
 fn render(items: &[Item]) -> (String, Vec<Value>) {
@@ -147,8 +150,10 @@ fn gather(ctx: &Ctx, query: &str, mode: &str, as_of: Option<String>) -> Result<V
     if mode != "memories" {
         let hits = search_chunks(ctx.conn, Some(ctx.embedder), query, 8)?;
         let top = hits.first().map(|h| h.score).unwrap_or(1.0);
+        // Prose explains why; code shows what. Prefer prose when scores are close.
         items.extend(hits.into_iter().map(|h| {
-            let v = 0.8 * h.score / top;
+            let prior = if h.mime.starts_with("text/x-") { 0.7 } else { 1.0 };
+            let v = 0.8 * prior * h.score / top;
             (Item::Chunk(h), v)
         }));
     }

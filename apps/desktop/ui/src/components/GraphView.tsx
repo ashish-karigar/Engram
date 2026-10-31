@@ -21,6 +21,7 @@ const STYLE: StylesheetJson = [
   },
   { selector: 'node[kind = "module"]', style: { shape: "round-rectangle", width: 38, height: 26, "font-size": 11, color: "#cdd5e6", "background-opacity": 0.9, "border-width": 1, "border-color": "#3b4660" } },
   { selector: 'node[kind = "file"]', style: { width: 9, height: 9, "font-size": 8, label: "" } },
+  { selector: 'node[kind = "document"]', style: { shape: "tag", width: 14, height: 14, "font-size": 9 } },
   { selector: 'node[status = "superseded"]', style: { opacity: 0.45, "border-width": 2, "border-style": "dashed", "border-color": "#8a93a6" } },
   { selector: "edge", style: { width: 1, "line-color": "#2a3347", "curve-style": "bezier", "target-arrow-shape": "triangle", "target-arrow-color": "#2a3347", "arrow-scale": 0.6, opacity: 0.8 } },
   { selector: 'edge[label = "supersedes"]', style: { "line-style": "dashed", "line-color": "#6b7388" } },
@@ -82,7 +83,7 @@ export function GraphView({ graph, selectedId, onSelect }: Props) {
   return <div ref={host} className="graph" />;
 }
 
-const KINDS = ["decision", "rejected_option", "dead_end", "fact", "preference", "module", "file"];
+const KINDS = ["decision", "rejected_option", "dead_end", "fact", "preference", "document", "module", "file"];
 
 export function Legend() {
   return (

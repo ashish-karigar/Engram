@@ -56,4 +56,12 @@ on session start and after compaction, Muse Spark extraction and `derives`.
 
 ## Status
 
-- [ ] A  - [ ] B  - [ ] C  - [ ] D  - [ ] E  - [ ] F  - [ ] G
+- [x] **A** embeddings (built-in hashing, Ollama, OpenAI-compatible), exact top-k, RRF fusion
+- [x] **B** documents: md/html/pdf/text/code extractors, heading- and AST-aware chunking, pipeline with
+  statuses, hash dedupe and versioning, `mentions`/`describes` edges, project folder auto-indexed
+- [x] **C** extends edges, reinforcement, expiry, inferred memories + approve/decline/undo, project profile
+- [x] **D** search modes (hybrid/memories/documents), `profile`, `add_document`, review and document endpoints
+- [ ] **E** done: Documents tab, Review tab, search modes, document nodes. Next: Obsidian-style graph,
+  Settings, project overview
+- [ ] **F** session-log adapters, hook injection, Muse Spark extraction and `derives`
+- [ ] **G** benchmark, demo video, submission

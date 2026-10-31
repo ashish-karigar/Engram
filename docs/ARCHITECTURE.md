@@ -28,9 +28,11 @@ and serves small, token-budgeted answers over MCP and HTTP. One app watches many
 | Crate | Responsibility | Depends on |
 |---|---|---|
 | `engram-core` | Schema, migrations, event log, memories, graph, decay, request log. Only SQLite I/O. | – |
+| `engram-embed` | `Embedder` trait (built-in hashing, Ollama, OpenAI-compatible), vectors in SQLite, exact top-k, RRF. | core |
+| `engram-rag` | Documents: extractors (markdown, HTML, PDF, text, code), heading/AST-aware chunking, ingest pipeline, hybrid chunk search. | core, embed |
 | `engram-capture` | Watch files and git, scrub secrets, save uncommitted work to a git ref. | core |
 | `engram-understand` | Index Python (tree-sitter), group events into tasks, extract and verify memories, notes. | core, capture |
-| `engram-serve` | Recall ranking, token-budget packer, MCP server, HTTP API, per-agent tokens. | core, understand |
+| `engram-serve` | Hybrid recall over memories and documents, profile, token-budget packer, MCP server, HTTP API, per-agent tokens. | core, understand, embed, rag |
 | `engram-daemon` | Runs many projects, owns the server, agent connectors, `engram` CLI. | all above |
 | `apps/desktop` | Tauri shell (runs the daemon in-process) and the React UI in `ui/`. | daemon (HTTP only from UI) |
 
@@ -57,6 +59,22 @@ user's index, branches and working tree are never touched.
 - `edges`: typed, weighted, time-bounded links between any two node ids.
 - `memory_evidence`: memory → supporting event seqs. Unsupported memories are rejected.
 - `access_log`: every agent request, what came back and why, tokens, latency.
+- `documents` / `chunks` / `chunks_fts`: the documents layer (raw sources and their retrieval units).
+- `embeddings`: vectors for chunks and memories, keyed by model id so providers never mix.
+
+## Two layers of context
+
+Like Supermemory, Engram keeps **documents** (raw sources, chunked for grounding) separate from
+**memories** (distilled facts in the graph). Documents come from the project folder automatically
+(docs, configs and source files that git would track), from agents via `add_document`, or from the UI.
+Pipeline: queued → extracting → chunking → embedding → indexing → done (or failed, with the error).
+Unchanged files are skipped by content hash; changed ones are re-chunked and bump the version.
+Each chunk carries a contextual header (`title > section`) that is indexed and embedded with it.
+Documents link into the graph: `describes` its own code file, `mentions` other files it names.
+
+Memory relationships follow Supermemory's model: `supersedes` (updates), `extends` (adds detail),
+`derives` (inferred, flagged `is_inference` until approved or declined). Repeating a known fact
+reinforces it; facts can carry `expires_at`; a project profile splits standing facts from current focus.
 
 ## Algorithms and why
 
@@ -64,6 +82,10 @@ user's index, branches and working tree are never touched.
 |---|---|---|
 | Tamper-evident history | Hash chain over events | O(n) verify, O(1) append |
 | Keyword recall | FTS5 + BM25, weighted columns, stopwords dropped | Built into SQLite, no service |
+| Semantic recall | Embeddings + exact top-k with a size-k heap, O(n·d + n log k) | Correct, simple; ANN index later |
+| Combine rankers | Reciprocal Rank Fusion (k = 60) | Uses ranks only, so BM25 and cosine scales never need calibrating |
+| Chunking | Markdown by heading path; Python by top-level symbol (tree-sitter); other code by overlapping line windows | Chunks follow meaning, not character counts |
+| Offline embeddings | Signed feature hashing of words, bigrams and 4-grams (FNV-1a) | No model download; deterministic; lexical, not deep semantics |
 | Neighbour walk | Recursive CTE, per-hop score decay, edge-type filter | One query, depth-bounded, no graph DB |
 | Fit a token budget | Greedy by value density (score / tokens) | Knapsack approximation; O(n log n) |
 | Rank | relevance × freshness (decay + usage) | Cheap, explainable, logged per hit |
@@ -78,12 +100,12 @@ database connection so a slow model call never blocks an agent request.
 ## Models
 `LlmClient` is one method. Providers: Meta API (Muse Spark), Ollama, and a scripted client for tests.
 Selected by environment variables (`META_API_KEY`, `META_BASE_URL`, `META_MODEL`, `ENGRAM_LLM`).
-The Meta base URL and model id defaults are unverified. Embeddings and vector search are not built.
+The Meta base URL and model id defaults are unverified. Embeddings: `ENGRAM_EMBED=hash|ollama|openai` (default `hash`, offline). `ollama` uses `nomic-embed-text` unless `ENGRAM_EMBED_MODEL` is set.
 
 ## Agent integration
 Agents connect to a project-scoped MCP endpoint (streamable HTTP, JSON responses, bearer token).
 The MCP server is hand-written (initialize, ping, tools/list, tools/call) and was checked against the
-official TypeScript MCP client. Tools are deliberately few: `brief`, `search`, `expand`, `note`.
+official TypeScript MCP client. Tools are deliberately few: `brief`, `search` (modes hybrid/memories/documents), `expand`, `note`, `profile`, `add_document`.
 `engram connect <claude|codex|muse>` shows, then applies, one config change per agent:
 Codex (`~/.codex/config.toml`, marked block), Muse Code (`mcpServers` in `~/.config/muse/settings.json`,
 entry format unverified), Claude Code (`claude mcp add`).
@@ -99,4 +121,5 @@ Free: local only. Paid: cloud sync (events carry `device_id` and `op_id`, so syn
 shipping). Extra charge: project members. None of this is built.
 
 ## Not built
-Vector search, session-log adapters for Codex and Muse Code (they use `note`), cloud sync, billing.
+Session-log adapters for Codex and Muse Code (they use `note`), LLM-driven `derives`, an ANN vector
+index, connectors to external apps, cloud sync, billing. See [ROADMAP.md](ROADMAP.md).
