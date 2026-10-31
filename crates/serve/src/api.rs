@@ -228,6 +228,26 @@ pub fn graph_data(conn: &Connection, include_archived: bool, limit: i64) -> Resu
         nodes.insert(hub.clone(), json!({"id": hub, "label": "API", "kind": "api", "children": endpoints.len(), "routes": routes}));
     }
 
+    // External services (Auth0, an LLM server, Gmail) hang off the files that use them, so clicking
+    // one shows everything that depends on it on both sides of the API.
+    let uses: Vec<(String, String, String)> = conn
+        .prepare(
+            "SELECT DISTINCT sv.id, sv.qualified_name, s.path FROM entities sv
+             JOIN edges e ON e.dst = sv.id AND e.type IN ('uses', 'calls') AND e.valid_to IS NULL
+             JOIN entities s ON s.id = e.src
+             WHERE sv.kind = 'service' AND s.path IS NOT NULL",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<SqlResult<_>>()?;
+    for (service, name, path) in uses {
+        let Some(file) = files.get(&path) else { continue };
+        if is_test(&path) {
+            continue;
+        }
+        nodes.entry(service.clone()).or_insert_with(|| json!({"id": service, "label": name, "kind": "service"}));
+        edges.entry((file.clone(), service.clone(), "uses".into())).or_insert_with(|| format!("uses:{file}:{service}"));
+    }
+
     let edges: Vec<Value> = edges
         .into_iter()
         .filter(|((s, d, _), _)| nodes.contains_key(s) && nodes.contains_key(d))

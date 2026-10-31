@@ -98,7 +98,8 @@ export function buildScene(graph: Graph, s: GraphSettings, selected: string | nu
     const part = parts.get(n.id);
     return {
       id: n.id, label: n.label, kind: n.kind, status: n.status ?? "", degree: d, part,
-      side: n.kind === "api" ? 0 : part !== undefined ? sides.get(part) : undefined, routes: n.routes,
+      side: n.kind === "api" ? 0 : n.kind === "service" ? serviceSide(graph, n.id, parts, sides) : part !== undefined ? sides.get(part) : undefined,
+      routes: n.routes,
       radius: radiusFor(n.kind, d, inside.get(n.id) ?? n.children ?? 0, n.label.split("/").length - 1), color: cssColor(n.kind), ...prior,
     };
   });
@@ -145,9 +146,14 @@ export function trace(nodes: SimNode[], links: SimLink[], start: string): Trace 
   const result: Trace = { nodes: new Set([start]), links: new Map(), depth: new Map([[start, 0]]) };
   if (!origin) return result;
   const crosses = origin.part !== origin.id;
+  // Flow stays on its own side of the API, except for API calls and the external services it uses.
   const forward = (u: SimNode, l: SimLink) =>
-    l.source.id === u.id && (l.type === "contains" || l.type === "imports" || l.type === "calls") &&
-    (l.type === "calls" || l.target.part === undefined || l.target.part === origin.part);
+    l.source.id === u.id && (l.type === "contains" || l.type === "imports" || l.type === "calls" || l.type === "uses") &&
+    (l.type === "calls" || l.type === "uses" || l.target.part === undefined || l.target.part === u.part);
+  // A service has no side of its own: its trace starts from every file that uses it, and from
+  // there only follows imports into the API clients, so it ends at the backend it reaches.
+  const fromService = origin.kind === "service";
+  const apiClients = new Set(links.filter((l) => l.type === "calls" && l.target.kind === "api").map((l) => l.source.id));
 
   let frontier = [origin];
   let api: { node: SimNode; step: number } | null = null;
@@ -156,13 +162,13 @@ export function trace(nodes: SimNode[], links: SimLink[], start: string): Trace 
     for (const u of frontier) {
       for (const l of from.get(u.id) ?? []) {
         const v = l.source.id === u.id ? l.target : l.source;
-        const flows = forward(u, l);
+        const flows = forward(u, l) && !(fromService && l.type !== "calls" && !apiClients.has(v.id));
         if ((!flows && step > 0) || result.nodes.has(v.id)) continue;
         result.links.set(l.id, step);
         result.nodes.add(v.id);
         result.depth.set(v.id, step + 1);
         if (v.kind === "api") api ??= { node: v, step: step + 1 };
-        else if (flows) next.push(v);
+        else if (v.kind !== "service" && (flows || (step === 0 && fromService))) next.push(v);
       }
     }
     frontier = next;
@@ -214,6 +220,21 @@ function partSides(graph: Graph, parts: Map<string, string>): Map<string, number
   return sides;
 }
 
+/**
+ * Where an external service sits: used from both sides (Auth0), in the middle with the API; used
+ * from one side only (an LLM server the backend calls), on that side's outer edge.
+ */
+function serviceSide(graph: Graph, id: string, parts: Map<string, string>, sides: Map<string, number>): number | undefined {
+  const used = new Set<number>();
+  for (const e of graph.edges) {
+    if (e.target !== id) continue;
+    const side = sides.get(parts.get(e.source) ?? "");
+    if (side !== undefined) used.add(side);
+  }
+  if (used.size === 0) return undefined;
+  return used.size > 1 ? 0 : [...used][0]! * 1.5;
+}
+
 /** How many files and folders sit anywhere inside each folder, following `contains` edges. */
 function descendants(graph: Graph): Map<string, number> {
   const children = new Map<string, string[]>();
@@ -238,5 +259,6 @@ function radiusFor(kind: string, degree: number, inside: number, depth: number):
   if (kind === "file") return 2.5 + Math.sqrt(degree) * 0.9;
   if (kind === "module") return Math.max(4, (4 + Math.sqrt(inside) * 1.3) * (depth === 0 ? 1.3 : 0.75 ** depth));
   if (kind === "api") return 6 + Math.sqrt(inside) * 1.6;
+  if (kind === "service") return 5 + Math.sqrt(degree) * 1.3;
   return 5 + Math.sqrt(degree) * 1.8;
 }
