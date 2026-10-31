@@ -1,0 +1,271 @@
+{
+  "latency_ms": {
+    "engram": {
+      "brief": {
+        "p50": 13.9,
+        "p95": 27.2,
+        "max": 27.2,
+        "tokens": 939
+      },
+      "profile": {
+        "p50": 12.0,
+        "p95": 19.5,
+        "max": 19.5,
+        "tokens": 997
+      },
+      "search (hybrid)": {
+        "p50": 103.9,
+        "p95": 127.9,
+        "max": 127.9,
+        "tokens": 925
+      },
+      "search (memories)": {
+        "p50": 18.8,
+        "p95": 30.1,
+        "max": 30.1,
+        "tokens": 234
+      },
+      "search (documents)": {
+        "p50": 96.1,
+        "p95": 112.4,
+        "max": 112.4,
+        "tokens": 776
+      },
+      "expand": {
+        "p50": 7.5,
+        "p95": 10.4,
+        "max": 10.4
+      }
+    },
+    "careerbricks": {
+      "brief": {
+        "p50": 18.3,
+        "p95": 31.4,
+        "max": 31.4,
+        "tokens": 350
+      },
+      "profile": {
+        "p50": 10.1,
+        "p95": 13.9,
+        "max": 13.9,
+        "tokens": 376
+      },
+      "search (hybrid)": {
+        "p50": 117.2,
+        "p95": 135.4,
+        "max": 135.4,
+        "tokens": 854
+      },
+      "search (memories)": {
+        "p50": 13.6,
+        "p95": 27.9,
+        "max": 27.9,
+        "tokens": 126
+      },
+      "search (documents)": {
+        "p50": 103.3,
+        "p95": 114.4,
+        "max": 114.4,
+        "tokens": 751
+      },
+      "expand": {
+        "p50": 5.9,
+        "p95": 10.6,
+        "max": 10.6
+      }
+    },
+    "LiTheR": {
+      "brief": {
+        "p50": 15.8,
+        "p95": 21.3,
+        "max": 21.3,
+        "tokens": 888
+      },
+      "profile": {
+        "p50": 13.2,
+        "p95": 16.5,
+        "max": 16.5,
+        "tokens": 1076
+      },
+      "search (hybrid)": {
+        "p50": 45.1,
+        "p95": 67.5,
+        "max": 67.5,
+        "tokens": 983
+      },
+      "search (memories)": {
+        "p50": 15.2,
+        "p95": 22.9,
+        "max": 22.9,
+        "tokens": 293
+      },
+      "search (documents)": {
+        "p50": 36.3,
+        "p95": 45.4,
+        "max": 45.4,
+        "tokens": 824
+      },
+      "expand": {
+        "p50": 7.1,
+        "p95": 17.9,
+        "max": 17.9
+      }
+    }
+  },
+  "ui_ms": {
+    "projects": {
+      "p50": 9.9,
+      "p95": 14.7,
+      "max": 14.7
+    },
+    "graph": {
+      "p50": 95.8,
+      "p95": 122.0,
+      "max": 122.0
+    },
+    "activity": {
+      "p50": 80.2,
+      "p95": 102.3,
+      "max": 102.3
+    },
+    "stats": {
+      "p50": 4.4,
+      "p95": 7.2,
+      "max": 7.2
+    },
+    "documents": {
+      "p50": 19.9,
+      "p95": 24.6,
+      "max": 24.6
+    }
+  },
+  "footprint": {
+    "cpu_percent_avg": 11.8,
+    "rss_mb": 108.1,
+    "data_dir_mb": 54.0,
+    "build": "debug"
+  },
+  "recall": [
+    {
+      "project": "engram",
+      "question": "what port does the engram daemon listen on",
+      "found": false,
+      "matched": null,
+      "tokens": 1137,
+      "ms": 158.4
+    },
+    {
+      "project": "engram",
+      "question": "where is uncommitted work saved",
+      "found": true,
+      "matched": "refs/engram/snapshots",
+      "tokens": 1111,
+      "ms": 112.2
+    },
+    {
+      "project": "engram",
+      "question": "how are keyword and vector rankings combined",
+      "found": true,
+      "matched": "RRF",
+      "tokens": 1013,
+      "ms": 119.3
+    },
+    {
+      "project": "engram",
+      "question": "why is the event log hash chained",
+      "found": true,
+      "matched": "hash chain",
+      "tokens": 1129,
+      "ms": 119.5
+    },
+    {
+      "project": "engram",
+      "question": "which way may crates depend on each other",
+      "found": true,
+      "matched": "depend downward",
+      "tokens": 1064,
+      "ms": 109.8
+    },
+    {
+      "project": "engram",
+      "question": "why are codex reviewer sessions skipped",
+      "found": true,
+      "matched": "guardian",
+      "tokens": 970,
+      "ms": 118.2
+    },
+    {
+      "project": "engram",
+      "question": "how do agents connect to engram",
+      "found": true,
+      "matched": "MCP endpoint",
+      "tokens": 1152,
+      "ms": 106.1
+    },
+    {
+      "project": "engram",
+      "question": "why did we stop running ollama",
+      "found": true,
+      "matched": "slow",
+      "tokens": 729,
+      "ms": 89.4
+    },
+    {
+      "project": "engram",
+      "question": "how does the 3d graph rotate",
+      "found": true,
+      "matched": "rotat",
+      "tokens": 1120,
+      "ms": 90.8
+    },
+    {
+      "project": "engram",
+      "question": "what local model was used for extraction",
+      "found": true,
+      "matched": "qwen",
+      "tokens": 1151,
+      "ms": 125.3
+    },
+    {
+      "project": "careerbricks",
+      "question": "what is the tech stack",
+      "found": true,
+      "matched": "Angular",
+      "tokens": 976,
+      "ms": 117.0
+    },
+    {
+      "project": "careerbricks",
+      "question": "how is the backend deployed",
+      "found": true,
+      "matched": "GitHub Actions",
+      "tokens": 1166,
+      "ms": 114.0
+    },
+    {
+      "project": "careerbricks",
+      "question": "how does the request access button work",
+      "found": true,
+      "matched": "request access",
+      "tokens": 963,
+      "ms": 110.2
+    },
+    {
+      "project": "LiTheR",
+      "question": "what is the first feature to build",
+      "found": true,
+      "matched": "segmentation",
+      "tokens": 1134,
+      "ms": 50.0
+    },
+    {
+      "project": "LiTheR",
+      "question": "how is the phone mounted on the car",
+      "found": true,
+      "matched": "mount",
+      "tokens": 1153,
+      "ms": 43.3
+    }
+  ],
+  "recall_summary": "14/15 questions answered within the token budget"
+}
