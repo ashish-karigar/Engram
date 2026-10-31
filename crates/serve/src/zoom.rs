@@ -50,6 +50,48 @@ fn who_of(sha: &str, agent: Option<String>, author: Option<String>) -> String {
 
 pub fn zoom_graph(conn: &Connection, expanded: &[String]) -> Result<Value> {
     let expanded: HashSet<&str> = expanded.iter().map(String::as_str).collect();
+    build(conn, Some(&expanded))
+}
+
+/// The whole project as one network: every part, folder, file, class and function, each API with
+/// its endpoints, external services, memories and documents, with every link at its finest level.
+/// Nothing is collapsed, so the parts form their own clusters from their links alone.
+pub fn network_graph(conn: &Connection) -> Result<Value> {
+    let mut graph = build(conn, None)?;
+    let known: HashSet<String> = graph["nodes"].as_array().into_iter().flatten().filter_map(|n| n["id"].as_str().map(str::to_string)).collect();
+    // Documents (not config files), linked to the code they describe or mention.
+    let mut stmt = conn.prepare(
+        "SELECT id, title, source FROM documents
+          WHERE status = 'done' AND mime NOT LIKE 'text/x-%'
+            AND NOT (COALESCE(path, '') GLOB '*.json' OR COALESCE(path, '') GLOB '*.toml' OR COALESCE(path, '') GLOB '*.yaml'
+                     OR COALESCE(path, '') GLOB '*.yml' OR COALESCE(path, '') GLOB '*.lock' OR COALESCE(path, '') GLOB '*.xml'
+                     OR COALESCE(path, '') GLOB '*.csv')
+          ORDER BY updated_at DESC LIMIT 400",
+    )?;
+    let docs: Vec<(String, String, String)> = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<engram_core::rusqlite::Result<_>>()?;
+    let doc_ids: HashSet<&str> = docs.iter().map(|(id, _, _)| id.as_str()).collect();
+    let mut stmt = conn.prepare("SELECT src, dst, type FROM edges WHERE valid_to IS NULL AND type IN ('describes','mentions')")?;
+    let mut links = Vec::new();
+    for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))? {
+        let (src, dst, kind) = row?;
+        let (doc, other) = if doc_ids.contains(src.as_str()) { (src, dst) } else if doc_ids.contains(dst.as_str()) { (dst, src) } else { continue };
+        if known.contains(&other) {
+            links.push(json!({"id": format!("{doc}>{other}:{kind}"), "source": doc, "target": other, "type": kind, "count": 1}));
+        }
+    }
+    let nodes = graph["nodes"].as_array_mut().expect("nodes");
+    for (id, title, source) in docs {
+        nodes.push(json!({"id": id, "label": title, "kind": "document", "status": source}));
+    }
+    graph["edges"].as_array_mut().expect("edges").extend(links);
+    Ok(graph)
+}
+
+/// `expanded: None` shows everything (the network); otherwise the roots plus children of expanded nodes.
+fn build(conn: &Connection, expanded: Option<&HashSet<&str>>) -> Result<Value> {
+    let everything = expanded.is_none();
+    let empty = HashSet::new();
+    let expanded = expanded.unwrap_or(&empty);
     let mut items: HashMap<String, Item> = HashMap::new();
 
     // Parts.
@@ -149,7 +191,8 @@ pub fn zoom_graph(conn: &Connection, expanded: &[String]) -> Result<Value> {
         items.insert(hub.clone(), Item { kind: "api".into(), label, parent: None, path: None, area: None });
     }
     for (id, name, hub, resource) in placed {
-        let parent = if group_size[&(hub.clone(), resource.clone())] > 1 {
+        // In the network every endpoint hangs straight off its API ball.
+        let parent = if !everything && group_size[&(hub.clone(), resource.clone())] > 1 {
             let group = format!("apigroup:{hub}:{resource}");
             items.entry(group.clone()).or_insert_with(|| Item { kind: "api_group".into(), label: resource.clone(), parent: Some(hub.clone()), path: None, area: None });
             group
@@ -167,6 +210,9 @@ pub fn zoom_graph(conn: &Connection, expanded: &[String]) -> Result<Value> {
         }
     }
     let visible = |id: &str, items: &HashMap<String, Item>| -> bool {
+        if everything {
+            return true;
+        }
         let mut cur = items.get(id).and_then(|i| i.parent.clone());
         while let Some(p) = cur {
             if !expanded.contains(p.as_str()) {

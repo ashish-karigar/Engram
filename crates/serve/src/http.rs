@@ -308,6 +308,7 @@ fn project_route(
         }
         (&Method::GET, ["api", "stats"]) => json_ok(stats(&conn)),
         (&Method::GET, ["api", "architecture"]) => json_ok(architecture_data(conn)),
+        (&Method::GET, ["api", "network"]) => json_ok(crate::zoom::network_graph(conn)),
         (&Method::GET, ["api", "zoom"]) => {
             let expanded: Vec<String> = query_param(query, "expanded").map(|e| e.split(',').filter(|s| !s.is_empty()).map(String::from).collect()).unwrap_or_default();
             json_ok(crate::zoom::zoom_graph(conn, &expanded))

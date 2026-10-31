@@ -10,14 +10,15 @@ export interface Camera {
 export interface Focus {
   /** Node under the pointer or selected; its neighbourhood stays bright, the rest dims. */
   id: string | null;
+  /** Milliseconds, for the dots flowing along the focused node's lines. */
+  t: number;
   neighbours: Set<string>;
   selected: string | null;
 }
 
-const ACCENT = "#7c97ff";
-
 /** What a line means, by colour (see the legend): rgb, used with an alpha. */
 export const EDGE_COLORS: Record<string, [string, string]> = {
+  contains: ["200,210,235", "contains"],
   imports: ["109,141,255", "imports"],
   invokes: ["71,195,148", "function calls"],
   calls: ["240,163,94", "HTTP calls"],
@@ -26,7 +27,12 @@ export const EDGE_COLORS: Record<string, [string, string]> = {
   uses: ["209,107,165", "uses a service"],
   about: ["177,132,255", "a memory about it"],
   touches: ["177,132,255", "a memory about it"],
+  describes: ["232,207,92", "a document about it"],
+  mentions: ["232,207,92", "a document about it"],
 };
+
+/** Every line at rest: one quiet colour, so the shape of the network reads first. */
+const REST = "rgba(190,200,225,0.13)";
 
 /**
  * Draw one frame from projected positions (`sx`, `sy`; see projection.ts). Nodes arrive far to near,
@@ -39,27 +45,28 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
   ctx.scale(cam.k, cam.k);
   const lit = (id: string) => !focus.id || focus.neighbours.has(id);
 
-  for (const l of bundle(nodes, links, focus)) {
-    const hot = focus.id && (l.source.id === focus.id || l.target.id === focus.id);
-    const contains = l.type === "contains";
-    const rgb = EDGE_COLORS[l.type]?.[0];
-    ctx.strokeStyle = focus.id && !hot ? "rgba(255,255,255,0.04)"
-      : rgb ? `rgba(${rgb},${hot ? 0.9 : l.bundled ? 0.3 : 0.42})`
-      : hot ? ACCENT : l.type === "supersedes" ? "rgba(177,132,255,0.35)" : contains ? "rgba(200,210,235,0.09)" : "rgba(200,210,235,0.16)";
-    // A summed edge (34 calls between two folders) is drawn thicker than a single call.
-    // Bundles are capped so a part everything depends on (core) doesn't drown the view.
-    const weight = 1 + Math.log2(Math.max(1, l.count));
-    ctx.lineWidth = (hot ? 1.6 : 1) * (l.bundled ? Math.min(weight, 4) : weight) * s.linkWidth / cam.k;
-    ctx.globalAlpha = Math.min(l.source.fade!, l.target.fade!);
-    ctx.setLineDash(l.type === "supersedes" || l.type === "derives" || contains ? [4 / cam.k, 3 / cam.k] : []);
+  // Quiet lines first, then the focused node's lines on top in the colour of what they are.
+  const hot: SimLink[] = [];
+  ctx.strokeStyle = focus.id ? "rgba(190,200,225,0.035)" : REST;
+  ctx.lineWidth = 0.8 * s.linkWidth / cam.k;
+  ctx.beginPath();
+  for (const l of links) {
+    if (focus.id && (l.source.id === focus.id || l.target.id === focus.id)) { hot.push(l); continue; }
+    ctx.moveTo(l.source.sx!, l.source.sy!);
+    ctx.lineTo(l.target.sx!, l.target.sy!);
+  }
+  ctx.stroke();
+  for (const l of hot) {
+    const rgb = EDGE_COLORS[l.type]?.[0] ?? "124,151,255";
+    ctx.strokeStyle = `rgba(${rgb},0.85)`;
+    ctx.lineWidth = 1.6 * s.linkWidth / cam.k;
     ctx.beginPath();
     ctx.moveTo(l.source.sx!, l.source.sy!);
     ctx.lineTo(l.target.sx!, l.target.sy!);
     ctx.stroke();
     if (s.arrows) arrow(ctx, l, cam.k, s);
-    if (l.bundled && hot) bundleLabel(ctx, l, cam.k, focus.id);
+    flow(ctx, l, rgb, cam.k, focus.t);
   }
-  ctx.setLineDash([]);
 
   for (const n of nodes) {
     const r = radius(n, s);
@@ -85,14 +92,6 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
       ctx.fill();
       ctx.shadowBlur = 0;
     }
-    if (n.children > 0 && !n.expanded) {
-      // Can be opened (double-click): a thin outer ring.
-      ctx.beginPath();
-      ctx.arc(n.sx!, n.sy!, r + 3 / cam.k, 0, Math.PI * 2);
-      ctx.strokeStyle = n.color;
-      ctx.lineWidth = 1 / cam.k;
-      ctx.stroke();
-    }
     if (n.id === focus.selected) {
       ctx.beginPath();
       ctx.arc(n.sx!, n.sy!, r, 0, Math.PI * 2);
@@ -106,55 +105,23 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
   ctx.restore();
 }
 
-type Drawn = SimLink & { bundled?: boolean; calls?: number; imports?: number };
-
 /**
- * Lines between two opened parts are bundled: every import and call between two parts (either way) is
- * drawn as one line between the parts, as thick as how many it stands for: green when code calls
- * across, blue when it only imports. Hovering a part labels its bundles with the counts.
- * Lines inside a part, and the lines of the node under focus, are drawn as they are.
+ * Dots travelling along a line from its source to its target: away from the selected node for what
+ * it uses or calls, toward it for what uses or calls it. Spaced by screen length, so long and short
+ * lines move at the same pace.
  */
-function bundle(nodes: SimNode[], links: SimLink[], focus: Focus): Drawn[] {
-  const areas = new Map(nodes.filter((n) => n.kind === "area").map((n) => [n.id, n]));
-  const out: Drawn[] = [];
-  const bundles = new Map<string, Drawn>();
-  for (const l of links) {
-    const [a, b] = [l.source.area, l.target.area];
-    const between = (l.type === "imports" || l.type === "invokes") && a && b && a !== b && areas.has(a) && areas.has(b) && (l.source.kind !== "area" || l.target.kind !== "area");
-    if (!between || l.source.id === focus.id || l.target.id === focus.id) {
-      out.push(l);
-      continue;
-    }
-    const key = a < b ? `${a}|${b}` : `${b}|${a}`;
-    let found = bundles.get(key);
-    if (!found) {
-      found = { id: key, type: "imports", count: 0, calls: 0, imports: 0, source: areas.get(a)!, target: areas.get(b)!, bundled: true };
-      bundles.set(key, found);
-    }
-    found.count += l.count;
-    if (l.type === "invokes") { found.calls! += l.count; found.type = "invokes"; } else found.imports! += l.count;
+function flow(ctx: CanvasRenderingContext2D, l: SimLink, rgb: string, k: number, t: number) {
+  const dx = l.target.sx! - l.source.sx!, dy = l.target.sy! - l.source.sy!;
+  const len = Math.hypot(dx, dy) * k;
+  if (len < 12) return;
+  const gap = 46, speed = 0.05;
+  const offset = ((t * speed) % gap) / len;
+  ctx.fillStyle = `rgb(${rgb})`;
+  for (let f = offset; f < 1; f += gap / len) {
+    ctx.beginPath();
+    ctx.arc(l.source.sx! + dx * f, l.source.sy! + dy * f, 2.2 / k, 0, Math.PI * 2);
+    ctx.fill();
   }
-  return [...out, ...bundles.values()];
-}
-
-function bundleLabel(ctx: CanvasRenderingContext2D, l: Drawn, k: number, from: string | null) {
-  // Two thirds of the way out from the hovered part, so its labels fan out instead of piling up.
-  const [a, b] = l.source.id === from ? [l.source, l.target] : [l.target, l.source];
-  const x = a.sx! + (b.sx! - a.sx!) * 0.65, y = a.sy! + (b.sy! - a.sy!) * 0.65;
-  const text = [l.calls ? `${l.calls} calls` : "", l.imports ? `${l.imports} imports` : ""].filter(Boolean).join(" · ");
-  ctx.save();
-  ctx.font = `${10.5 / k}px Inter, -apple-system, sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  const w = ctx.measureText(text).width + 8 / k, h = 15 / k;
-  ctx.setLineDash([]);
-  ctx.fillStyle = "rgba(14,17,26,0.85)";
-  ctx.beginPath();
-  ctx.roundRect(x - w / 2, y - h / 2, w, h, h / 2);
-  ctx.fill();
-  ctx.fillStyle = `rgb(${EDGE_COLORS[l.type]?.[0] ?? "200,210,235"})`;
-  ctx.fillText(text, x, y);
-  ctx.restore();
 }
 
 /** Radius on screen: the node's size times perspective (1 in 2D). */

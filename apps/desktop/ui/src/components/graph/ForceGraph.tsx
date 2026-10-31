@@ -17,8 +17,6 @@ interface Props {
   settings: GraphSettings;
   selectedId: string | null;
   onSelect(id: string | null): void;
-  /** Open or close a node of the zoomable map (double-click). */
-  onExpand?(id: string): void;
   onZoom(k: number): void;
   commands: React.MutableRefObject<GraphCommands | null>;
 }
@@ -30,11 +28,11 @@ type Drag =
   | null;
 
 /**
- * Obsidian-style graph: a live force simulation drawn on canvas, with drag, pan, zoom and hover focus.
- * In 3D the same layout runs on three axes and dragging empty space rotates it; drawing, labels and
- * highlighting are shared, so both modes look and behave the same.
+ * Obsidian-style 3D graph: a live force simulation on three axes, drawn on canvas with perspective.
+ * Drag empty space to rotate, Shift-drag to pan, scroll to zoom, drag a node to move it. Plain
+ * physics: parts, APIs and busy files become hubs because of their links, nothing is placed by hand.
  */
-export function ForceGraph({ graph, settings, selectedId, onSelect, onExpand, onZoom, commands }: Props) {
+export function ForceGraph({ graph, settings, selectedId, onSelect, onZoom, commands }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const sim = useRef<Simulation3D<SimNode, SimLink> | null>(null);
   const scene = useRef<{ nodes: SimNode[]; links: SimLink[]; adj: Map<string, Set<string>> }>({ nodes: [], links: [], adj: new Map() });
@@ -46,15 +44,14 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onExpand, on
   /** Auto-fit stages: 0 = not yet, 1 = rough fit done, 2 = settled or the user took over. */
   const autoFit = useRef(0);
   const frame = useRef(0);
-  const live = useRef({ settings, selectedId, onSelect, onExpand, onZoom });
-  live.current = { settings, selectedId, onSelect, onExpand, onZoom };
-  const flat = () => live.current.settings.mode !== "3d";
+  const live = useRef({ settings, selectedId, onSelect, onZoom });
+  live.current = { settings, selectedId, onSelect, onZoom };
 
-  /** Rotate and project every node; in 3D also order them far to near for painting. */
+  /** Rotate and project every node, ordered far to near for painting. */
   const projected = () => {
     const nodes = scene.current.nodes;
-    project(nodes, view.current, flat());
-    return flat() ? nodes : [...nodes].sort((a, b) => b.depth! - a.depth!);
+    project(nodes, view.current, false);
+    return [...nodes].sort((a, b) => b.depth! - a.depth!);
   };
 
   const render = () => {
@@ -69,14 +66,16 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onExpand, on
       const neighbours = new Set(focusId ? [focusId, ...(adj.get(focusId) ?? [])] : []);
       const dpr = window.devicePixelRatio || 1;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      draw(ctx, size.current.w, size.current.h, cam.current, nodes, links, live.current.settings, { id: focusId, neighbours, selected: live.current.selectedId });
+      draw(ctx, size.current.w, size.current.h, cam.current, nodes, links, live.current.settings, { id: focusId, neighbours, selected: live.current.selectedId, t: performance.now() });
+      // Keep the dots on the focused node's lines moving.
+      if (focusId) render();
     });
   };
 
   const fit = () => {
-    // In 3D, unlinked nodes drift far out in depth; frame the connected part so it stays readable.
+    // Unlinked nodes drift far out in depth; frame the connected part so it stays readable.
     const nodes = projected(), core = nodes.filter((n) => n.degree > 0);
-    cam.current = fitCamera(!flat() && core.length > 3 ? core : nodes, size.current.w, size.current.h);
+    cam.current = fitCamera(core.length > 3 ? core : nodes, size.current.w, size.current.h);
     live.current.onZoom(cam.current.k);
     render();
   };
@@ -99,7 +98,7 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onExpand, on
     observer.observe(el.parentElement!);
     resize();
 
-    const s = forceSimulation<SimNode, SimLink>().numDimensions(2).alphaDecay(0.03).velocityDecay(0.35);
+    const s = forceSimulation<SimNode, SimLink>().numDimensions(3).alphaDecay(0.008).velocityDecay(0.35);
     s.on("tick", () => {
       if (autoFit.current === 0 && s.alpha() < 0.3) { autoFit.current = 1; fit(); }
       else if (autoFit.current === 1 && s.alpha() < 0.05) { autoFit.current = 2; fit(); }
@@ -132,10 +131,10 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onExpand, on
       if (node) {
         node.fx = node.x;
         node.fy = node.y;
-        if (!flat()) node.fz = node.z;
+        node.fz = node.z;
         s.alphaTarget(0.25).restart();
         drag.current = { node, moved: false };
-      } else if (!flat() && !e.shiftKey) {
+      } else if (!e.shiftKey) {
         drag.current = { rotate: { x: px, y: py, ...view.current }, moved: false };
       } else {
         drag.current = { pan: { x: px, y: py, cx: cam.current.x, cy: cam.current.y }, moved: false };
@@ -146,15 +145,10 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onExpand, on
       const d = drag.current;
       if (d && "node" in d) {
         const p = world(px, py);
-        if (flat()) {
-          d.node.fx = p.x;
-          d.node.fy = p.y;
-        } else {
-          const q = unproject(p.x, p.y, d.node.depth ?? 0, view.current);
-          d.node.fx = q.x;
-          d.node.fy = q.y;
-          d.node.fz = q.z;
-        }
+        const q = unproject(p.x, p.y, d.node.depth ?? 0, view.current);
+        d.node.fx = q.x;
+        d.node.fy = q.y;
+        d.node.fz = q.z;
         d.moved = true;
       } else if (d && "rotate" in d) {
         const r = d.rotate;
@@ -205,12 +199,10 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onExpand, on
     el.addEventListener("pointerup", up);
     el.addEventListener("pointerleave", leave);
     el.addEventListener("wheel", wheel, { passive: false });
-    // Double-click a node to open or close it; empty space fits the view.
+    // Double-click empty space to fit the view.
     const dbl = (e: MouseEvent) => {
       const r = el.getBoundingClientRect();
-      const node = hit(e.clientX - r.left, e.clientY - r.top);
-      if (node && (node.children > 0 || node.expanded) && live.current.onExpand) live.current.onExpand(node.id);
-      else fit();
+      if (!hit(e.clientX - r.left, e.clientY - r.top)) fit();
     };
     el.addEventListener("dblclick", dbl);
     return () => {
@@ -236,55 +228,49 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onExpand, on
   useEffect(() => {
     const s = sim.current;
     if (!s) return;
-    const dims = settings.mode === "3d" ? 3 : 2;
-    const modeChanged = s.numDimensions() !== dims;
     const previous = new Map(scene.current.nodes.map((n) => [n.id, { x: n.x, y: n.y, z: n.z, vx: n.vx, vy: n.vy, vz: n.vz }]));
     const next = buildScene(graph, settings, selectedId, previous);
-    if (modeChanged) toDimensions(next.nodes, dims, view);
     const structureChanged = next.nodes.length !== scene.current.nodes.length || next.links.length !== scene.current.links.length;
     scene.current = next;
-    if (location.search.includes("debuggraph")) (window as unknown as { __graph: unknown }).__graph = next;
-    s.numDimensions(dims);
+    if (location.search.includes("debuggraph")) Object.assign(window, { __graph: next, __sim: s });
     s.nodes(next.nodes);
-    // Big nodes (parts, services) push harder and sit further from what they link to, so a few
-    // landmarks spread out with their endpoints and memories around them instead of piling up.
-    const size = (d: SimNode) => Math.max(1, d.radius / 6);
-    // Links into an API body pull gently, so a busy server does not drag its API into its galaxy.
-    const toApi = (l: SimLink) => l.source.kind === "api" || l.target.kind === "api" || l.source.kind === "api_group" || l.target.kind === "api_group";
+    // Obsidian's physics: links pull, every node repels, a gentle pull to the centre. Containment
+    // (part → folder → file → function) holds firm, so each part gathers into its own galaxy; calls
+    // and imports inside a part pull it tighter; anything reaching across parts (APIs, other parts,
+    // services, documents, memories) pulls softly, so it bridges galaxies without merging them.
+    const links = new Map<string, number>();
+    for (const l of next.links) for (const id of [l.source.id, l.target.id]) links.set(id, (links.get(id) ?? 0) + 1);
+    const pull = (l: SimLink) => {
+      if (l.type === "contains") return 1;
+      const inside = l.source.area !== undefined && l.source.area === l.target.area;
+      return inside ? 1 : 0.02;
+    };
     s.force("link", forceLink<SimNode, SimLink>(next.links).id((d) => d.id)
-      .distance((l) => settings.linkDistance + (l.source.radius + l.target.radius) * 2.5)
-      // Only links inside one galaxy shape it; links between parts, to APIs or to services pull
-      // gently, so galaxies stay where their anchors put them.
-      .strength((l) => {
-        const sameGalaxy = l.source.area !== undefined && l.source.area === l.target.area;
-        return toApi(l) || (settings.view === "architecture" && !sameGalaxy && l.type !== "contains" && l.type !== "about") ? settings.linkForce * 0.01 : settings.linkForce;
-      }));
-    s.force("charge", forceManyBody<SimNode>().strength((d) => -settings.repel * 10 * size(d)).distanceMax(900));
-    const galaxy = galaxyForces(next.nodes, next.links, settings);
-    s.force("x", galaxy.x);
-    s.force("y", galaxy.y);
-    s.force("z", dims === 3 ? forceZ<SimNode>(0).strength(settings.centerForce * 0.06) : null);
-    s.force("collide", forceCollide<SimNode>((d) => d.radius * settings.nodeSize + 10));
+      .distance((l) => settings.linkDistance + (l.source.radius + l.target.radius) * 1.5)
+      .strength((l) => (settings.linkForce * pull(l)) / Math.min(links.get(l.source.id) ?? 1, links.get(l.target.id) ?? 1)));
+    s.force("charge", forceManyBody<SimNode>().strength((d) => -settings.repel * 6 * Math.max(1, d.radius / 4)).theta(1.1).distanceMax(1200));
+    const centre = settings.centerForce * 0.02;
+    s.force("x", forceX<SimNode>(0).strength(centre));
+    s.force("y", forceY<SimNode>(0).strength(centre));
+    s.force("z", forceZ<SimNode>(0).strength(centre));
+    s.force("collide", forceCollide<SimNode>((d) => d.radius * settings.nodeSize + 2));
     if (structureChanged && localKey) autoFit.current = 0;
-    if (modeChanged || (structureChanged && autoFit.current < 2)) {
-      // Settle the layout up front (a few ms for hundreds of nodes), so the first frame is
-      // already readable even where animation frames are throttled; then keep gentle motion.
+    if (structureChanged && autoFit.current < 2) {
+      // A short burst up front so the first frame is already shaped, then the galaxies drift apart
+      // on screen and the view refits as they settle.
       s.stop().alpha(1);
-      s.tick(next.nodes.length > 1500 ? 80 : 220);
-      autoFit.current = 2;
+      s.tick(next.nodes.length > 1500 ? 60 : 120);
+      autoFit.current = 1;
       fit();
-      s.alpha(0.08).restart();
+      s.alpha(0.7).restart();
     } else {
       // New nodes arriving in the background start beside a neighbour; a small nudge lets them
       // find their place without shoving the rest of the layout around.
-      // Nodes appearing (something was opened) need room to settle into their galaxy; background
-      // refreshes that only add a node or two keep the gentle nudge.
-      const added = next.nodes.filter((n) => !previous.has(n.id)).length;
-      s.alpha(added > 2 ? 0.6 : structureChanged ? 0.1 : 0.15).restart();
+      s.alpha(structureChanged ? 0.1 : 0.05).restart();
     }
     render();
-  }, [graphKey, settings.mode, settings.search, settings.hidden, settings.showOrphans, settings.local, settings.localDepth, localKey,
-      settings.linkDistance, settings.linkForce, settings.repel, settings.centerForce, settings.nodeSize, settings.view, settings.colorBy]);
+  }, [graphKey, settings.search, settings.hidden, settings.showOrphans, settings.local, settings.localDepth, localKey,
+      settings.linkDistance, settings.linkForce, settings.repel, settings.centerForce, settings.nodeSize, settings.colorBy]);
 
   // Display-only changes (selection, sizes, labels, arrows) just redraw.
   useEffect(render, [selectedId, settings.linkWidth, settings.textFade, settings.arrows]);
@@ -320,127 +306,4 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onExpand, on
   };
 
   return <canvas ref={canvas} className="force-graph" />;
-}
-
-/** Spacing between galaxy anchors in the architecture view. */
-const COLUMN = 720;
-const ROW = 560;
-
-/**
- * Galaxy layout for the architecture view. Each part (area) is a galaxy anchored in place: parts
- * that call APIs on the left, parts that serve them on the right, parts that do neither in the
- * middle, stacked by size. Each API body sits between its callers and the part that serves it;
- * external services form an outer column. Everything inside a part is pulled loosely to its anchor,
- * so it clusters around its core and stays apart from other parts. Memories follow their links.
- */
-function galaxyForces(nodes: SimNode[], links: SimLink[], settings: GraphSettings) {
-  const centre = settings.centerForce * 0.06;
-  if (settings.view !== "architecture") {
-    return { x: forceX<SimNode>(0).strength(centre), y: forceY<SimNode>(0).strength(centre) };
-  }
-  const apiOf = (n: SimNode) => n.kind === "api" || n.kind === "api_group" || n.kind === "endpoint";
-  const callers = new Set<string>(), servers = new Set<string>();
-  const hubCallers = new Map<string, Set<string>>();
-  for (const l of links) {
-    const [a, b] = [l.source, l.target];
-    if (l.type === "calls" && apiOf(b) && a.area) {
-      const hubServes = b.kind === "api" ? b.serves : nodes.find((n) => n.id === b.hub)?.serves;
-      if (a.area !== hubServes) callers.add(a.area);
-      const hub = b.kind === "api" ? b.id : b.hub ?? b.id;
-      if (!hubCallers.has(hub)) hubCallers.set(hub, new Set());
-      hubCallers.get(hub)!.add(a.area);
-    }
-  }
-  for (const n of nodes) if (n.kind === "api" && n.serves) servers.add(n.serves);
-  const areas = nodes.filter((n) => n.kind === "area").sort((a, b) => b.children - a.children);
-  const column = (id: string) => (servers.has(id) ? 1 : callers.has(id) ? -1 : 0);
-  const anchors = new Map<string, { x: number; y: number }>();
-  // Parts that call or serve an API: callers on the left, servers on the right.
-  for (const col of [-1, 1]) {
-    const inCol = areas.filter((a) => column(a.id) === col);
-    inCol.forEach((a, i) => anchors.set(a.id, { x: col * COLUMN, y: (i - (inCol.length - 1) / 2) * ROW }));
-  }
-  // Parts that only use each other in-process (libraries, crates) are layered by dependency: what
-  // everything depends on at the bottom, what depends on everything at the top. Below the API row
-  // when there is one, centred otherwise.
-  const idle = areas.filter((a) => column(a.id) === 0);
-  const deps = new Map<string, Set<string>>();
-  for (const l of links) {
-    const [a, b] = [l.source.area, l.target.area];
-    if ((l.type === "imports" || l.type === "invokes") && a && b && a !== b) {
-      if (!deps.has(a)) deps.set(a, new Set());
-      deps.get(a)!.add(b);
-    }
-  }
-  const depth = new Map<string, number>();
-  const depthOf = (id: string, seen: Set<string>): number => {
-    if (depth.has(id)) return depth.get(id)!;
-    if (seen.has(id)) return 0;
-    seen.add(id);
-    const d = Math.max(-1, ...[...(deps.get(id) ?? [])].filter((x) => idle.some((a) => a.id === x)).map((x) => depthOf(x, seen))) + 1;
-    depth.set(id, d);
-    return d;
-  };
-  idle.forEach((a) => depthOf(a.id, new Set()));
-  const deepest = Math.max(0, ...idle.map((a) => depth.get(a.id) ?? 0));
-  const top = callers.size + servers.size > 0 ? ROW * 1.0 : -(deepest * ROW * 0.55) / 2;
-  for (let level = 0; level <= deepest; level++) {
-    const row = idle.filter((a) => (depth.get(a.id) ?? 0) === level);
-    row.forEach((a, i) => anchors.set(a.id, { x: (i - (row.length - 1) / 2) * COLUMN * 0.75, y: top + (deepest - level) * ROW * 0.55 }));
-  }
-  const hubs = nodes.filter((n) => n.kind === "api");
-  hubs.forEach((h, i) => {
-    const server = h.serves ? anchors.get(h.serves) : undefined;
-    // Its own part's tests call it too; only other parts decide where it sits.
-    const from = [...(hubCallers.get(h.id) ?? [])].filter((c) => c !== h.serves).map((c) => anchors.get(c)).filter(Boolean) as { x: number; y: number }[];
-    const cx = from.length ? from.reduce((s, p) => s + p.x, 0) / from.length : (server?.x ?? 0) - COLUMN;
-    const cy = from.length ? from.reduce((s, p) => s + p.y, 0) / from.length : 0;
-    anchors.set(h.id, server ? { x: (cx + server.x) / 2, y: (cy + server.y) / 2 } : { x: -COLUMN * 1.6, y: (i + 1) * ROW * 0.5 });
-  });
-  // An opened API body's resource groups sit on a ring around it; an opened group's endpoints on a
-  // smaller ring around the group. Fixed places, so labels never pile up.
-  const childrenOf = new Map<string, SimNode[]>();
-  for (const l of links) {
-    if (l.type === "contains" && (l.source.kind === "api" || l.source.kind === "api_group")) {
-      if (!childrenOf.has(l.source.id)) childrenOf.set(l.source.id, []);
-      childrenOf.get(l.source.id)!.push(l.target);
-    }
-  }
-  const ring = (parent: string, radius: number) => {
-    const centre = anchors.get(parent);
-    const kids = childrenOf.get(parent) ?? [];
-    if (!centre) return;
-    kids.forEach((k, i) => {
-      const a = (i / Math.max(1, kids.length)) * Math.PI * 2 - Math.PI / 2;
-      anchors.set(k.id, { x: centre.x + Math.cos(a) * radius, y: centre.y + Math.sin(a) * radius });
-      ring(k.id, 95);
-    });
-  };
-  for (const h of hubs) ring(h.id, 190);
-  const services = nodes.filter((n) => n.kind === "service");
-  services.forEach((s, i) => anchors.set(s.id, { x: 2 * COLUMN, y: (i - (services.length - 1) / 2) * 140 }));
-  // An opened API body's groups and endpoints cluster around it, like a galaxy's folders.
-  const at = (d: SimNode) => anchors.get(d.id) ?? (d.area ? anchors.get(d.area) : d.hub ? anchors.get(d.hub) : undefined);
-  // Members hold firmly to their galaxy; only the API body sits between galaxies.
-  const strength = (d: SimNode) => (d.kind === "api" ? 0.9 : anchors.has(d.id) ? 0.5 : d.area && anchors.has(d.area) ? 0.2 : d.hub && anchors.has(d.hub) ? 0.3 : centre);
-  return {
-    x: forceX<SimNode>((d) => at(d)?.x ?? 0).strength(strength),
-    y: forceY<SimNode>((d) => at(d)?.y ?? 0).strength(strength),
-  };
-}
-
-/**
- * Switch the layout between flat and spatial. Going to 3D lifts nodes off the plane by a random
- * depth proportional to the layout's size, so the simulation can spread them; going back flattens
- * them and resets the rotation.
- */
-function toDimensions(nodes: SimNode[], dims: 2 | 3, view: React.MutableRefObject<View>) {
-  view.current = { yaw: 0, pitch: 0 };
-  let span = 1;
-  for (const n of nodes) span = Math.max(span, Math.abs(n.x ?? 0), Math.abs(n.y ?? 0));
-  for (const n of nodes) {
-    n.z = dims === 3 ? (Math.random() - 0.5) * span : undefined;
-    n.vz = 0;
-    n.fz = null;
-  }
 }

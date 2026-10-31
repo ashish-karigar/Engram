@@ -66,8 +66,11 @@ All bitemporal: a superseded decision keeps its history.
 
 ## Views over the model
 
-- **Architecture:** parts, endpoints, services, memories (built).
-- **Zoom:** double-click a part to open its folders, a folder its files, a file its classes and
-  functions; edges are summed at each level (e.g. "150 calls from `app/` to `services/`") and drawn
-  thicker for more. Colour by type or by author (who wrote most of each node).
-- **Impact:** a selection lights up everything that depends on it, at function level.
+- **Network:** one Obsidian-style 3D graph of everything: parts → folders → files → classes →
+  functions, each API ball with its endpoints, external services, memories and documents. Plain
+  physics: containment holds firm and links across parts pull softly, so each part settles into its
+  own galaxy, with the API ball between the parts that call it and the part that serves it. Nodes
+  grow with their links and contents. Lines are one quiet colour at rest; selecting a node colours
+  its lines by type (imports, function calls, HTTP calls, serves, uses, memories, documents), with dots
+  flowing from caller to callee. Colour by type or by author (who wrote most of each node).
+- **Impact:** a selection lists everything that depends on it, at function level.
