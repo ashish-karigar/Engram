@@ -80,7 +80,25 @@ export function buildScene(graph: Graph, s: GraphSettings, selected: string | nu
     (!query || n.label.toLowerCase().includes(query)) &&
     (!local || local.has(n.id)));
   const kept = new Set(keep.map((n) => n.id));
-  const edges = graph.edges.filter((e) => kept.has(e.source) && kept.has(e.target));
+
+  // Containment: sun (part) → planets (files) → moons (functions, classes) → their methods.
+  const parents = new Map(graph.edges.filter((e) => e.type === "contains").map((e) => [e.target, e.source]));
+  // A hidden node hands its links to its nearest visible parent, so hiding functions turns
+  // function → endpoint calls into file → endpoint calls instead of cutting the network apart.
+  const lift = (id: string): string | undefined => {
+    for (let cur: string | undefined = id; cur; cur = parents.get(cur)) if (kept.has(cur)) return cur;
+    return undefined;
+  };
+  const merged = new Map<string, { id: string; source: string; target: string; type: string; count: number }>();
+  for (const e of graph.edges) {
+    const [a, b] = e.type === "contains" ? [lift(e.source), kept.has(e.target) ? e.target : undefined] : [lift(e.source), lift(e.target)];
+    if (!a || !b || a === b) continue;
+    const id = `${a}>${b}:${e.type}`;
+    const found = merged.get(id);
+    if (found) found.count += e.count ?? 1;
+    else merged.set(id, { id, source: a, target: b, type: e.type, count: e.count ?? 1 });
+  }
+  const edges = [...merged.values()];
   const degree = new Map<string, number>();
   for (const e of edges) {
     degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
@@ -88,11 +106,10 @@ export function buildScene(graph: Graph, s: GraphSettings, selected: string | nu
   }
   if (!s.showOrphans) keep = keep.filter((n) => (degree.get(n.id) ?? 0) > 0 || n.id === selected);
 
-  // A node that just appeared starts next to its parent, not a random neighbour.
-  const parents = new Map(graph.edges.filter((e) => e.type === "contains").map((e) => [e.target, e.source]));
-  // Everything a node holds (a part: its folders, files and functions), so parts grow into hubs.
+  // Everything a node holds (a part: its files and functions), so suns outweigh their planets.
   const inside = new Map<string, number>();
   for (const child of parents.keys()) {
+    if (!kept.has(child)) continue;
     for (let p = parents.get(child); p; p = parents.get(p)) inside.set(p, (inside.get(p) ?? 0) + 1);
   }
   const nodes: SimNode[] = keep.map((n) => {
@@ -108,7 +125,7 @@ export function buildScene(graph: Graph, s: GraphSettings, selected: string | nu
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const links: SimLink[] = edges
     .filter((e) => byId.has(e.source) && byId.has(e.target))
-    .map((e) => ({ id: e.id, type: e.type, count: e.count ?? 1, source: byId.get(e.source)!, target: byId.get(e.target)! }));
+    .map((e) => ({ id: e.id, type: e.type, count: e.count, source: byId.get(e.source)!, target: byId.get(e.target)! }));
   return { nodes, links, adj };
 }
 

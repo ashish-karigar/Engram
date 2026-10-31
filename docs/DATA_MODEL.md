@@ -66,11 +66,13 @@ All bitemporal: a superseded decision keeps its history.
 
 ## Views over the model
 
-- **Network:** one Obsidian-style 3D graph of everything: parts → folders → files → classes →
-  functions, each API ball with its endpoints, external services, memories and documents. Plain
-  physics: containment holds firm and links across parts pull softly, so each part settles into its
-  own galaxy, with the API ball between the parts that call it and the part that serves it. Nodes
-  grow with their links and contents. Lines are one quiet colour at rest; selecting a node colours
-  its lines by type (imports, function calls, HTTP calls, serves, uses, memories, documents), with dots
-  flowing from caller to callee. Colour by type or by author (who wrote most of each node).
+- **Network:** one Obsidian-style 3D graph of everything, laid out as a solar system per part: the
+  part is the sun, its files the planets, their functions and classes the moons (methods orbit their
+  class). Each API is a rocket: one ball with its endpoints, pulled by the code that calls it and the
+  code that serves it, so it hangs between the two suns. External services are spaceships near the
+  code that uses them; memories and documents sit by what they are about. Containment holds firm and
+  links across parts pull softly, so each part keeps its own system; hiding a kind (say functions)
+  hands its links to the parent, so the network never falls apart. The camera starts with the two
+  biggest suns side by side. Lines are one quiet colour at rest; selecting a node colours its lines
+  by type, with dots flowing from caller to callee. Colour by type or by author.
 - **Impact:** a selection lists everything that depends on it, at function level.

@@ -122,7 +122,8 @@ fn build(conn: &Connection, expanded: Option<&HashSet<&str>>) -> Result<Value> {
     }
     let keep: HashSet<String> = holds_files.iter().cloned().chain(child_dirs.iter().filter(|(_, c)| c.len() > 1).map(|(d, _)| d.clone())).collect();
     for (id, path, area_id, area_path) in &files {
-        let parent = folder_parent(area_path, path, &keep);
+        // In the network files orbit their part directly; folders are only in the zoomable map.
+        let parent = if everything { None } else { folder_parent(area_path, path, &keep) };
         // Register the folder chain for this file.
         let mut child = parent.clone();
         while let Some(dir) = child {

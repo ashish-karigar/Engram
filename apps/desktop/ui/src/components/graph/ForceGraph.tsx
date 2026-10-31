@@ -72,6 +72,13 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onZoom, comm
     });
   };
 
+  /** Turn the camera so the two biggest suns lie across the screen, not one behind the other. */
+  const face = () => {
+    const [a, b] = scene.current.nodes.filter((n) => n.kind === "area").sort((x, y) => y.radius - x.radius);
+    if (!a || !b) return;
+    view.current = { yaw: Math.atan2(b.z! - a.z!, b.x! - a.x!), pitch: 0 };
+  };
+
   const fit = () => {
     // Unlinked nodes drift far out in depth; frame the connected part so it stays readable.
     const nodes = projected(), core = nodes.filter((n) => n.degree > 0);
@@ -100,8 +107,8 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onZoom, comm
 
     const s = forceSimulation<SimNode, SimLink>().numDimensions(3).alphaDecay(0.008).velocityDecay(0.35);
     s.on("tick", () => {
-      if (autoFit.current === 0 && s.alpha() < 0.3) { autoFit.current = 1; fit(); }
-      else if (autoFit.current === 1 && s.alpha() < 0.05) { autoFit.current = 2; fit(); }
+      if (autoFit.current === 0 && s.alpha() < 0.3) { autoFit.current = 1; face(); fit(); }
+      else if (autoFit.current === 1 && s.alpha() < 0.05) { autoFit.current = 2; face(); fit(); }
       render();
     });
     sim.current = s;
@@ -234,21 +241,29 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onZoom, comm
     scene.current = next;
     if (location.search.includes("debuggraph")) Object.assign(window, { __graph: next, __sim: s });
     s.nodes(next.nodes);
-    // Obsidian's physics: links pull, every node repels, a gentle pull to the centre. Containment
-    // (part → folder → file → function) holds firm, so each part gathers into its own galaxy; calls
-    // and imports inside a part pull it tighter; anything reaching across parts (APIs, other parts,
-    // services, documents, memories) pulls softly, so it bridges galaxies without merging them.
+    // A solar system per part: the part is the sun, its files the planets, their functions and
+    // classes the moons. Containment holds firm at full strength, whatever a sun's size, and each
+    // orbit sits just outside its parent's body. APIs (rockets) are pulled by both the code that calls
+    // them and the code that serves them, so they hang between the two suns. Services (spaceships)
+    // follow the code that uses them. Code links inside a part tighten it; code links across parts,
+    // documents and memories pull softly, so they bridge systems without merging them.
     const links = new Map<string, number>();
     for (const l of next.links) for (const id of [l.source.id, l.target.id]) links.set(id, (links.get(id) ?? 0) + 1);
-    const pull = (l: SimLink) => {
-      if (l.type === "contains") return 1;
+    const busy = (l: SimLink) => Math.min(links.get(l.source.id) ?? 1, links.get(l.target.id) ?? 1);
+    const strength = (l: SimLink) => {
+      if (l.type === "contains") return 0.9;
+      if (l.type === "calls" || l.type === "serves") return 0.6 / Math.sqrt(busy(l));
+      if (l.type === "uses") return 0.3 / Math.sqrt(busy(l));
       const inside = l.source.area !== undefined && l.source.area === l.target.area;
-      return inside ? 1 : 0.02;
+      return (inside ? 0.6 : 0.02) / busy(l);
     };
+    const reach = (l: SimLink) => (l.type === "contains" ? 1 : 2.5);
     s.force("link", forceLink<SimNode, SimLink>(next.links).id((d) => d.id)
-      .distance((l) => settings.linkDistance + (l.source.radius + l.target.radius) * 1.5)
-      .strength((l) => (settings.linkForce * pull(l)) / Math.min(links.get(l.source.id) ?? 1, links.get(l.target.id) ?? 1)));
-    s.force("charge", forceManyBody<SimNode>().strength((d) => -settings.repel * 6 * Math.max(1, d.radius / 4)).theta(1.1).distanceMax(1200));
+      .distance((l) => (settings.linkDistance + l.source.radius + l.target.radius) * reach(l))
+      .strength((l) => settings.linkForce * strength(l)));
+    // Every body repels about the same (Obsidian); suns a little more, so systems keep their distance
+    // without the sun pushing its own planets away.
+    s.force("charge", forceManyBody<SimNode>().strength((d) => -settings.repel * 6 * (d.kind === "area" ? 3 : 1)).theta(1.1).distanceMax(1500));
     const centre = settings.centerForce * 0.02;
     s.force("x", forceX<SimNode>(0).strength(centre));
     s.force("y", forceY<SimNode>(0).strength(centre));
@@ -261,6 +276,7 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onZoom, comm
       s.stop().alpha(1);
       s.tick(next.nodes.length > 1500 ? 60 : 120);
       autoFit.current = 1;
+      face();
       fit();
       s.alpha(0.7).restart();
     } else {
