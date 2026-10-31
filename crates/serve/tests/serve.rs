@@ -166,7 +166,7 @@ async fn two_agents_share_one_memory_over_mcp() {
     let tools = rpc(f.claude.clone(), 2, "tools/list", json!({})).await;
     let mut names: Vec<_> = tools["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap().to_string()).collect();
     names.sort();
-    assert_eq!(names, ["add_document", "brief", "expand", "note", "profile", "search"]);
+    assert_eq!(names, ["add_document", "brief", "expand", "impact", "map", "note", "profile", "search"]);
 
     let args = json!({"type": "decision", "title": "Token expiry", "claim": "Access tokens last 15 minutes", "rationale": "limit blast radius", "files": ["backend/auth.py"]});
     rpc(f.claude.clone(), 3, "tools/call", json!({"name": "note", "arguments": args})).await;

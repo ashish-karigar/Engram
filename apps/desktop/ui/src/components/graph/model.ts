@@ -103,6 +103,9 @@ function placeNear(id: string, adj: Map<string, Set<string>>, previous: Map<stri
 
 /** Memories are the point of the graph, so they stay prominent; code nodes stay small. */
 function radiusFor(kind: string, degree: number): number {
+  if (kind === "area") return 14 + Math.sqrt(degree) * 2.2;
+  if (kind === "service") return 7 + Math.sqrt(degree);
+  if (kind === "endpoint") return 3.5 + Math.sqrt(degree) * 0.6;
   if (kind === "file") return 2.5 + Math.sqrt(degree) * 0.9;
   if (kind === "module") return 4.5 + Math.sqrt(degree) * 1.1;
   return 5 + Math.sqrt(degree) * 1.8;

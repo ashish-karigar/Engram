@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 axum = "0.8.9"
 chrono = "0.4.45"
+engram-code = { path = "../code" }
 engram-core = { path = "../core" }
 engram-understand = { path = "../understand" }
 engram-embed = { path = "../embed" }

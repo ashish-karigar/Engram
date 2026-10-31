@@ -67,6 +67,10 @@ export function GraphControls({ graph, settings: s, onChange, selectedId, zoom, 
 
       <div className="graph-camera">
         <span className="seg mode">
+          <button className={s.view === "architecture" ? "on" : ""} onClick={() => set("view", "architecture")} title="Parts, endpoints, services and memories">Architecture</button>
+          <button className={s.view === "code" ? "on" : ""} onClick={() => set("view", "code")} title="Files, modules and memories">Code</button>
+        </span>
+        <span className="seg mode">
           <button className={s.mode === "2d" ? "on" : ""} onClick={() => set("mode", "2d")}>2D</button>
           <button className={s.mode === "3d" ? "on" : ""} onClick={() => set("mode", "3d")} title="Drag empty space to rotate; Shift-drag to pan">3D</button>
         </span>

@@ -63,6 +63,16 @@ export interface GraphNode {
   kind: string;
   status?: string;
   isHub?: boolean;
+  /** Areas: folder and file count. */
+  path?: string;
+  files?: number;
+}
+
+export interface ImpactResult {
+  target: { id: string; kind: string; name: string; path: string | null };
+  affected: { file: string; area: string | null; depth: number; why: string }[];
+  endpoints: string[];
+  decisions: [string, string, string][];
 }
 
 export interface GraphEdge {

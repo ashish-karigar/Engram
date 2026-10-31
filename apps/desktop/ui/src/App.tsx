@@ -33,7 +33,8 @@ function Workspace({ connection, project }: { connection: Connection; project: P
   const commands = useRef<GraphCommands | null>(null);
   const updateGraphSettings = useCallback((s: GraphSettings) => { setGraphSettings(s); saveSettings(s); }, []);
   const archived = graphSettings.showArchived;
-  const { data: graph, error } = usePolling<Graph>(() => api.graph(archived), 3000, [api, archived]);
+  const view = graphSettings.view;
+  const { data: graph, error } = usePolling<Graph>(() => (view === "architecture" ? api.architecture() : api.graph(archived)), 3000, [api, archived, view]);
   const { data: stats } = usePolling(() => api.stats(), 3000, [api]);
   const select = useCallback((id: string | null) => setSelected(id), []);
 

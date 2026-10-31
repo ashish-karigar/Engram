@@ -65,6 +65,20 @@ pub struct BriefReq {
     pub budget: Option<usize>,
 }
 
+#[derive(Default, Deserialize)]
+pub struct MapReq {
+    /// Only endpoints touching this area or path (e.g. "frontend").
+    pub area: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct ImpactReq {
+    /// A file path, `file::function`, an endpoint like `PATCH /jobs/{id}`, or a service name.
+    pub target: String,
+    pub depth: Option<usize>,
+    pub limit: Option<usize>,
+}
+
 #[derive(Deserialize)]
 pub struct ExpandReq {
     pub id: String,
@@ -284,7 +298,18 @@ pub fn op_brief(ctx: &Ctx, req: BriefReq) -> Result<OpResult> {
         let (body, returned) = render(&picked);
 
         let mut lines: Vec<String> = vec![];
-        if !o.modules.is_empty() {
+        let system = crate::system::system_map(ctx.conn)?;
+        if !system.areas.is_empty() {
+            // The parts and how they connect; the full endpoint list is one `map` call away.
+            lines.push("System map:".into());
+            lines.extend(system.areas.iter().map(|(name, kind, _, files)| format!("- {name}: {kind}, {files} files")));
+            lines.extend(system.links.iter().map(|(pair, eps)| format!("- {pair} over HTTP ({} endpoints)", eps.len())));
+            if !system.services.is_empty() {
+                lines.push(format!("- external services: {}", system.services.iter().map(|(s, _)| s.as_str()).collect::<Vec<_>>().join(", ")));
+            }
+            lines.push("Use `map` for every endpoint with its handler and callers, and `impact` before changing shared code.".into());
+            lines.push(String::new());
+        } else if !o.modules.is_empty() {
             lines.push("Project map:".into());
             lines.extend(o.modules.iter().map(|m| format!("- {} ({} files)", m.name, m.files)));
             lines.push(String::new());
@@ -300,6 +325,24 @@ pub fn op_brief(ctx: &Ctx, req: BriefReq) -> Result<OpResult> {
         let text = lines.join("\n").trim().to_string();
         let text = if text.is_empty() { "Memory is empty so far.".to_string() } else { text };
         Ok((OpResult { text, data: json!({"modules": o.modules, "activity": o.activity, "picked": returned}) }, returned))
+    })
+}
+
+pub fn op_map(ctx: &Ctx, req: MapReq) -> Result<OpResult> {
+    logged(ctx, "map", json!({"area": req.area}), || {
+        let m = crate::system::system_map(ctx.conn)?;
+        let text = if m.areas.is_empty() && m.endpoints.is_empty() { "No system map yet: the project has no manifests or HTTP endpoints indexed.".to_string() } else { crate::system::map_text(&m, req.area.as_deref()) };
+        Ok((OpResult { text, data: serde_json::to_value(&m)? }, vec![]))
+    })
+}
+
+pub fn op_impact(ctx: &Ctx, req: ImpactReq) -> Result<OpResult> {
+    let request = json!({"target": req.target, "depth": req.depth});
+    logged(ctx, "impact", request, || {
+        let target = crate::system::resolve_target(ctx.conn, &req.target)?;
+        let i = crate::system::impact(ctx.conn, &target, req.depth.unwrap_or(3).clamp(1, 6))?;
+        let returned = i.affected.iter().map(|a| json!({"id": a.file, "reason": a.why})).collect();
+        Ok((OpResult { text: crate::system::impact_text(&i, req.limit.unwrap_or(40)), data: serde_json::to_value(&i)? }, returned))
     })
 }
 

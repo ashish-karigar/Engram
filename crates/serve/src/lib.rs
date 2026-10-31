@@ -12,6 +12,7 @@ pub mod profile;
 pub mod project;
 pub mod recall;
 pub mod relevance;
+pub mod system;
 pub mod route;
 pub mod tokens;
 

@@ -1,5 +1,5 @@
 import type {
-  ActivityPage, AppSettings, ConnectResult, Connection, TestResult, DocumentView, EventEntry, Graph, InferredMemory, MemoryView, WeakMemory, NodeDetail, OpResult, Project,
+  ActivityPage, AppSettings, ImpactResult, ConnectResult, Connection, TestResult, DocumentView, EventEntry, Graph, InferredMemory, MemoryView, WeakMemory, NodeDetail, OpResult, Project,
   RequestEntry, SearchMode, Stats,
 } from "./types.ts";
 
@@ -30,6 +30,9 @@ export const projectApi = (c: Connection, id: string) => {
   return {
     stats: () => call<Stats>(c, `${base}/stats`),
     graph: (archived: boolean) => call<Graph>(c, `${base}/graph?archived=${archived ? 1 : 0}`),
+    architecture: () => call<Graph>(c, `${base}/architecture`),
+    map: (area?: string) => call<OpResult>(c, `${base}/map${area ? `?area=${encodeURIComponent(area)}` : ""}`),
+    impact: (target: string) => call<{ text: string; data: ImpactResult }>(c, `${base}/impact`, post({ target, limit: 60 })),
     node: (nodeId: string) => call<NodeDetail>(c, `${base}/node?id=${encodeURIComponent(nodeId)}`),
     events: (limit = 80) => call<EventEntry[]>(c, `${base}/events?limit=${limit}`),
     activity: (opts: { before?: string; system?: boolean; days?: number } = {}) =>

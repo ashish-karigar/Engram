@@ -1,5 +1,7 @@
 /** Graph view preferences. Stored per viewer in localStorage, like Obsidian's graph settings. */
 export interface GraphSettings {
+  /** architecture: parts, endpoints, services and memories; code: files, modules and memories. */
+  view: "architecture" | "code";
   mode: "2d" | "3d";
   search: string;
   hidden: string[];
@@ -18,6 +20,7 @@ export interface GraphSettings {
 }
 
 export const DEFAULTS: GraphSettings = {
+  view: "architecture",
   mode: "2d",
   search: "",
   hidden: [],
@@ -37,6 +40,9 @@ export const DEFAULTS: GraphSettings = {
 
 /** Node groups, in legend order. Colors come from the `--t-<kind>` CSS tokens. */
 export const GROUPS: { kind: string; label: string }[] = [
+  { kind: "area", label: "Parts" },
+  { kind: "endpoint", label: "Endpoints" },
+  { kind: "service", label: "External services" },
   { kind: "decision", label: "Decisions" },
   { kind: "rejected_option", label: "Rejected options" },
   { kind: "dead_end", label: "Dead ends" },

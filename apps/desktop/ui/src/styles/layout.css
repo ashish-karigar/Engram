@@ -247,3 +247,12 @@ kbd { font: 10px var(--mono); color: var(--faint); border: 1px solid var(--line-
 .weak-row label { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; font-size: 13px; line-height: 1.5; }
 .weak-row input { margin-top: 4px; flex: none; }
 .weak-detail { display: block; font-size: 11.5px; }
+
+/* ---- Drawer: impact and parts ---- */
+.impact-area { margin: 8px 0 12px; }
+.impact-area > b { font-size: 12.5px; }
+.impact-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.impact-list li { display: flex; flex-direction: column; gap: 1px; font-size: 12.5px; }
+.impact-list code { font-size: 11.5px; color: var(--text); word-break: break-all; }
+.impact-list .faint { font-size: 11.5px; }
+.map-text { white-space: pre-wrap; font: 12px/1.55 var(--mono); color: var(--muted); margin: 10px 0 0; }

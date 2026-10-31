@@ -236,9 +236,13 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onZoom, comm
     scene.current = next;
     s.numDimensions(dims);
     s.nodes(next.nodes);
-    s.force("link", forceLink<SimNode, SimLink>(next.links).id((d) => d.id).distance(settings.linkDistance).strength(settings.linkForce));
-    s.force("charge", forceManyBody<SimNode>().strength(-settings.repel * 10).distanceMax(600));
-    s.force("x", forceX<SimNode>(0).strength(settings.centerForce * 0.06));
+    // Big nodes (parts, services) push harder and sit further from what they link to, so a few
+    // landmarks spread out with their endpoints and memories around them instead of piling up.
+    const size = (d: SimNode) => Math.max(1, d.radius / 6);
+    s.force("link", forceLink<SimNode, SimLink>(next.links).id((d) => d.id)
+      .distance((l) => settings.linkDistance + (l.source.radius + l.target.radius) * 2.5).strength(settings.linkForce));
+    s.force("charge", forceManyBody<SimNode>().strength((d) => -settings.repel * 10 * size(d)).distanceMax(900));
+    s.force("x", flowColumns(next.links, settings));
     s.force("y", forceY<SimNode>(0).strength(settings.centerForce * 0.06));
     s.force("z", dims === 3 ? forceZ<SimNode>(0).strength(settings.centerForce * 0.06) : null);
     s.force("collide", forceCollide<SimNode>((d) => d.radius * settings.nodeSize + 10));
@@ -258,7 +262,7 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onZoom, comm
     }
     render();
   }, [graphKey, settings.mode, settings.search, settings.hidden, settings.showOrphans, settings.local, settings.localDepth, localKey,
-      settings.linkDistance, settings.linkForce, settings.repel, settings.centerForce, settings.nodeSize]);
+      settings.linkDistance, settings.linkForce, settings.repel, settings.centerForce, settings.nodeSize, settings.view]);
 
   // Display-only changes (selection, sizes, labels, arrows) just redraw.
   useEffect(render, [selectedId, settings.linkWidth, settings.textFade, settings.arrows]);
@@ -294,6 +298,32 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onZoom, comm
   };
 
   return <canvas ref={canvas} className="force-graph" />;
+}
+
+/** Horizontal distance between the flow columns in the architecture view. */
+const COLUMN = 340;
+
+/**
+ * Horizontal pull. In the architecture view, nodes line up as a flow, left to right: parts that only
+ * call, endpoints, parts that serve, external services; memories and unconnected parts float. In the
+ * code view, a gentle pull to the centre as before.
+ */
+function flowColumns(links: SimLink[], settings: GraphSettings) {
+  const centre = settings.centerForce * 0.06;
+  if (settings.view !== "architecture") return forceX<SimNode>(0).strength(centre);
+  const calls = new Set<string>(), serves = new Set<string>();
+  for (const l of links) {
+    if (l.type === "calls") calls.add(l.source.id);
+    if (l.type === "served by") serves.add(l.target.id);
+  }
+  const column = (d: SimNode): number | null => {
+    if (d.kind === "endpoint") return 0;
+    if (d.kind === "service") return 2;
+    if (d.kind !== "area") return null;
+    if (serves.has(d.id)) return 1;
+    return calls.has(d.id) ? -1 : null;
+  };
+  return forceX<SimNode>((d) => (column(d) ?? 0) * COLUMN).strength((d) => (column(d) === null ? centre : 0.35));
 }
 
 /**

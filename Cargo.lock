@@ -1453,6 +1453,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "chrono",
+ "engram-code",
  "engram-core",
  "engram-embed",
  "engram-rag",

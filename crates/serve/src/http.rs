@@ -16,9 +16,9 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use crate::activity::{ActivityQuery, activity};
-use crate::api::{documents, graph_data, node_detail, request_log, review_queue, stats, timeline};
+use crate::api::{architecture_data, documents, graph_data, node_detail, request_log, review_queue, stats, timeline};
 use crate::mcp::{call_tool, handle_body, handle_body_with, shared_tool_definitions};
-use crate::ops::{Ctx, OpResult, op_add_document, op_brief, op_expand, op_note, op_profile, op_search};
+use crate::ops::{Ctx, MapReq, OpResult, op_add_document, op_brief, op_expand, op_impact, op_map, op_note, op_profile, op_search};
 use crate::project::{ProjectManager, ProjectRef};
 use crate::route::{pick_project, with_conn};
 use engram_understand::quality::{set_archived, weak_memories};
@@ -292,6 +292,8 @@ fn project_route(
         }
         (&Method::GET, ["api", "documents"]) => json_ok(documents(&conn, limit)),
         (&Method::GET, ["api", "profile"]) => op(op_profile(&ctx)),
+        (&Method::GET, ["api", "map"]) => op(op_map(&ctx, MapReq { area: query_param(query, "area") })),
+        (&Method::POST, ["api", "impact"]) => op(op_impact(&ctx, parse(body)?)),
         (&Method::GET, ["api", "review"]) => json_ok(review_queue(&conn)),
         (&Method::POST, ["api", "review"]) => {
             let memory = engram_core::memory::review(&conn, body["id"].as_str().unwrap_or(""), body["action"].as_str().unwrap_or(""))?;
@@ -305,6 +307,7 @@ fn project_route(
             Ok(reply(StatusCode::OK, &json!({"changed": changed})))
         }
         (&Method::GET, ["api", "stats"]) => json_ok(stats(&conn)),
+        (&Method::GET, ["api", "architecture"]) => json_ok(architecture_data(conn)),
         (&Method::GET, ["api", "graph"]) => json_ok(graph_data(&conn, query_param(query, "archived").as_deref() == Some("1"), 300)),
         (&Method::GET, ["api", "node"]) => json_ok(node_detail(&conn, &query_param(query, "id").unwrap_or_default())),
         (&Method::GET, ["api", "events"]) => json_ok(timeline(&conn, limit)),

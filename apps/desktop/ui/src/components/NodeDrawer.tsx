@@ -1,6 +1,7 @@
 import type { ProjectApi } from "../api/client.ts";
 import { usePolling } from "../hooks/usePolling.ts";
-import type { NodeDetail } from "../api/types.ts";
+import { useEffect, useState } from "react";
+import type { ImpactResult, NodeDetail } from "../api/types.ts";
 
 const day = (iso: string) => iso.slice(0, 10);
 
@@ -25,13 +26,58 @@ export function NodeDrawer({ api, id, onClose, onOpen }: Props) {
         <>
           <Type kind={data.entity.kind} />
           <h3>{data.entity.qualifiedName}</h3>
-          <p className="muted">Code node. Memories that touch it are highlighted in the graph.</p>
+          {data.entity.kind === "area" ? <PartBody api={api} path={data.entity.qualifiedName} /> : data.entity.kind === "module" ? (
+            <p className="muted">Folder. Memories that touch it are highlighted in the graph.</p>
+          ) : <ImpactBody api={api} target={data.entity.qualifiedName} />}
         </>
       )}
       {data?.type === "memory" && <MemoryBody detail={data} onOpen={onOpen} />}
       {data?.type === "document" && <DocumentBody detail={data} />}
     </div>
   );
+}
+
+/** What depends on this node: the files a change here reaches, grouped by part, and why. */
+function ImpactBody({ api, target }: { api: ProjectApi; target: string }) {
+  const [result, setResult] = useState<ImpactResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    setResult(null);
+    setError(null);
+    api.impact(target).then((r) => setResult(r.data), (e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+  }, [api, target]);
+  if (error) return <p className="muted">{error}</p>;
+  if (!result) return <p className="muted">Working out the impact…</p>;
+  const byArea = new Map<string, ImpactResult["affected"]>();
+  for (const a of result.affected) byArea.set(a.area ?? "Outside any part", [...(byArea.get(a.area ?? "Outside any part") ?? []), a]);
+  return (
+    <>
+      <h4>Impact of changing it</h4>
+      <p className="muted">{result.affected.length === 0 ? "Nothing else in the project depends on it." : `${result.affected.length} file(s) depend on it.`}</p>
+      {[...byArea.entries()].map(([area, items]) => (
+        <div key={area} className="impact-area">
+          <b>{area}</b>
+          <ul className="impact-list">
+            {items.map((a) => <li key={a.file}><code>{a.file}</code><span className="faint">{a.why}</span></li>)}
+          </ul>
+        </div>
+      ))}
+      {result.endpoints.length > 0 && (<><h4>Endpoints involved</h4><p className="muted">{result.endpoints.slice(0, 12).join(" · ")}{result.endpoints.length > 12 ? ` · +${result.endpoints.length - 12}` : ""}</p></>)}
+      {result.decisions.length > 0 && (
+        <>
+          <h4>Recorded decisions on these files</h4>
+          <ul className="impact-list">{result.decisions.map(([kind, title, claim]) => <li key={title}><Type kind={kind} /> <b>{title}</b>: {claim}</li>)}</ul>
+        </>
+      )}
+    </>
+  );
+}
+
+/** A part: the endpoints it serves and calls, from the system map. */
+function PartBody({ api, path }: { api: ProjectApi; path: string }) {
+  const { data } = usePolling(() => api.map(path === "." ? undefined : path), 10_000, [api, path]);
+  if (!data) return <p className="muted">Loading…</p>;
+  return <pre className="map-text">{data.text.split("\n").filter((l) => !l.startsWith("[project")).join("\n")}</pre>;
 }
 
 function MemoryBody({ detail, onOpen }: { detail: Extract<NodeDetail, { type: "memory" }>; onOpen(id: string): void }) {

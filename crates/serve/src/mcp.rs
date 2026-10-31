@@ -5,7 +5,7 @@ use engram_core::Result;
 use engram_understand::notes::NoteInput;
 use serde_json::{Value, json};
 
-use crate::ops::{Ctx, OpResult, op_add_document, op_brief, op_expand, op_note, op_profile, op_search};
+use crate::ops::{Ctx, OpResult, op_add_document, op_brief, op_expand, op_impact, op_map, op_note, op_profile, op_search};
 
 const DEFAULT_PROTOCOL: &str = "2025-03-26";
 
@@ -60,6 +60,16 @@ pub fn tool_definitions() -> Value {
             }, "required": ["title", "claim"]}
         },
         {
+            "name": "map",
+            "description": "The system map, built from the code: the project's parts (frontend, backend, services, crates), how they connect, every HTTP endpoint with its handler and callers, and external services. Use it instead of reading code to answer how parts talk to each other.",
+            "inputSchema": {"type": "object", "properties": {"area": {"type": "string", "description": "Only endpoints touching this part or path"}}}
+        },
+        {
+            "name": "impact",
+            "description": "Before changing shared code: everything that depends on a file, function, endpoint (e.g. `PATCH /jobs/{id}`) or service, across languages and the frontend/backend boundary, grouped by part, with why, plus recorded decisions on those files.",
+            "inputSchema": {"type": "object", "properties": {"target": {"type": "string"}, "depth": {"type": "integer", "minimum": 1, "maximum": 6}, "limit": {"type": "integer", "minimum": 1}}, "required": ["target"]}
+        },
+        {
             "name": "profile",
             "description": "The project's standing facts (conventions and decisions that hold until replaced) and current focus. Cheap; no query needed.",
             "inputSchema": {"type": "object", "properties": {}}
@@ -80,6 +90,8 @@ pub fn call_tool(ctx: &Ctx, name: &str, args: Value) -> Result<OpResult> {
         "expand" => op_expand(ctx, serde_json::from_value(args).map_err(bad)?),
         "note" => op_note(ctx, serde_json::from_value::<NoteInput>(args).map_err(bad)?),
         "profile" => op_profile(ctx),
+        "map" => op_map(ctx, serde_json::from_value(args).map_err(bad)?),
+        "impact" => op_impact(ctx, serde_json::from_value(args).map_err(bad)?),
         "add_document" => op_add_document(ctx, serde_json::from_value(args).map_err(bad)?),
         other => Err(engram_core::Error::msg(format!("unknown tool: {other}"))),
     }

@@ -91,7 +91,8 @@ function labels(ctx: CanvasRenderingContext2D, cam: Camera, nodes: SimNode[], s:
   const order = [...nodes].sort((a, b) => Number(focus.neighbours.has(b.id)) - Number(focus.neighbours.has(a.id)) || b.degree - a.degree);
   for (const n of order) {
     const focused = focus.id !== null && focus.neighbours.has(n.id);
-    const hub = n.degree >= 8 && cam.k > s.textFade * 0.35;
+    // Parts and services are the landmarks: always labelled.
+    const hub = (n.degree >= 8 && cam.k > s.textFade * 0.35) || n.kind === "area" || n.kind === "service";
     const alpha = (focused ? 1 : focus.id ? 0 : hub ? Math.max(zoomAlpha, 0.85) : zoomAlpha) * (focused ? 1 : n.fade!);
     if (alpha <= 0.02) continue;
     const text = shortLabel(n);
