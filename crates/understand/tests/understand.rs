@@ -67,6 +67,8 @@ fn parse_candidates_tolerates_fences_and_drops_malformed() {
     let raw = "```json\n{\"memories\":[{\"type\":\"decision\",\"title\":\"T\",\"claim\":\"C\",\"quote\":\"q\",\"evidence\":[1]},{\"type\":\"bogus\",\"title\":\"x\",\"claim\":\"y\",\"quote\":\"q\",\"evidence\":[1]},{\"type\":\"fact\",\"title\":\"no quote\",\"claim\":\"y\",\"evidence\":[1]}]}\n```";
     assert_eq!(parse_candidates(raw).len(), 1);
     assert!(parse_candidates("not json").is_empty());
+    let bare = "```json\n[{\"type\":\"fact\",\"title\":\"T\",\"claim\":\"C\",\"quote\":\"q\",\"evidence\":[1]}]\n```";
+    assert_eq!(parse_candidates(bare).len(), 1, "a bare list is accepted");
 }
 
 #[test]

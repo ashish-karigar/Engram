@@ -173,6 +173,10 @@ impl Settings {
     }
 
     pub fn llm_client(&self) -> Option<Box<dyn LlmClient>> {
+        self.raw_llm_client().map(|inner| Box::new(OneAtATime { inner }) as Box<dyn LlmClient>)
+    }
+
+    fn raw_llm_client(&self) -> Option<Box<dyn LlmClient>> {
         let l = &self.llm;
         match l.provider.as_str() {
             "meta" => l.meta_api_key.clone().map(|api_key| {
@@ -204,6 +208,25 @@ impl Settings {
             index: self.indexing.clone(),
             sources: engram_sessions::Sources::default(),
         }
+    }
+}
+
+/// One model call at a time across all projects. A local model serving several projects at once
+/// only gets slower for everyone, and remote APIs have rate limits.
+static MODEL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+struct OneAtATime {
+    inner: Box<dyn LlmClient>,
+}
+
+impl LlmClient for OneAtATime {
+    fn name(&self) -> String {
+        self.inner.name()
+    }
+
+    fn complete(&self, req: &engram_understand::llm::LlmRequest) -> Result<String> {
+        let _turn = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        self.inner.complete(req)
     }
 }
 

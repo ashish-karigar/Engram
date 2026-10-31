@@ -70,7 +70,12 @@ impl LlmClient for OllamaClient {
 
     fn complete(&self, req: &LlmRequest) -> Result<String> {
         let url = format!("{}/api/chat", self.host.trim_end_matches('/'));
-        let data = post_json(&url, json!({"model": self.model, "stream": false, "messages": messages(req)}), None)?;
+        // Ollama's default context window is ~4k tokens and silently truncates longer prompts.
+        let body = json!({
+            "model": self.model, "stream": false, "messages": messages(req), "format": "json",
+            "options": {"num_ctx": 16384, "temperature": 0.1}
+        });
+        let data = post_json(&url, body, None)?;
         Ok(data["message"]["content"].as_str().unwrap_or("").to_string())
     }
 }

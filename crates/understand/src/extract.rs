@@ -38,13 +38,21 @@ pub fn extract_candidates(llm: &dyn LlmClient, digest: &str) -> Result<Vec<Candi
 }
 
 /// Tolerant parser: finds the JSON object in the reply, drops items that are malformed.
+/// Models differ in how they wrap the answer: `{"memories": [...]}`, a bare list, or either inside
+/// a fenced code block with prose around it. Accept all of them.
 pub fn parse_candidates(raw: &str) -> Vec<Candidate> {
-    let (Some(start), Some(end)) = (raw.find('{'), raw.rfind('}')) else { return vec![] };
-    if end <= start {
-        return vec![];
-    }
-    let Ok(data) = serde_json::from_str::<Value>(&raw[start..=end]) else { return vec![] };
-    data["memories"].as_array().map(|list| list.iter().filter_map(to_candidate).collect()).unwrap_or_default()
+    let mut shapes = [('{', '}'), ('[', ']')];
+    shapes.sort_by_key(|(open, _)| raw.find(*open).unwrap_or(usize::MAX));
+    let parsed = shapes.iter().find_map(|(open, close)| {
+        let (start, end) = (raw.find(*open)?, raw.rfind(*close)?);
+        (end > start).then(|| serde_json::from_str::<Value>(&raw[start..=end]).ok()).flatten()
+    });
+    let list = match parsed {
+        Some(Value::Array(items)) => items,
+        Some(obj) => ["memories", "items", "results"].iter().find_map(|k| obj[*k].as_array().cloned()).unwrap_or_default(),
+        None => vec![],
+    };
+    list.iter().filter_map(to_candidate).collect()
 }
 
 fn non_empty(v: &Value) -> Option<String> {
