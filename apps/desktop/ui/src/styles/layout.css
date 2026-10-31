@@ -130,3 +130,39 @@
   .ask input { padding-right: 12px; }
   .ask .seg { display: none; }
 }
+
+/* ---- force graph (Obsidian-style) ---- */
+.force-graph { position: absolute; inset: 0; display: block; cursor: grab; touch-action: none; }
+.graph-search { position: absolute; left: 16px; top: 14px; display: flex; gap: 10px; align-items: center; z-index: 3; }
+.graph-search > input { width: 220px; background: rgba(17,21,29,.85); border: 1px solid var(--line-strong); border-radius: 8px; padding: 6px 10px; outline: none; backdrop-filter: blur(8px); }
+.graph-search > input:focus { border-color: var(--accent); }
+.local-toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; background: rgba(17,21,29,.85); border: 1px solid var(--line); border-radius: 8px; padding: 4px 9px; }
+.local-toggle select { background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; color: var(--text); font-size: 11.5px; }
+.graph-camera { position: absolute; left: 16px; bottom: 16px; display: flex; gap: 6px; z-index: 3; }
+.graph-camera > button, .graph-camera .zoom { background: rgba(17,21,29,.88); border: 1px solid var(--line-strong); border-radius: 9px; padding: 5px 10px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; backdrop-filter: blur(8px); }
+.graph-camera .zoom button { background: var(--surface-3); border: none; border-radius: 5px; width: 20px; height: 20px; padding: 0; }
+kbd { font: 10px var(--mono); color: var(--faint); border: 1px solid var(--line-strong); border-radius: 4px; padding: 0 4px; }
+.graph-panel { position: absolute; right: 14px; top: 14px; z-index: 4; width: 34px; }
+.graph-panel.open { width: 270px; background: rgba(17,21,29,.94); border: 1px solid var(--line-strong); border-radius: 12px; backdrop-filter: blur(14px); box-shadow: 0 16px 50px rgba(0,0,0,.45); }
+.gc-gear { width: 34px; height: 34px; border-radius: 9px; background: rgba(17,21,29,.88); border: 1px solid var(--line-strong); color: var(--muted); font-size: 16px; }
+.graph-panel.open .gc-gear { position: absolute; right: 0; top: 0; border: none; background: none; }
+.gc-scroll { max-height: calc(100vh - 220px); overflow: auto; padding: 10px 12px 12px; }
+.gc-section { border-bottom: 1px solid var(--line); padding: 4px 0 8px; }
+.gc-title { background: none; border: none; color: var(--text); font-weight: 600; font-size: 12.5px; padding: 6px 0; }
+.gc-body { display: flex; flex-direction: column; gap: 8px; }
+.slider { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--muted); }
+.slider input { width: 100%; accent-color: var(--accent); }
+.toggle { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); cursor: pointer; }
+.toggle input { display: none; }
+.toggle i { width: 28px; height: 16px; border-radius: 99px; background: var(--surface-3); position: relative; transition: background .15s; }
+.toggle i::after { content: ""; position: absolute; left: 2px; top: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; transition: transform .15s; }
+.toggle input:checked + i { background: var(--accent); }
+.toggle input:checked + i::after { transform: translateX(12px); }
+.group { display: flex; align-items: center; gap: 8px; background: none; border: none; padding: 3px 0; font-size: 12px; color: var(--text); text-align: left; }
+.group i { width: 9px; height: 9px; border-radius: 50%; }
+.group span { margin-left: auto; color: var(--faint); font-size: 11px; }
+.group.off { opacity: .35; }
+.reset { margin-top: 8px; width: 100%; }
+.graph-empty { position: absolute; inset: 0; display: grid; place-content: center; color: var(--muted); pointer-events: none; }
+.graph.with-drawer .graph-panel { right: 366px; }
+.local-toggle input { accent-color: var(--accent); }

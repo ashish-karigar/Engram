@@ -24,6 +24,21 @@ Deadline: Nov 4, 9 PM ET. Phases are ordered so each one leaves a working, demoa
 | Connectors | project folder is the connector: docs and code auto-ingested on change | B |
 | Console graph + memory browser | desktop app: Obsidian-style graph, documents, review, settings | E |
 
+## Not yet at parity (honest list)
+
+| Supermemory has | Engram today | Plan |
+|---|---|---|
+| Conversation auto-capture via plugin hooks | Agent `note` calls + file/git capture | Phase F adapters (Claude Code, Codex, Muse `session.jsonl`) |
+| Dreaming / derived facts by its own model | Extraction from commits only; no `derives` generator | Phase F with Muse Spark |
+| Semantic embeddings by default | Offline hashing by default; semantic via Ollama/API | Ship Ollama setup in Settings |
+| Connectors (Drive, Gmail, Notion, GitHub, S3, crawler) | Project folder only | Later; GitHub first |
+| OCR, audio/video transcription | PDF text only | Later |
+| Rerank, query rewrite, metadata filters, time phrases | Graph-related results, `asOf` | Later |
+| Forget by meaning with dry run | Archive via review / decay | Phase D follow-up |
+| Profile buckets | Static/dynamic only | Later |
+| MCP OAuth, team spaces, chat widgets | Token-per-agent MCP | Paid sync tier |
+| SMFS (memory as a folder) | — | Not planned for the hackathon |
+
 ## Engram-only (the differentiators)
 
 - Watches files and git; uncommitted work saved on `refs/engram/snapshots`.
