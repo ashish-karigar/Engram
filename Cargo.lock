@@ -1012,6 +1012,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "engram-embed"
+version = "0.1.0"
+dependencies = [
+ "engram-core",
+ "reqwest",
+ "serde_json",
+]
+
+[[package]]
+name = "engram-rag"
+version = "0.1.0"
+dependencies = [
+ "engram-core",
+]
+
+[[package]]
 name = "engram-serve"
 version = "0.1.0"
 dependencies = [

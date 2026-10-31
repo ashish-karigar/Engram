@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["apps/desktop/src-tauri", "crates/core", "crates/capture", "crates/understand", "crates/serve", "crates/daemon"]
+members = ["apps/desktop/src-tauri", "crates/core", "crates/embed", "crates/rag", "crates/capture", "crates/understand", "crates/serve", "crates/daemon"]
 
 [workspace.package]
 version = "0.1.0"
@@ -10,5 +10,7 @@ license = "MIT"
 [workspace.dependencies]
 engram-core = { path = "crates/core" }
 engram-capture = { path = "crates/capture" }
+engram-embed = { path = "crates/embed" }
+engram-rag = { path = "crates/rag" }
 engram-understand = { path = "crates/understand" }
 engram-serve = { path = "crates/serve" }
