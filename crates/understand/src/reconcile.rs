@@ -1,13 +1,15 @@
 use std::collections::HashSet;
 
-use engram_core::memory::{Memory, NewMemory, SearchOpts, create_memory, search_memories, supersede};
+use engram_core::graph::{EdgeOpts, add_edge};
+use engram_core::memory::{Memory, NewMemory, SearchOpts, create_memory, reinforce, search_memories, supersede};
 use engram_core::{Connection, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveAction {
     Created,
     Superseded,
-    Duplicate,
+    /// The same fact again: counted, not duplicated.
+    Reinforced,
 }
 
 impl SaveAction {
@@ -15,7 +17,7 @@ impl SaveAction {
         match self {
             SaveAction::Created => "created",
             SaveAction::Superseded => "superseded",
-            SaveAction::Duplicate => "duplicate",
+            SaveAction::Reinforced => "reinforced",
         }
     }
 }
@@ -23,6 +25,8 @@ impl SaveAction {
 pub struct SaveResult {
     pub action: SaveAction,
     pub memory: Memory,
+    /// The related memory this one adds detail to, if any (an `extends` edge was created).
+    pub extends: Option<String>,
 }
 
 fn tokens(s: &str) -> HashSet<String> {
@@ -40,19 +44,37 @@ pub fn similarity(a: &str, b: &str) -> f64 {
 }
 
 const SAME_TOPIC: f64 = 0.6;
+const RELATED_TOPIC: f64 = 0.25;
 const SAME_CLAIM: f64 = 0.9;
 
-/// Store a memory while keeping the graph consistent:
-/// same topic and claim is a duplicate; same topic with a new claim supersedes; otherwise create.
+/// Store a memory while keeping the graph consistent, following Supermemory's relationships:
+/// - same topic, same claim → reinforce the existing memory;
+/// - same topic, new claim → **updates** (supersede, history kept);
+/// - related topic → create and link with **extends**;
+/// - otherwise create.
 pub fn save_memory(conn: &Connection, input: NewMemory) -> Result<SaveResult> {
-    let opts = SearchOpts { limit: Some(5), ..Default::default() };
-    let matched = search_memories(conn, &input.title, &opts)?
-        .into_iter()
-        .map(|h| h.memory)
-        .find(|m| m.kind == input.kind && similarity(&m.title, &input.title) >= SAME_TOPIC);
-    match matched {
-        None => Ok(SaveResult { action: SaveAction::Created, memory: create_memory(conn, input)? }),
-        Some(m) if similarity(&m.claim, &input.claim) >= SAME_CLAIM => Ok(SaveResult { action: SaveAction::Duplicate, memory: m }),
-        Some(m) => Ok(SaveResult { action: SaveAction::Superseded, memory: supersede(conn, &m.id, input)? }),
+    let opts = SearchOpts { limit: Some(8), ..Default::default() };
+    let query = format!("{} {}", input.title, input.claim);
+    let candidates: Vec<Memory> =
+        search_memories(conn, &query, &opts)?.into_iter().map(|h| h.memory).filter(|m| m.kind == input.kind).collect();
+
+    if let Some(m) = candidates.iter().find(|m| similarity(&m.title, &input.title) >= SAME_TOPIC) {
+        return if similarity(&m.claim, &input.claim) >= SAME_CLAIM {
+            Ok(SaveResult { action: SaveAction::Reinforced, memory: reinforce(conn, &m.id)?, extends: None })
+        } else {
+            Ok(SaveResult { action: SaveAction::Superseded, memory: supersede(conn, &m.id, input)?, extends: None })
+        };
     }
+
+    let related = candidates
+        .iter()
+        .map(|m| (similarity(&format!("{} {}", m.title, m.claim), &query), m))
+        .filter(|(s, _)| *s >= RELATED_TOPIC)
+        .max_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, m)| m.id.clone());
+    let memory = create_memory(conn, input)?;
+    if let Some(parent) = &related {
+        add_edge(conn, &memory.id, parent, "extends", EdgeOpts { weight: Some(0.9), ..Default::default() })?;
+    }
+    Ok(SaveResult { action: SaveAction::Created, memory, extends: related })
 }

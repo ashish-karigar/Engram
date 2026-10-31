@@ -98,11 +98,13 @@ fn record_note_logs_an_event_and_supersedes_on_a_changed_claim() {
         rationale: Some("why".into()),
         files,
         confidence: None,
+        expires_at: None,
     };
     let (first, _) = record_note(&db, &note("Use session cookies", vec!["auth/login.py".into()]), &ctx).unwrap();
     assert_eq!(first.action.as_str(), "created");
     let (dup, _) = record_note(&db, &note("Use session cookies", vec![]), &ctx).unwrap();
-    assert_eq!(dup.action, SaveAction::Duplicate);
+    assert_eq!(dup.action, SaveAction::Reinforced);
+    assert_eq!(dup.memory.reinforcement, 1);
     let (next, _) = record_note(&db, &note("Use JWT bearer tokens", vec![]), &ctx).unwrap();
     assert_eq!(next.action, SaveAction::Superseded);
     assert_eq!(get_memory(&db, &first.memory.id).unwrap().unwrap().status, "superseded");
@@ -149,4 +151,17 @@ fn a_failing_model_leaves_the_cursor_so_the_task_is_retried() {
     assert!(failed.error.unwrap().contains("503"));
     let ok = run_pipeline(&db, &PipelineOptions::new(&ScriptedClient::new(vec!["{\"memories\":[]}".into()]))).unwrap();
     assert_eq!(ok.tasks, 1);
+}
+
+#[test]
+fn related_notes_extend_each_other() {
+    let db = open_memory().unwrap();
+    let ctx = NoteContext { actor_id: ensure_actor(&db, "agent", "codex").unwrap().id, session_id: None, commit_sha: None };
+    let note = |title: &str, claim: &str| NoteInput { kind: Some("decision".into()), title: title.into(), claim: claim.into(), ..Default::default() };
+    let (base, _) = record_note(&db, &note("Lidar downsampling", "Downsample lidar with a voxel grid"), &ctx).unwrap();
+    let (detail, _) = record_note(&db, &note("Lidar voxel size", "Voxel grid size for lidar is 0.2m"), &ctx).unwrap();
+    assert_eq!(detail.action.as_str(), "created");
+    assert_eq!(detail.extends.as_deref(), Some(base.memory.id.as_str()));
+    let (unrelated, _) = record_note(&db, &note("Billing", "Stripe webhooks verified"), &ctx).unwrap();
+    assert!(unrelated.extends.is_none());
 }

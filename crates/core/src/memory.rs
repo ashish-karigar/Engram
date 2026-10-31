@@ -33,6 +33,13 @@ pub struct Memory {
     pub last_accessed_at: Option<String>,
     pub authored_by: Option<String>,
     pub session_id: Option<String>,
+    /// Derived by inference rather than stated; flagged until a person reviews it.
+    pub is_inference: bool,
+    pub reviewed_at: Option<String>,
+    /// How many times the same fact was stated again. Repetition strengthens memory.
+    pub reinforcement: i64,
+    /// Temporary facts stop being current after this instant.
+    pub expires_at: Option<String>,
 }
 
 fn to_memory(r: &Row) -> rusqlite::Result<Memory> {
@@ -58,6 +65,10 @@ fn to_memory(r: &Row) -> rusqlite::Result<Memory> {
         last_accessed_at: r.get("last_accessed_at")?,
         authored_by: r.get("authored_by")?,
         session_id: r.get("session_id")?,
+        is_inference: r.get::<_, i64>("is_inference")? == 1,
+        reviewed_at: r.get("reviewed_at")?,
+        reinforcement: r.get("reinforcement")?,
+        expires_at: r.get("expires_at")?,
     })
 }
 
@@ -82,6 +93,8 @@ pub struct NewMemory {
     pub evidence: Vec<i64>,
     /// Entities (files, symbols, ...) this memory is about. Creates `touches` edges.
     pub touches: Vec<String>,
+    pub is_inference: bool,
+    pub expires_at: Option<String>,
 }
 
 impl NewMemory {
@@ -121,9 +134,11 @@ fn insert_memory(conn: &Connection, m: &NewMemory, at: &str, version: i64) -> Re
     let valid_from = m.valid_from.as_deref().unwrap_or(observed);
     conn.execute(
         "INSERT INTO memories (id, type, title, claim, rationale, scope, summary, version, is_hub,
-           observed_at, valid_from, event_date, commit_sha, confidence, salience, authored_by, session_id, updated_at)
+           observed_at, valid_from, event_date, commit_sha, confidence, salience, authored_by, session_id, updated_at,
+           is_inference, expires_at)
          VALUES (:id, :type, :title, :claim, :rationale, :scope, :summary, :version, :is_hub,
-           :observed, :valid_from, :event_date, :commit_sha, :confidence, :salience, :authored_by, :session_id, :at)",
+           :observed, :valid_from, :event_date, :commit_sha, :confidence, :salience, :authored_by, :session_id, :at,
+           :is_inference, :expires_at)",
         named_params! {
             ":id": id, ":type": m.kind, ":title": m.title, ":claim": m.claim, ":rationale": m.rationale,
             ":scope": m.scope, ":summary": m.summary, ":version": version, ":is_hub": m.is_hub as i64,
@@ -131,6 +146,7 @@ fn insert_memory(conn: &Connection, m: &NewMemory, at: &str, version: i64) -> Re
             ":commit_sha": m.commit_sha, ":confidence": m.confidence.unwrap_or(0.5),
             ":salience": m.salience.unwrap_or(0.5), ":authored_by": m.authored_by,
             ":session_id": m.session_id, ":at": at,
+            ":is_inference": m.is_inference as i64, ":expires_at": m.expires_at,
         },
     )?;
     for seq in &m.evidence {
@@ -257,4 +273,64 @@ pub fn record_access(conn: &Connection, ids: &[String]) -> Result<()> {
         params![now(), serde_json::to_string(ids)?],
     )?;
     Ok(())
+}
+
+/// A repeated statement of a known fact: count it and raise salience, so it resists decay.
+pub fn reinforce(conn: &Connection, id: &str) -> Result<Memory> {
+    conn.execute(
+        "UPDATE memories SET reinforcement = reinforcement + 1, salience = MIN(1.0, salience + 0.1),
+           last_accessed_at = ?1, updated_at = ?1 WHERE id = ?2",
+        params![now(), id],
+    )?;
+    get_memory(conn, id)?.ok_or_else(|| Error::msg(format!("memory not found: {id}")))
+}
+
+/// Record an inferred fact, linked to the memories it was derived from. It stays flagged
+/// (`is_inference`) until reviewed.
+pub fn derive(conn: &Connection, parents: &[String], m: NewMemory) -> Result<Memory> {
+    tx(conn, |conn| {
+        let stamp = now();
+        let created = insert_memory(conn, &NewMemory { is_inference: true, ..m }, &stamp, 1)?;
+        for parent in parents {
+            add_edge(conn, &created.id, parent, "derives", EdgeOpts::default())?;
+        }
+        Ok(created)
+    })
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InferredMemory {
+    pub memory: Memory,
+    /// How many memories support the inference. Higher is a stronger signal.
+    pub parent_count: i64,
+}
+
+/// The review queue: unreviewed current inferences, strongest first.
+pub fn list_inferred(conn: &Connection, limit: i64) -> Result<Vec<InferredMemory>> {
+    let mut stmt = conn.prepare(
+        "SELECT m.*, (SELECT COUNT(*) FROM edges e WHERE e.src = m.id AND e.type = 'derives') AS parents
+         FROM memories m WHERE m.is_inference = 1 AND m.reviewed_at IS NULL AND m.status = 'current'
+         ORDER BY parents DESC, m.observed_at DESC LIMIT ?",
+    )?;
+    let rows = stmt.query_map([limit], |r| Ok(InferredMemory { memory: to_memory(r)?, parent_count: r.get("parents")? }))?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// approve: keep it as a normal fact. decline: archive it. undo: back to the queue.
+pub fn review(conn: &Connection, id: &str, action: &str) -> Result<Memory> {
+    let stamp = now();
+    match action {
+        "approve" => conn.execute("UPDATE memories SET is_inference = 0, reviewed_at = ?1, updated_at = ?1 WHERE id = ?2", params![stamp, id])?,
+        "decline" => conn.execute(
+            "UPDATE memories SET status = 'archived', reviewed_at = ?1, valid_to = COALESCE(valid_to, ?1), updated_at = ?1 WHERE id = ?2",
+            params![stamp, id],
+        )?,
+        "undo" => conn.execute(
+            "UPDATE memories SET is_inference = 1, reviewed_at = NULL, status = 'current', valid_to = NULL, updated_at = ?1 WHERE id = ?2",
+            params![stamp, id],
+        )?,
+        other => return Err(Error::msg(format!("unknown review action: {other}"))),
+    };
+    get_memory(conn, id)?.ok_or_else(|| Error::msg(format!("memory not found: {id}")))
 }

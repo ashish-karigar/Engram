@@ -35,7 +35,7 @@ pub struct PipelineReport {
     pub tasks: usize,
     pub created: usize,
     pub superseded: usize,
-    pub duplicate: usize,
+    pub reinforced: usize,
     pub rejected: Vec<(String, String)>,
     pub error: Option<String>,
 }
@@ -105,7 +105,7 @@ fn process_task(conn: &Connection, task: &Task, opts: &PipelineOptions, author: 
         match save_memory(conn, memory)?.action {
             SaveAction::Created => report.created += 1,
             SaveAction::Superseded => report.superseded += 1,
-            SaveAction::Duplicate => report.duplicate += 1,
+            SaveAction::Reinforced => report.reinforced += 1,
         }
     }
     Ok(())

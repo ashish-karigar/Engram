@@ -171,3 +171,43 @@ fn access_log_attributes_requests_to_agents() {
     assert_eq!(recent_access(&db, Some(&claude.id), 50).unwrap().len(), 1);
     assert_eq!(get_memory(&db, &m.id).unwrap().unwrap().access_count, 1);
 }
+
+#[test]
+fn inferred_memories_wait_for_review_and_can_be_approved_declined_or_undone() {
+    let db = open_memory().unwrap();
+    let a = create_memory(&db, NewMemory::new("fact", "Role", "Alex is a PM at Stripe")).unwrap();
+    let b = create_memory(&db, NewMemory::new("fact", "Topics", "Alex discusses payment APIs")).unwrap();
+    let guess = derive(&db, &[a.id.clone(), b.id.clone()], NewMemory::new("fact", "Team", "Alex works on core payments")).unwrap();
+    assert!(guess.is_inference);
+    let queue = list_inferred(&db, 10).unwrap();
+    assert_eq!((queue.len(), queue[0].parent_count), (1, 2));
+
+    assert!(!review(&db, &guess.id, "approve").unwrap().is_inference);
+    assert!(list_inferred(&db, 10).unwrap().is_empty());
+    assert!(review(&db, &guess.id, "undo").unwrap().is_inference);
+    assert_eq!(review(&db, &guess.id, "decline").unwrap().status, "archived");
+    assert!(review(&db, &guess.id, "nonsense").is_err());
+}
+
+#[test]
+fn temporary_facts_expire_and_reinforced_ones_resist_decay() {
+    let db = open_memory().unwrap();
+    let freeze = NewMemory { expires_at: Some("2026-10-29T00:00:00Z".into()), ..NewMemory::new("fact", "Freeze", "Deploy freeze this week") };
+    let freeze = create_memory(&db, freeze).unwrap();
+    let at = Utc.with_ymd_and_hms(2026, 10, 30, 0, 0, 0).unwrap();
+    archive_stale(&db, at).unwrap();
+    let after = get_memory(&db, &freeze.id).unwrap().unwrap();
+    assert_eq!(after.status, "expired");
+    assert_eq!(after.valid_to.as_deref(), Some("2026-10-29T00:00:00Z"));
+
+    let long_ago = "2026-08-01T00:00:00Z";
+    let pref = NewMemory { salience: Some(0.3), observed_at: Some(long_ago.into()), ..NewMemory::new("preference", "Style", "Prefer pure functions") };
+    let pref = create_memory_at(&db, pref, long_ago).unwrap();
+    let before = strength(&get_memory(&db, &pref.id).unwrap().unwrap(), at);
+    for _ in 0..3 {
+        reinforce(&db, &pref.id).unwrap();
+    }
+    let strong = get_memory(&db, &pref.id).unwrap().unwrap();
+    assert_eq!(strong.reinforcement, 3);
+    assert!(strength(&strong, at) > before);
+}
