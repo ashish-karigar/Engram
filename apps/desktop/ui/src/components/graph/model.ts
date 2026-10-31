@@ -10,6 +10,8 @@ export interface SimNode extends SimulationNodeDatum {
   degree: number;
   radius: number;
   color: string;
+  /** The top-level folder this node sits in (`frontend`, `backend`); itself for that folder. */
+  part?: string;
   /** Third axis, used only while the graph is rotatable. */
   z?: number;
   vz?: number;
@@ -84,10 +86,14 @@ export function buildScene(graph: Graph, s: GraphSettings, selected: string | nu
   if (!s.showOrphans) keep = keep.filter((n) => (degree.get(n.id) ?? 0) > 0 || n.id === selected);
 
   const inside = descendants(graph);
+  const parts = topFolders(graph);
   const nodes: SimNode[] = keep.map((n) => {
     const d = degree.get(n.id) ?? 0;
     const prior = previous.get(n.id) ?? placeNear(n.id, adj, previous);
-    return { id: n.id, label: n.label, kind: n.kind, status: n.status ?? "", degree: d, radius: radiusFor(n.kind, d, inside.get(n.id) ?? n.children ?? 0, n.label.split("/").length - 1), color: cssColor(n.kind), ...prior };
+    return {
+      id: n.id, label: n.label, kind: n.kind, status: n.status ?? "", degree: d, part: parts.get(n.id),
+      radius: radiusFor(n.kind, d, inside.get(n.id) ?? n.children ?? 0, n.label.split("/").length - 1), color: cssColor(n.kind), ...prior,
+    };
   });
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const links: SimLink[] = edges
@@ -105,6 +111,19 @@ function placeNear(id: string, adj: Map<string, Set<string>>, previous: Map<stri
     }
   }
   return {};
+}
+
+/** The top-level folder above each node, following `contains` edges up; only folders that hold something. */
+function topFolders(graph: Graph): Map<string, string> {
+  const parent = new Map<string, string>();
+  for (const e of graph.edges) if (e.type === "contains") parent.set(e.target, e.source);
+  const top = new Map<string, string>();
+  for (const id of new Set([...parent.keys(), ...parent.values()])) {
+    let root = id;
+    for (let hops = 0; parent.has(root) && hops < 50; hops++) root = parent.get(root)!;
+    top.set(id, root);
+  }
+  return top;
 }
 
 /** How many files and folders sit anywhere inside each folder, following `contains` edges. */

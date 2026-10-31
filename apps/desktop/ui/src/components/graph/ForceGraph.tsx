@@ -243,6 +243,7 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onZoom, comm
     s.force("y", forceY<SimNode>(0).strength(settings.centerForce * 0.06));
     s.force("z", dims === 3 ? forceZ<SimNode>(0).strength(settings.centerForce * 0.06) : null);
     s.force("collide", forceCollide<SimNode>((d) => d.radius * settings.nodeSize + 10));
+    s.force("part", forcePart());
     if (structureChanged && localKey) autoFit.current = 0;
     if (modeChanged || (structureChanged && autoFit.current < 2)) {
       // Settle the layout up front (a few ms for hundreds of nodes), so the first frame is
@@ -311,4 +312,46 @@ function toDimensions(nodes: SimNode[], dims: 2 | 3, view: React.MutableRefObjec
     n.vz = 0;
     n.fz = null;
   }
+}
+
+/**
+ * Each top-level folder is the centre of its own cluster: everything inside `backend` drifts gently
+ * towards the `backend` node, and that node is drawn firmly to the middle of what it holds.
+ * Nodes outside any folder (memories, the API) are left alone.
+ */
+function forcePart(member = 0.06, root = 1) {
+  let nodes: SimNode[] = [];
+  let byId = new Map<string, SimNode>();
+  const force = (alpha: number) => {
+    const centre = new Map<string, { x: number; y: number; z: number; n: number }>();
+    for (const n of nodes) {
+      if (!n.part || n.part === n.id || !byId.has(n.part)) continue;
+      const c = centre.get(n.part) ?? { x: 0, y: 0, z: 0, n: 0 };
+      c.x += n.x ?? 0; c.y += n.y ?? 0; c.z += n.z ?? 0; c.n += 1;
+      centre.set(n.part, c);
+    }
+    for (const n of nodes) {
+      if (!n.part) continue;
+      let target: { x: number; y: number; z: number } | undefined;
+      let k = member;
+      if (n.part === n.id) {
+        const c = centre.get(n.id);
+        if (!c) continue;
+        target = { x: c.x / c.n, y: c.y / c.n, z: c.z / c.n };
+        k = root;
+      } else {
+        const r = byId.get(n.part);
+        if (!r) continue;
+        target = { x: r.x ?? 0, y: r.y ?? 0, z: r.z ?? 0 };
+      }
+      n.vx = (n.vx ?? 0) + (target.x - (n.x ?? 0)) * k * alpha;
+      n.vy = (n.vy ?? 0) + (target.y - (n.y ?? 0)) * k * alpha;
+      if (n.z !== undefined) n.vz = (n.vz ?? 0) + (target.z - n.z) * k * alpha;
+    }
+  };
+  force.initialize = (ns: SimNode[]) => {
+    nodes = ns;
+    byId = new Map(ns.map((n) => [n.id, n]));
+  };
+  return force;
 }
