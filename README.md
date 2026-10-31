@@ -26,6 +26,7 @@ repository was written during the event.
    re-injects the project brief after the agent compacts its context.
 7. **Observe**: every agent request is logged with what came back and why.
 
+How to use it: [docs/USAGE.md](docs/USAGE.md). How it is evaluated: [docs/EVALUATION.md](docs/EVALUATION.md).
 Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Decisions: [docs/ACTION_PLAN.md](docs/ACTION_PLAN.md).
 
 ## Run it
