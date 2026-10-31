@@ -1142,6 +1142,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "engram-sessions"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "engram-capture",
+ "engram-core",
+ "engram-embed",
+ "engram-rag",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "engram-understand"
 version = "0.1.0"
 dependencies = [
