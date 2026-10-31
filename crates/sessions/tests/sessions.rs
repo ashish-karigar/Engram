@@ -151,3 +151,31 @@ fn tool_only_turns_fold_into_the_spoken_turn() {
     let content: String = db.query_row("SELECT content FROM chunks", [], |r| r.get(0)).unwrap();
     assert!(content.contains("I will update the lidar filter.") && content.contains("Edit lidar.py; Bash"));
 }
+
+#[test]
+fn codex_reviewer_sessions_are_skipped_and_earlier_ones_hidden() {
+    let home = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let root_path = root.path().canonicalize().unwrap();
+    let cwd = root_path.to_string_lossy().to_string();
+    let sources = Sources { claude: home.path().join("c"), codex: home.path().join("codex"), muse: home.path().join("m") };
+    let review = sources.codex.join("2026/10/30/rollout-r.jsonl");
+    let user = |text: &str| json!({"timestamp": "2026-10-30T12:00:01Z", "type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}}).to_string();
+    let review_meta = json!({"timestamp": "2026-10-30T12:00:00Z", "type": "session_meta",
+        "payload": {"id": "rv1", "cwd": cwd, "thread_source": "guardian_review", "source": {"subagent": {"other": "guardian"}}}}).to_string();
+    write(&review, &[review_meta.clone(), user("The following is the Codex agent history")]);
+    assert!(codex::is_review(&review_meta));
+
+    let db = open_memory().unwrap();
+    let e = HashEmbedder::default();
+    assert_eq!(sync_sessions(&db, &e, &root_path, &sources).unwrap().turns, 0, "reviewer logs are not read");
+
+    // A reviewer session synced by an older version: hidden once, its transcript removed.
+    engram_core::meta::set_meta(&db, &format!("sessions.offset:{}", review.to_string_lossy()), "10").unwrap();
+    engram_core::meta::set_meta(&db, &format!("sessions.sid:{}", review.to_string_lossy()), "rv1").unwrap();
+    sync_sessions(&db, &e, &root_path, &sources).unwrap();
+    sync_sessions(&db, &e, &root_path, &sources).unwrap();
+    let hidden = list_events(&db, 0, Some("agent.session_hidden"), 10).unwrap();
+    assert_eq!(hidden.len(), 1);
+    assert_eq!(hidden[0].payload["session"], "rv1");
+}

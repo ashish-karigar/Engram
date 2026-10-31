@@ -25,6 +25,10 @@
   --t-file: #566178;
   --t-document: #3fb6c9;
 
+  --a-claude-code: #e08a63;
+  --a-codex: #4cc38a;
+  --a-muse-code: #5b9cf8;
+
   --radius: 10px;
   --font: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;

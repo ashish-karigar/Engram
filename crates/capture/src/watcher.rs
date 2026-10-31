@@ -37,7 +37,9 @@ const IGNORED_DIRS: &[&str] =
 const IGNORED_SUFFIXES: &[&str] = &[".pyc", ".pyo", ".DS_Store", ".swp", "~"];
 
 pub fn is_ignored(rel: &str) -> bool {
-    rel.split('/').any(|part| IGNORED_DIRS.contains(&part)) || IGNORED_SUFFIXES.iter().any(|s| rel.ends_with(s))
+    let name = rel.rsplit('/').next().unwrap_or(rel);
+    // `.!12345!App.tsx`: the temporary file some editors write before an atomic rename.
+    rel.split('/').any(|part| IGNORED_DIRS.contains(&part)) || IGNORED_SUFFIXES.iter().any(|s| rel.ends_with(s)) || name.starts_with(".!")
 }
 
 /// Collapse a burst of events into one change per path: latest kind wins, add then unlink cancels.

@@ -1,5 +1,6 @@
 //! Serve memory to agents (MCP and HTTP) and to the desktop UI, across many projects.
 
+pub mod activity;
 pub mod api;
 pub mod brief;
 pub mod budget;

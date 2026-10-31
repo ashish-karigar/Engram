@@ -15,6 +15,7 @@ use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
+use crate::activity::{ActivityQuery, activity};
 use crate::api::{documents, graph_data, node_detail, request_log, review_queue, stats, timeline};
 use crate::mcp::{call_tool, handle_body, handle_body_with, shared_tool_definitions};
 use crate::ops::{Ctx, OpResult, op_add_document, op_brief, op_expand, op_note, op_profile, op_search};
@@ -82,7 +83,28 @@ enum Principal {
 }
 
 fn query_param(query: Option<&str>, key: &str) -> Option<String> {
-    query?.split('&').find_map(|kv| kv.strip_prefix(key)?.strip_prefix('=')).map(|v| v.replace("%2F", "/").replace("%20", " "))
+    query?.split('&').find_map(|kv| kv.strip_prefix(key)?.strip_prefix('=')).map(percent_decode)
+}
+
+/// `%XX` escapes and `+` as space, as browsers encode query strings.
+fn percent_decode(v: &str) -> String {
+    let bytes = v.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let escaped = bytes.get(i + 1..i + 3).and_then(|h| u8::from_str_radix(std::str::from_utf8(h).ok()?, 16).ok());
+        match (bytes[i], escaped) {
+            (b'%', Some(b)) => {
+                out.push(b);
+                i += 3;
+                continue;
+            }
+            (b'+', _) => out.push(b' '),
+            (b, _) => out.push(b),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 async fn dispatch(State(state): State<Arc<AppState>>, req: Request) -> Response {
@@ -279,6 +301,14 @@ fn project_route(
         (&Method::GET, ["api", "graph"]) => json_ok(graph_data(&conn, query_param(query, "archived").as_deref() == Some("1"), 300)),
         (&Method::GET, ["api", "node"]) => json_ok(node_detail(&conn, &query_param(query, "id").unwrap_or_default())),
         (&Method::GET, ["api", "events"]) => json_ok(timeline(&conn, limit)),
+        (&Method::GET, ["api", "activity"]) => {
+            let q = ActivityQuery {
+                before: query_param(query, "before"),
+                days: query_param(query, "days").and_then(|d| d.parse().ok()).unwrap_or(3),
+                system: query_param(query, "system").as_deref() == Some("1"),
+            };
+            json_ok(activity(conn, &project.info.root, &q))
+        }
         (&Method::GET, ["api", "requests"]) => json_ok(request_log(&conn, limit)),
         _ => Ok(fail(StatusCode::NOT_FOUND, "not found")),
     }

@@ -9,6 +9,7 @@ use engram_core::meta::{get_meta, set_meta};
 use engram_core::rusqlite::OptionalExtension;
 use engram_core::{Connection, Result};
 use engram_embed::Embedder;
+use engram_rag::document::{delete_document, get_by_external_id};
 use serde_json::json;
 
 use crate::source::{AGENTS, Agent, Sources};
@@ -84,11 +85,32 @@ fn record(conn: &Connection, agent: Agent, actor_id: &str, turn: &Turn, op_id: S
     Ok(external)
 }
 
+/// Reviewer sessions synced before they were recognised: the event log is append-only, so record
+/// that they are hidden (the timeline drops them) and remove their transcript documents. Once.
+fn hide_codex_reviews(conn: &Connection, root: &Path, sources: &Sources) -> Result<()> {
+    for file in sources.codex_reviews_for(root) {
+        let key = file.to_string_lossy();
+        let offset_key = format!("sessions.offset:{key}");
+        if get_meta(conn, &offset_key)?.is_none_or(|v| v == "hidden") {
+            continue;
+        }
+        if let Some(session) = get_meta(conn, &format!("sessions.sid:{key}"))? {
+            if let Some(doc) = get_by_external_id(conn, &format!("session:codex:{session}"))? {
+                delete_document(conn, &doc.id)?;
+            }
+            append_event(conn, NewEvent::new("agent.session_hidden", json!({"agent": "codex", "session": session, "reason": "Codex approval reviewer"})))?;
+        }
+        set_meta(conn, &offset_key, "hidden")?;
+    }
+    Ok(())
+}
+
 /// Pull new turns from every agent's logs for sessions run inside `root`, then refresh the
 /// transcript document of each session that changed. Safe to call repeatedly: offsets are
 /// remembered per file and every turn has a stable op id.
 pub fn sync_sessions(conn: &Connection, embedder: &dyn Embedder, root: &Path, sources: &Sources) -> Result<SyncReport> {
     let mut report = SyncReport::default();
+    hide_codex_reviews(conn, root, sources)?;
     let mut changed: BTreeSet<(String, String)> = BTreeSet::new();
     for agent in AGENTS {
         let actor_id = ensure_actor(conn, "agent", agent.actor_name())?.id;

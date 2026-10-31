@@ -101,6 +101,34 @@ export type NodeDetail =
   | { type: "document"; document: DocumentView; chunks: ChunkPreview[]; focus?: string }
   | null;
 
+export interface SessionMessage {
+  ts: string;
+  role: "user" | "assistant" | "compacted";
+  text?: string;
+}
+
+interface Span {
+  start: string;
+  end: string;
+}
+
+/** One entry of the activity timeline; see crates/serve/src/activity.rs. */
+export type ActivityItem = Span & (
+  | { kind: "session"; agent: string; session: string; title: string; messages: SessionMessage[]; userMessages: number; agentMessages: number; toolCalls: number; compactions: number; files: string[] }
+  | { kind: "commit"; sha: string; subject: string; author: string | null; files: string[]; fileCount: number }
+  | { kind: "edits"; files: string[] }
+  | { kind: "memory"; id: string; type: string; title: string; status: string; author: string | null; replaces: string[] }
+  | { kind: "system"; counts: Record<string, number>; titles: string[] }
+);
+
+export interface ActivityPage {
+  items: ActivityItem[];
+  from: string;
+  to: string;
+  hiddenSystem: number;
+  earlier: boolean;
+}
+
 export interface EventEntry {
   seq: number;
   ts: string;

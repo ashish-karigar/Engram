@@ -77,12 +77,30 @@ pub fn within(cwd: &str, root: &Path) -> bool {
     cwd == root || cwd.starts_with(&format!("{root}/"))
 }
 
-fn first_cwd(path: &Path, lines: usize, find: impl Fn(&str) -> Option<String>) -> Option<String> {
+/// The first match of `find` in the opening `lines` lines of a log.
+fn first_match(path: &Path, lines: usize, find: impl Fn(&str) -> Option<String>) -> Option<String> {
     let reader = BufReader::new(File::open(path).ok()?);
     reader.lines().take(lines).map_while(Result::ok).find_map(|l| find(&l))
 }
 
+fn is_codex_review(path: &Path) -> bool {
+    first_match(path, 3, |l| codex::is_review(l).then(String::new)).is_some()
+}
+
 impl Sources {
+    /// Codex logs whose session ran inside `root`, reviewer sub-sessions included.
+    fn codex_files(&self, root: &Path) -> Vec<PathBuf> {
+        let mut files = vec![];
+        walk(&self.codex, 4, &mut files, &|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("rollout-")) && p.extension().is_some_and(|e| e == "jsonl"));
+        files.retain(|f| first_match(f, 5, codex::cwd_of).is_some_and(|cwd| within(&cwd, root)));
+        files
+    }
+
+    /// Codex reviewer sub-sessions inside `root` (see `codex::is_review`).
+    pub fn codex_reviews_for(&self, root: &Path) -> Vec<PathBuf> {
+        self.codex_files(root).into_iter().filter(|f| is_codex_review(f)).collect()
+    }
+
     /// Log files belonging to sessions that ran inside `root` (or a folder below it).
     pub fn files_for(&self, agent: Agent, root: &Path) -> Vec<PathBuf> {
         let mut files = vec![];
@@ -105,13 +123,13 @@ impl Sources {
                 });
             }
             Agent::Codex => {
-                walk(&self.codex, 4, &mut files, &|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("rollout-")) && p.extension().is_some_and(|e| e == "jsonl"));
-                files.retain(|f| first_cwd(f, 5, codex::cwd_of).is_some_and(|cwd| within(&cwd, root)));
+                files = self.codex_files(root);
+                files.retain(|f| !is_codex_review(f));
             }
             Agent::Muse => {
                 walk(&self.muse, 5, &mut files, &|p| p.file_name().is_some_and(|n| n == "session.jsonl"));
                 files.retain(|f| {
-                    first_cwd(f, 60, |l| muse::records(l).iter().find_map(muse::cwd_of)).is_some_and(|cwd| within(&cwd, root))
+                    first_match(f, 60, |l| muse::records(l).iter().find_map(muse::cwd_of)).is_some_and(|cwd| within(&cwd, root))
                 });
             }
         }

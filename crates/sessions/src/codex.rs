@@ -9,6 +9,14 @@ pub fn cwd_of(line: &str) -> Option<String> {
     (v["type"] == "session_meta" || v["type"] == "turn_context").then(|| v["payload"]["cwd"].as_str().map(String::from)).flatten()
 }
 
+/// Codex's automatic approval reviewer ("guardian") runs as a sub-session that replays the user's
+/// conversation for a safety check. It is not the user's work, so its logs are skipped.
+pub fn is_review(line: &str) -> bool {
+    let Ok(v) = serde_json::from_str::<Value>(line) else { return false };
+    let p = &v["payload"];
+    v["type"] == "session_meta" && (p["thread_source"] == "guardian_review" || p["source"]["subagent"]["other"] == "guardian")
+}
+
 pub fn session_id_of(line: &str) -> Option<String> {
     let v: Value = serde_json::from_str(line).ok()?;
     (v["type"] == "session_meta").then(|| v["payload"]["id"].as_str().or(v["payload"]["session_id"].as_str()).map(String::from)).flatten()

@@ -1,5 +1,5 @@
 import type {
-  AppSettings, ConnectResult, Connection, TestResult, DocumentView, EventEntry, Graph, InferredMemory, MemoryView, NodeDetail, OpResult, Project,
+  ActivityPage, AppSettings, ConnectResult, Connection, TestResult, DocumentView, EventEntry, Graph, InferredMemory, MemoryView, NodeDetail, OpResult, Project,
   RequestEntry, SearchMode, Stats,
 } from "./types.ts";
 
@@ -32,6 +32,8 @@ export const projectApi = (c: Connection, id: string) => {
     graph: (archived: boolean) => call<Graph>(c, `${base}/graph?archived=${archived ? 1 : 0}`),
     node: (nodeId: string) => call<NodeDetail>(c, `${base}/node?id=${encodeURIComponent(nodeId)}`),
     events: (limit = 80) => call<EventEntry[]>(c, `${base}/events?limit=${limit}`),
+    activity: (opts: { before?: string; system?: boolean; days?: number } = {}) =>
+      call<ActivityPage>(c, `${base}/activity?days=${opts.days ?? 3}&system=${opts.system ? 1 : 0}${opts.before ? `&before=${encodeURIComponent(opts.before)}` : ""}`),
     requests: (limit = 80) => call<RequestEntry[]>(c, `${base}/requests?limit=${limit}`),
     search: (query: string, mode: SearchMode = "hybrid") => call<OpResult>(c, `${base}/search`, post({ query, mode })),
     profile: () => call<OpResult>(c, `${base}/profile`),

@@ -14,7 +14,7 @@ import { NodeDrawer } from "./components/NodeDrawer.tsx";
 import { RequestLog } from "./components/RequestLog.tsx";
 import { SettingsPage } from "./components/SettingsPage.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
-import { Timeline } from "./components/Timeline.tsx";
+import { Timeline } from "./components/timeline/Timeline.tsx";
 import { pickFolder, useDaemon } from "./hooks/useDaemon.ts";
 import { usePolling } from "./hooks/usePolling.ts";
 

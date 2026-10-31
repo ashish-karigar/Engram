@@ -12,6 +12,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/001.sql"),
     include_str!("../migrations/002.sql"),
     include_str!("../migrations/003.sql"),
+    include_str!("../migrations/004.sql"),
 ];
 
 /// One connection shared across threads. SQLite work here is short, so a mutex is enough.

@@ -141,6 +141,13 @@ pub fn list_events(conn: &Connection, after_seq: i64, kind: Option<&str>, limit:
 }
 
 /// The most recent `limit` events, oldest first.
+/// Events with `from <= ts < to`, oldest first.
+pub fn events_between(conn: &Connection, from: &str, to: &str) -> Result<Vec<StoredEvent>> {
+    let mut stmt = conn.prepare("SELECT * FROM events WHERE ts >= ?1 AND ts < ?2 ORDER BY ts, seq")?;
+    let rows = stmt.query_map(params![from, to], to_event)?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
 pub fn recent_events(conn: &Connection, limit: i64) -> Result<Vec<StoredEvent>> {
     let max: i64 = conn.query_row("SELECT COALESCE(MAX(seq), 0) FROM events", [], |r| r.get(0))?;
     list_events(conn, (max - limit).max(0), None, limit)

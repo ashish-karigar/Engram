@@ -270,3 +270,39 @@ async fn profile_and_review_endpoints_work() {
     let (_, empty) = get(&f, &f.admin, "/p/p1/api/review").await;
     assert!(empty.as_array().unwrap().is_empty());
 }
+
+#[test]
+fn activity_groups_turns_into_sessions_and_hides_background_events() {
+    use engram_core::events::{NewEvent, append_event};
+    use engram_serve::activity::{ActivityQuery, activity};
+    let db = open_memory().unwrap();
+    let at = |ts: &str, kind: &str, payload: Value| {
+        append_event(&db, NewEvent { ts: Some(ts.into()), ..NewEvent::new(kind, payload) }).unwrap();
+    };
+    let turn = |role: &str, text: &str| json!({"agent": "claude-code", "session": "s1", "role": role, "text": text,
+        "tools": [{"name": "Edit", "files": ["/repo/src/auth.rs"]}]});
+    at("2026-10-30T10:00:00.000Z", "agent.turn", turn("user", "Make auth session based\nmore detail"));
+    at("2026-10-30T10:01:00.000Z", "agent.turn", turn("assistant", "Done"));
+    at("2026-10-30T10:02:00.000Z", "agent.compacted", json!({"agent": "claude-code", "session": "s1"}));
+    at("2026-10-30T10:03:00.000Z", "document.ingested", json!({"title": "transcript"}));
+    at("2026-10-30T10:05:00.000Z", "git.commit", json!({"sha": "abc", "subject": "Session auth", "files": ["src/auth.rs"]}));
+    // Two hours later the same session continues: a separate block.
+    at("2026-10-30T12:10:00.000Z", "agent.turn", turn("user", "Now add logout"));
+
+    let q = ActivityQuery { before: Some("2026-10-31T00:00:00Z".into()), days: 3, system: false };
+    let page = activity(&db, "/repo", &q).unwrap();
+    let kinds: Vec<&str> = page["items"].as_array().unwrap().iter().map(|i| i["kind"].as_str().unwrap()).collect();
+    assert_eq!(kinds, ["session", "commit", "session"], "newest first");
+    let first = &page["items"][2];
+    assert_eq!(first["title"], "Make auth session based");
+    assert_eq!((first["userMessages"].as_u64(), first["agentMessages"].as_u64(), first["compactions"].as_u64()), (Some(1), Some(1), Some(1)));
+    assert_eq!(first["files"], json!(["src/auth.rs"]));
+    assert_eq!(page["hiddenSystem"], 1);
+    // Attachments wrapped around the request: the title is the request itself.
+    let wrapped = "# Files mentioned by the user:\n\n## shot.png: /tmp/shot.png\nImage attachment: true\n\n## My request:\nwhy are objects missing?";
+    at("2026-10-30T15:00:00.000Z", "agent.turn", json!({"agent": "codex", "session": "s2", "role": "user", "text": wrapped, "tools": []}));
+    let page = activity(&db, "/repo", &q).unwrap();
+    assert_eq!(page["items"][0]["title"], "why are objects missing?");
+    let with_system = activity(&db, "/repo", &ActivityQuery { system: true, ..q }).unwrap();
+    assert!(with_system["items"].as_array().unwrap().iter().any(|i| i["kind"] == "system"));
+}
