@@ -83,10 +83,11 @@ export function buildScene(graph: Graph, s: GraphSettings, selected: string | nu
   }
   if (!s.showOrphans) keep = keep.filter((n) => (degree.get(n.id) ?? 0) > 0 || n.id === selected);
 
+  const inside = descendants(graph);
   const nodes: SimNode[] = keep.map((n) => {
     const d = degree.get(n.id) ?? 0;
     const prior = previous.get(n.id) ?? placeNear(n.id, adj, previous);
-    return { id: n.id, label: n.label, kind: n.kind, status: n.status ?? "", degree: d, radius: radiusFor(n.kind, d), color: cssColor(n.kind), ...prior };
+    return { id: n.id, label: n.label, kind: n.kind, status: n.status ?? "", degree: d, radius: radiusFor(n.kind, d, inside.get(n.id) ?? 0), color: cssColor(n.kind), ...prior };
   });
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const links: SimLink[] = edges
@@ -106,9 +107,26 @@ function placeNear(id: string, adj: Map<string, Set<string>>, previous: Map<stri
   return {};
 }
 
-/** Memories are the point of the graph, so they stay prominent; code nodes stay small. */
-function radiusFor(kind: string, degree: number): number {
+/** How many files and folders sit anywhere inside each folder, following `contains` edges. */
+function descendants(graph: Graph): Map<string, number> {
+  const children = new Map<string, string[]>();
+  for (const e of graph.edges) if (e.type === "contains") children.set(e.source, [...(children.get(e.source) ?? []), e.target]);
+  const count = new Map<string, number>();
+  const walk = (id: string, seen: Set<string>): number => {
+    if (count.has(id)) return count.get(id)!;
+    let total = 0;
+    for (const c of children.get(id) ?? []) if (!seen.has(c)) { seen.add(c); total += 1 + walk(c, seen); }
+    count.set(id, total);
+    return total;
+  };
+  for (const id of children.keys()) walk(id, new Set([id]));
+  return count;
+}
+
+/** Memories stay prominent; a folder grows with everything inside it, so `backend` is the biggest. */
+function radiusFor(kind: string, degree: number, inside: number): number {
   if (kind === "file") return 2.5 + Math.sqrt(degree) * 0.9;
-  if (kind === "module") return 4.5 + Math.sqrt(degree) * 1.1;
+  if (kind === "module") return 4 + Math.sqrt(inside) * 1.3;
+  if (kind === "endpoint") return 3 + Math.sqrt(degree) * 0.8;
   return 5 + Math.sqrt(degree) * 1.8;
 }

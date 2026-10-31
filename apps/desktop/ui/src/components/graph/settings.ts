@@ -46,7 +46,8 @@ export const GROUPS: { kind: string; label: string }[] = [
   { kind: "task", label: "Tasks" },
   { kind: "document", label: "Documents" },
   { kind: "module", label: "Modules" },
-  { kind: "file", label: "Code files" },
+  { kind: "file", label: "Files" },
+  { kind: "endpoint", label: "API endpoints" },
 ];
 
 const KEY = "engram.graph.settings.v4";

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use engram_core::access::recent_access;
 use engram_core::events::recent_events;
@@ -108,29 +108,110 @@ pub fn graph_data(conn: &Connection, include_archived: bool, limit: i64) -> Resu
         nodes.insert(id.clone(), json!({"id": id, "label": name, "kind": kind}));
     }
 
-    let documents: Vec<(String, String, String)> = conn
+    let files: HashMap<String, String> = nodes
+        .values()
+        .filter(|n| n["kind"] == "file")
+        .map(|n| (n["label"].as_str().unwrap_or_default().to_string(), n["id"].as_str().unwrap_or_default().to_string()))
+        .collect();
+
+    // A document that is a project file (`landing.html`, `README.md`) is the same thing as its file
+    // node: it is drawn once, and its links are moved onto the file.
+    let mut alias: HashMap<String, String> = HashMap::new();
+    let mut in_folders: Vec<(String, String)> = Vec::new();
+    let documents: Vec<(String, String, String, Option<String>)> = conn
         .prepare(
-            "SELECT id, title, source FROM documents
+            "SELECT id, title, source, path FROM documents
              WHERE status = 'done' AND mime NOT LIKE 'text/x-%'
                AND NOT (COALESCE(path, '') GLOB '*.json' OR COALESCE(path, '') GLOB '*.toml' OR COALESCE(path, '') GLOB '*.yaml'
                         OR COALESCE(path, '') GLOB '*.yml' OR COALESCE(path, '') GLOB '*.ini' OR COALESCE(path, '') GLOB '*.cfg'
                         OR COALESCE(path, '') GLOB '*.xml' OR COALESCE(path, '') GLOB '*.csv')
              ORDER BY updated_at DESC LIMIT 150",
         )?
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
         .collect::<SqlResult<_>>()?;
-    for (id, title, source) in documents {
-        nodes.insert(id.clone(), json!({"id": id, "label": title, "kind": "document", "status": source}));
+    for (id, title, source, path) in documents {
+        match path.as_ref().and_then(|p| files.get(p)) {
+            Some(file) => {
+                alias.insert(id, file.clone());
+            }
+            None => {
+                if let Some(path) = path {
+                    in_folders.push((id.clone(), path));
+                }
+                nodes.insert(id.clone(), json!({"id": id, "label": title, "kind": "document", "status": source}));
+            }
+        }
     }
 
-    let all = serde_json::to_string(&nodes.keys().collect::<Vec<_>>())?;
-    let edges: Vec<Value> = conn
+    let all = serde_json::to_string(&nodes.keys().chain(alias.keys()).collect::<Vec<_>>())?;
+    let raw: Vec<(String, String, String, String)> = conn
         .prepare(
             "SELECT id, src, dst, type FROM edges
              WHERE valid_to IS NULL AND src IN (SELECT value FROM json_each(?1)) AND dst IN (SELECT value FROM json_each(?1))",
         )?
-        .query_map([&all], |r| Ok(json!({"id": r.get::<_, String>(0)?, "source": r.get::<_, String>(1)?, "target": r.get::<_, String>(2)?, "type": r.get::<_, String>(3)?})))?
+        .query_map([&all], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
         .collect::<SqlResult<_>>()?;
+    let mut edges: BTreeMap<(String, String, String), String> = BTreeMap::new();
+    for (id, src, dst, kind) in raw {
+        let src = alias.get(&src).cloned().unwrap_or(src);
+        let dst = alias.get(&dst).cloned().unwrap_or(dst);
+        if src != dst {
+            edges.entry((src, dst, kind)).or_insert(id);
+        }
+    }
+
+    // Every file hangs off its folder, and every folder off its parent, whether or not the indexer
+    // parsed it: HTML, CSS, JSON and images belong to their folder like code does.
+    let folders: HashMap<String, String> = conn
+        .prepare("SELECT qualified_name, id FROM entities WHERE kind = 'module' AND status = 'active'")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<SqlResult<_>>()?;
+    let mut has_parent: HashSet<String> = edges.keys().filter(|(_, _, k)| k == "contains").map(|(_, d, _)| d.clone()).collect();
+    let mut pending: Vec<(String, String)> = nodes
+        .values()
+        .filter(|n| n["kind"] == "file" || n["kind"] == "module")
+        .map(|n| (n["id"].as_str().unwrap_or_default().to_string(), n["label"].as_str().unwrap_or_default().to_string()))
+        .chain(in_folders)
+        .collect();
+    while let Some((id, path)) = pending.pop() {
+        let Some((dir, _)) = path.rsplit_once('/') else { continue };
+        if !has_parent.insert(id.clone()) {
+            continue;
+        }
+        let folder = folders.get(dir).cloned().unwrap_or_else(|| format!("dir:{dir}"));
+        if !nodes.contains_key(&folder) {
+            nodes.insert(folder.clone(), json!({"id": folder, "label": dir, "kind": "module"}));
+            pending.push((folder.clone(), dir.to_string()));
+        }
+        edges.entry((folder.clone(), id.clone(), "contains".into())).or_insert_with(|| format!("contains:{folder}:{id}"));
+    }
+
+    // API endpoints bridge the code that calls them and the code that serves them
+    // (`jobs-api.ts → POST /jobs → jobs.py`). Tests also call endpoints, but they are not the bridge.
+    let is_test = |p: &str| p.contains("/tests/") || p.contains("/test_") || p.contains(".spec.") || p.contains(".test.");
+    let links: Vec<(String, String, String, String)> = conn
+        .prepare(
+            "SELECT en.id, en.qualified_name, e.type, s.path FROM entities en
+             JOIN edges e ON e.dst = en.id AND e.type IN ('calls', 'serves') AND e.valid_to IS NULL
+             JOIN entities s ON s.id = e.src
+             WHERE en.kind = 'endpoint' AND s.path IS NOT NULL",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+        .collect::<SqlResult<_>>()?;
+    for (endpoint, name, kind, path) in links {
+        let Some(file) = files.get(&path) else { continue };
+        if kind == "calls" && is_test(&path) {
+            continue;
+        }
+        nodes.entry(endpoint.clone()).or_insert_with(|| json!({"id": endpoint, "label": name, "kind": "endpoint"}));
+        edges.entry((file.clone(), endpoint.clone(), kind.clone())).or_insert_with(|| format!("{kind}:{file}:{endpoint}"));
+    }
+
+    let edges: Vec<Value> = edges
+        .into_iter()
+        .filter(|((s, d, _), _)| nodes.contains_key(s) && nodes.contains_key(d))
+        .map(|((source, target, kind), id)| json!({"id": id, "source": source, "target": target, "type": kind}))
+        .collect();
     Ok(json!({"nodes": nodes.into_values().collect::<Vec<_>>(), "edges": edges}))
 }
 
