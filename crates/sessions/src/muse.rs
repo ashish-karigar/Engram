@@ -32,7 +32,7 @@ pub fn parse_record(record: &Value) -> Option<Turn> {
     if p["kind"] != "run" {
         return None;
     }
-    let turn = |role, text: &str, tools| Turn { session_id: session_id.clone(), ts: ts.clone(), role, text: text.to_string(), tools, compaction: false };
+    let turn = |role, text: &str, tools| Turn { session_id: session_id.clone(), ts: ts.clone(), role, text: text.to_string(), tools, compaction: false, cwd: None };
     match kind {
         "started" => e["prompt"].as_str().filter(|t| !t.trim().is_empty()).map(|t| turn(Role::User, t, vec![])),
         "assistant_message_committed" => e["text"].as_str().filter(|t| !t.trim().is_empty()).map(|t| turn(Role::Assistant, t, vec![])),

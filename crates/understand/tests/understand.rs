@@ -165,3 +165,19 @@ fn related_notes_extend_each_other() {
     let (unrelated, _) = record_note(&db, &note("Billing", "Stripe webhooks verified"), &ctx).unwrap();
     assert!(unrelated.extends.is_none());
 }
+
+#[test]
+fn conversations_are_extracted_like_commits() {
+    let db = open_memory().unwrap();
+    let claude = ensure_actor(&db, "agent", "claude-code").unwrap();
+    let turn = |role: &str, text: &str, ts: &str| {
+        let payload = json!({"agent": "claude-code", "role": role, "text": text, "tools": []});
+        append_event(&db, NewEvent { actor_id: Some(claude.id.clone()), ts: Some(ts.into()), ..NewEvent::new("agent.turn", payload) }).unwrap();
+    };
+    turn("user", "Should we keep session cookies for the mobile app?", "2026-10-30T10:00:00Z");
+    turn("assistant", "No: the mobile app cannot hold cookies, so we will issue JWT bearer tokens.", "2026-10-30T10:00:05Z");
+    let llm = ScriptedClient::new(vec![json!({"memories": [{"type": "decision", "title": "Mobile auth", "claim": "Mobile app uses JWT bearer tokens",
+        "rationale": "it cannot hold cookies", "quote": "mobile app cannot hold cookies", "evidence": [2], "files": [], "confidence": 0.9}]}).to_string()]);
+    let report = run_pipeline(&db, &PipelineOptions::new(&llm)).unwrap();
+    assert_eq!((report.tasks, report.created), (1, 1));
+}

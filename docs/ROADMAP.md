@@ -28,7 +28,7 @@ Deadline: Nov 4, 9 PM ET. Phases are ordered so each one leaves a working, demoa
 
 | Supermemory has | Engram today | Plan |
 |---|---|---|
-| Conversation auto-capture via plugin hooks | Agent `note` calls + file/git capture | Phase F adapters (Claude Code, Codex, Muse `session.jsonl`) |
+| Conversation auto-capture via plugin hooks | Done by reading each agent's session log; injection via Claude Code hook | Hooks for Codex and Muse |
 | Dreaming / derived facts by its own model | Extraction from commits only; no `derives` generator | Phase F with Muse Spark |
 | Semantic embeddings by default | Offline hashing by default; semantic via Ollama/API | Ship Ollama setup in Settings |
 | Connectors (Drive, Gmail, Notion, GitHub, S3, crawler) | Project folder only | Later; GitHub first |
@@ -79,5 +79,8 @@ on session start and after compaction, Muse Spark extraction and `derives`.
 - [x] **E** Documents and Review tabs, search modes, Obsidian-style graph (canvas force simulation, drag,
   pan, zoom, hover focus, filters, groups, display and force sliders, local graph, Z/C shortcuts),
   Settings (extraction model, embeddings, indexing rules, upkeep intervals, test connection). Next: project overview
-- [ ] **F** session-log adapters, hook injection, Muse Spark extraction and `derives`
+- [x] **F (part)** session-log adapters for Claude Code, Codex and Muse Code (incremental, scrubbed,
+  per-agent attribution, transcripts as searchable documents, conversations fed to extraction);
+  Claude Code SessionStart hook re-injects the brief on startup, resume and after compaction
+- [ ] **F (rest)** Muse Spark extraction run for real, `derives` generation, hooks for Codex and Muse
 - [ ] **G** benchmark, demo video, submission

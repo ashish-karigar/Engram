@@ -6,7 +6,7 @@ use std::time::Duration;
 use engram_capture::git::git;
 use engram_capture::snapshot::snapshot_changes;
 use engram_core::events::list_events;
-use engram_daemon::connectors::{Agent, Endpoint, codex_plan, merge_mcp_server, muse_plan, upsert_block};
+use engram_daemon::connectors::{Agent, Endpoint, codex_plan, merge_claude_hook, merge_mcp_server, muse_plan, upsert_block};
 use engram_daemon::project::RuntimeOptions;
 use engram_daemon::secrets::ensure_token;
 use engram_daemon::{DaemonOptions, start_daemon};
@@ -104,6 +104,8 @@ async fn end_to_end_two_projects_two_agents_recovery() {
     // Only the first project to ask gets the scripted model; the web project has nothing to extract.
     runtime.llm = Arc::new(move || Some(Box::new(ScriptedClient::new(vec![reply.clone()])) as Box<dyn LlmClient>));
     runtime.pipeline_every = Duration::from_millis(200);
+    let no_logs = tempfile::tempdir().unwrap();
+    runtime.sources = engram_sessions::Sources { claude: no_logs.path().into(), codex: no_logs.path().into(), muse: no_logs.path().into() };
     runtime.capture_debounce = Duration::from_millis(50);
     runtime.snapshot_interval = Duration::from_millis(100);
     let running = start_daemon(DaemonOptions { base: home.path().to_path_buf(), port: 0, runtime: Some(runtime) }).await.unwrap();
@@ -199,5 +201,42 @@ async fn settings_are_saved_masked_validated_and_applied() {
     let id = projects[0]["id"].as_str().unwrap();
     let docs = api.get(&api.admin, &format!("/p/{id}/api/documents")).await;
     assert!(docs.as_array().unwrap().is_empty(), "{docs}");
+    running.stop().await;
+}
+
+#[test]
+fn claude_hook_merges_into_existing_settings_without_duplicates() {
+    let existing = r#"{"model":"opus","hooks":{"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"echo hi"}]}],"Stop":[]}}"#;
+    let once = merge_claude_hook(existing, "\"/Apps/Engram\" hook claude").unwrap();
+    let twice = merge_claude_hook(&once, "\"/Apps/Engram2\" hook claude").unwrap();
+    let v: Value = serde_json::from_str(&twice).unwrap();
+    assert_eq!(v["model"], "opus");
+    let starts = v["hooks"]["SessionStart"].as_array().unwrap();
+    assert_eq!(starts.len(), 2, "the user's own hook stays; Engram's is replaced, not duplicated");
+    assert_eq!(starts[1]["matcher"], "startup|resume|compact");
+    assert!(starts[1]["hooks"][0]["command"].as_str().unwrap().contains("Engram2"));
+    assert!(v["hooks"]["Stop"].is_array());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hook_prints_the_brief_for_the_project_containing_cwd() {
+    let home = tempfile::tempdir().unwrap();
+    let repo = repo(&[("docs/auth.md", "# Auth\n\nSessions use signed cookies.")], "init");
+    // SAFETY: test-only; the hook reads ENGRAM_HOME to find the running daemon.
+    unsafe { std::env::set_var("ENGRAM_HOME", home.path()) };
+    let running = start_daemon(DaemonOptions { base: home.path().to_path_buf(), port: 0, runtime: None }).await.unwrap();
+    let api = Api { url: running.url.clone(), admin: running.admin_token.clone() };
+    let project = api.post(&api.admin, "/api/projects", json!({"root": repo.path()})).await;
+    api.post(&api.admin, &format!("/p/{}/api/note", project["id"].as_str().unwrap()), json!({"type": "decision", "title": "Auth strategy", "claim": "Use signed session cookies"})).await;
+
+    let cwd = repo.path().canonicalize().unwrap().join("docs");
+    let input = json!({"hook_event_name": "SessionStart", "source": "compact", "cwd": cwd});
+    let out = tokio::task::spawn_blocking(move || engram_daemon::hook::hook_output("claude", &input)).await.unwrap().expect("brief printed");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
+    assert!(ctx.contains("just compacted") && ctx.contains("Auth strategy"), "{ctx}");
+
+    let outside = json!({"cwd": "/definitely/not/a/project"});
+    assert!(tokio::task::spawn_blocking(move || engram_daemon::hook::hook_output("claude", &outside)).await.unwrap().is_none(), "fails open");
     running.stop().await;
 }

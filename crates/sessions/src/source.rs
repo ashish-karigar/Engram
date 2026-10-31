@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
-use crate::{claude, codex, muse};
+use crate::{codex, muse};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Agent {
@@ -72,7 +72,7 @@ fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>, keep: &dyn Fn(&Path) -
     }
 }
 
-fn within(cwd: &str, root: &Path) -> bool {
+pub fn within(cwd: &str, root: &Path) -> bool {
     let root = root.to_string_lossy();
     cwd == root || cwd.starts_with(&format!("{root}/"))
 }
@@ -91,9 +91,11 @@ impl Sources {
                 let slug = claude_slug(root);
                 walk(&self.claude, 1, &mut files, &|p| {
                     let dir = p.parent().and_then(|d| d.file_name()).map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-                    p.extension().is_some_and(|e| e == "jsonl") && (dir == slug || dir.starts_with(&format!("{slug}-")))
+                    // The project's own folder, folders below it, or a parent folder where a session
+                    // started before moving in (its turns are filtered by their cwd during sync).
+                    p.extension().is_some_and(|e| e == "jsonl")
+                        && (dir == slug || dir.starts_with(&format!("{slug}-")) || slug.starts_with(&format!("{dir}-")))
                 });
-                files.retain(|f| first_cwd(f, 40, claude::cwd_of).is_none_or(|cwd| within(&cwd, root)));
             }
             Agent::Codex => {
                 walk(&self.codex, 4, &mut files, &|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("rollout-")) && p.extension().is_some_and(|e| e == "jsonl"));

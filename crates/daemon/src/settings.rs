@@ -48,6 +48,8 @@ pub struct EmbedSettings {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct IndexSettings {
+    /// Read Claude Code, Codex and Muse session logs for sessions run in the project.
+    pub sessions: bool,
     pub index_docs: bool,
     pub index_code: bool,
     pub max_file_kb: u64,
@@ -95,7 +97,7 @@ impl Default for EmbedSettings {
 
 impl Default for IndexSettings {
     fn default() -> Self {
-        IndexSettings { index_docs: true, index_code: true, max_file_kb: 512, ignore: vec![] }
+        IndexSettings { sessions: true, index_docs: true, index_code: true, max_file_kb: 512, ignore: vec![] }
     }
 }
 
@@ -200,6 +202,7 @@ impl Settings {
             capture_debounce: Duration::from_millis(500),
             snapshot_interval: Duration::from_secs(self.memory.snapshot_every_secs),
             index: self.indexing.clone(),
+            sources: engram_sessions::Sources::default(),
         }
     }
 }

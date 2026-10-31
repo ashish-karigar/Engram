@@ -2,6 +2,7 @@
 
 pub mod connectors;
 pub mod daemon;
+pub mod hook;
 pub mod paths;
 pub mod project;
 pub mod registry;

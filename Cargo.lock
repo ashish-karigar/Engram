@@ -1073,6 +1073,7 @@ dependencies = [
  "engram-embed",
  "engram-rag",
  "engram-serve",
+ "engram-sessions",
  "engram-understand",
  "hex",
  "reqwest",

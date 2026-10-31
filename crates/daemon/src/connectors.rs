@@ -147,22 +147,50 @@ pub fn muse_plan(e: Endpoint, file: PathBuf) -> ConnectPlan {
     }
 }
 
+/// The command an agent hook runs: this same binary with `hook <agent>`.
+pub fn hook_command(agent: &str) -> String {
+    let exe = std::env::current_exe().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| "engram".into());
+    format!("\"{exe}\" hook {agent}")
+}
+
+/// Add Engram's SessionStart hook to Claude Code settings (runs on startup, resume and after
+/// compaction). Existing hooks are kept; an older Engram hook is replaced, never duplicated.
+pub fn merge_claude_hook(json_text: &str, command: &str) -> Result<String> {
+    let mut data: Value = if json_text.trim().is_empty() { json!({}) } else { serde_json::from_str(json_text)? };
+    let root = data.as_object_mut().ok_or_else(|| Error::msg("Claude settings is not a JSON object"))?;
+    let hooks = root.entry("hooks").or_insert_with(|| json!({})).as_object_mut().ok_or_else(|| Error::msg("hooks is not an object"))?;
+    let starts = hooks.entry("SessionStart").or_insert_with(|| json!([])).as_array_mut().ok_or_else(|| Error::msg("SessionStart is not a list"))?;
+    starts.retain(|group| !group["hooks"].as_array().into_iter().flatten().any(|h| h["command"].as_str().is_some_and(|c| c.ends_with(" hook claude"))));
+    starts.push(json!({"matcher": "startup|resume|compact", "hooks": [{"type": "command", "command": command, "timeout": 10}]}));
+    Ok(serde_json::to_string_pretty(&data)? + "\n")
+}
+
 fn claude_plan(e: Endpoint) -> ConnectPlan {
     let url = e.mcp_url();
-    let preview = format!("Run: claude mcp add --transport http --scope user engram {url} --header \"Authorization: Bearer <token>\"");
+    let settings = home().join(".claude/settings.json");
+    let command = hook_command("claude");
+    let preview = format!(
+        "1. Run: claude mcp add --transport http --scope user engram {url} --header \"Authorization: Bearer <token>\"\n\
+         2. Add a SessionStart hook to {} (startup, resume and after compaction):\n   {command}\n   It injects the project brief so Claude re-orients after compacting.",
+        settings.display()
+    );
     ConnectPlan {
         agent: Agent::Claude,
         preview,
         apply: Box::new(move || {
+            backup(&settings)?;
+            let current = std::fs::read_to_string(&settings).unwrap_or_default();
+            std::fs::write(&settings, merge_claude_hook(&current, &command)?)?;
+            let hook_note = format!("Hook added to {} (backup: {}.engram.bak).", settings.display(), settings.display());
+
             let run = |args: &[&str]| Command::new("claude").args(args).output();
             let _ = run(&["mcp", "remove", "--scope", "user", "engram"]);
             let header = format!("Authorization: Bearer {}", e.token);
-            let out = run(&["mcp", "add", "--transport", "http", "--scope", "user", "engram", &url, "--header", &header])
-                .map_err(|err| Error::msg(format!("could not run `claude` ({err}); run the command above yourself")))?;
-            if !out.status.success() {
-                return Err(Error::msg(String::from_utf8_lossy(&out.stderr).trim().to_string()));
+            match run(&["mcp", "add", "--transport", "http", "--scope", "user", "engram", &url, "--header", &header]) {
+                Ok(out) if out.status.success() => Ok(format!("Registered with Claude Code (user scope). {hook_note} Start a new session.")),
+                Ok(out) => Err(Error::msg(format!("{hook_note} But `claude mcp add` failed: {}", String::from_utf8_lossy(&out.stderr).trim()))),
+                Err(_) => Ok(format!("{hook_note} The `claude` command was not found, so run step 1 yourself in a terminal.")),
             }
-            Ok("Registered with Claude Code (user scope). Start a new session.".into())
         }),
     }
 }

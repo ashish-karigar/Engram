@@ -25,6 +25,11 @@ fn daemon_info(state: tauri::State<'_, DaemonState>) -> Result<DaemonInfo, Strin
 }
 
 fn main() {
+    // Agent hooks call this same binary: `Engram hook claude`. Answer and exit without a window.
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("hook") {
+        std::process::exit(engram_daemon::hook::run_hook(args.get(2).map_or("claude", String::as_str)));
+    }
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![daemon_info])

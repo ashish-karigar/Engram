@@ -8,6 +8,9 @@ function summary(e: EventEntry): string {
     case "git.commit": return `${String(p.sha).slice(0, 7)} ${p.subject}`;
     case "file.change": return (p.files as { path: string }[]).map((f) => f.path).join(", ");
     case "agent.note": return p.title;
+    case "agent.turn": return `${p.role === "user" ? "user" : p.agent}: ${String(p.text || (p.tools ?? []).map((t: { name: string }) => t.name).join(", ")).slice(0, 160)}`;
+    case "agent.compacted": return `${p.agent} compacted its context`;
+    case "document.ingested": return `${p.title} (${p.action}, ${p.chunks} chunks)`;
     case "snapshot.created": return `Saved uncommitted work to ${p.ref}`;
     default: return "";
   }

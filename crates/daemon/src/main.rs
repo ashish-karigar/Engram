@@ -26,6 +26,8 @@ enum Command {
     Remove { dir: PathBuf },
     /// List watched projects.
     List,
+    /// Print the project brief for an agent hook (reads the hook's JSON on stdin). Never fails.
+    Hook { agent: String },
     /// Connect an agent (claude, codex, muse) to a project. Shows the change; --apply makes it.
     Connect {
         agent: String,
@@ -82,6 +84,10 @@ async fn run(command: Command) -> Result<(), String> {
             daemon.stop().await;
             Ok(())
         }
+        Command::Hook { agent } => {
+            let code = tokio::task::spawn_blocking(move || engram_daemon::hook::run_hook(&agent)).await.unwrap_or(0);
+            std::process::exit(code);
+        }
         other => tokio::task::spawn_blocking(move || client_command(other)).await.map_err(|e| e.to_string())?,
     }
 }
@@ -115,7 +121,7 @@ fn client_command(command: Command) -> Result<(), String> {
                 None => println!("\nNothing changed. Re-run with --apply to make this change."),
             }
         }
-        Command::Daemon { .. } => unreachable!(),
+        Command::Daemon { .. } | Command::Hook { .. } => unreachable!(),
     }
     Ok(())
 }

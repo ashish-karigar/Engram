@@ -93,6 +93,14 @@ fn sync_is_incremental_attributed_scrubbed_and_searchable() {
     write(&log, &claude_lines(&cwd)[..2]);
     let other = sources.claude.join(claude_slug(Path::new("/elsewhere"))).join("s9.jsonl");
     write(&other, &claude_lines("/elsewhere"));
+    // A session started in the parent folder: only turns whose cwd is inside the project count.
+    let parent = root_path.parent().unwrap();
+    let parent_log = sources.claude.join(claude_slug(parent)).join("s2.jsonl");
+    let mut outside = claude_lines(&parent.to_string_lossy())[..1].to_vec();
+    outside[0] = outside[0].replace("\"s1\"", "\"s2\"");
+    let mut inside = claude_lines(&cwd)[1..2].to_vec();
+    inside[0] = inside[0].replace("\"s1\"", "\"s2\"");
+    write(&parent_log, &[outside, inside].concat());
     write(&sources.codex.join("2026/10/30/rollout-a.jsonl"), &[
         json!({"timestamp": "2026-10-30T12:00:00Z", "type": "session_meta", "payload": {"id": "cx1", "cwd": cwd}}).to_string(),
         json!({"timestamp": "2026-10-30T12:00:01Z", "type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "token: ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa is set"}]}}).to_string(),
@@ -101,7 +109,7 @@ fn sync_is_incremental_attributed_scrubbed_and_searchable() {
     let db = open_memory().unwrap();
     let e = HashEmbedder::default();
     let first = sync_sessions(&db, &e, &root_path, &sources).unwrap();
-    assert_eq!(first.turns, 3, "two Claude turns + one Codex turn; the other project's log is ignored");
+    assert_eq!(first.turns, 4, "two Claude turns, one from a parent-folder session, one Codex turn; other projects ignored");
     assert_eq!(sync_sessions(&db, &e, &root_path, &sources).unwrap().turns, 0, "nothing new, nothing re-read");
 
     // A half-written line is left for the next sync.
@@ -117,7 +125,7 @@ fn sync_is_incremental_attributed_scrubbed_and_searchable() {
     assert!(!turns.iter().any(|t| t.payload["text"].as_str().unwrap().contains("ghp_")), "secrets are scrubbed");
 
     let docs = list_documents(&db, Some("session"), 10).unwrap();
-    assert_eq!(docs.len(), 2);
+    assert_eq!(docs.len(), 3);
     assert!(docs.iter().any(|d| d.title.starts_with("Claude Code · 2026-10-30 · Why do we use a voxel grid")));
     let hits = search_chunks(&db, Some(&e), "why voxel grid instead of radius outlier", 3).unwrap();
     assert!(hits[0].content.contains("80ms per frame"), "{:?}", hits.iter().map(|h| &h.content).collect::<Vec<_>>());

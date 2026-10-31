@@ -18,7 +18,7 @@ pub fn parse_line(line: &str, session_id: &str) -> Option<Turn> {
     let v: Value = serde_json::from_str(line).ok()?;
     let ts = v["timestamp"].as_str().unwrap_or_default().to_string();
     let p = &v["payload"];
-    let turn = |role, text: String, tools, compaction| Turn { session_id: session_id.to_string(), ts: ts.clone(), role, text, tools, compaction };
+    let turn = |role, text: String, tools, compaction| Turn { session_id: session_id.to_string(), ts: ts.clone(), role, text, tools, compaction, cwd: None };
     match (v["type"].as_str()?, p["type"].as_str()) {
         ("compacted", _) => Some(turn(Role::Assistant, String::new(), vec![], true)),
         ("response_item", Some("message")) => {

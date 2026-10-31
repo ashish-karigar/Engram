@@ -15,7 +15,7 @@ use crate::tasks::{Task, group_tasks};
 use crate::verify::verify_candidate;
 
 const CURSOR_KEY: &str = "understand.cursor";
-const SKIP_KINDS: &[&str] = &["snapshot.created", "agent.note", "document.ingested"];
+const SKIP_KINDS: &[&str] = &["snapshot.created", "agent.note", "document.ingested", "agent.compacted"];
 
 pub struct PipelineOptions<'a> {
     pub llm: &'a dyn LlmClient,
@@ -40,10 +40,12 @@ pub struct PipelineReport {
     pub error: Option<String>,
 }
 
-/// A task is worth a model call only if it carries intent: a commit, or several file changes.
+/// A task is worth a model call only if it carries intent: a commit, several file changes, or a
+/// conversation where the user asked and the agent answered in words.
 fn is_significant(task: &Task) -> bool {
     let count = |kind: &str| task.events.iter().filter(|e| e.kind == kind).count();
-    count("git.commit") > 0 || count("file.change") >= 3
+    let said = |role: &str| task.events.iter().any(|e| e.kind == "agent.turn" && e.payload["role"] == role && e.payload["text"].as_str().is_some_and(|t| !t.is_empty()));
+    count("git.commit") > 0 || count("file.change") >= 3 || (said("user") && said("assistant"))
 }
 
 fn known_paths(events: &[StoredEvent]) -> HashSet<String> {

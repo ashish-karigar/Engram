@@ -18,13 +18,14 @@ pub struct Candidate {
 
 const ALLOWED: &[&str] = &["decision", "rejected_option", "dead_end", "fact", "preference"];
 
-pub const SYSTEM_PROMPT: &str = r#"You extract durable engineering memory from a log of coding-agent and developer activity.
+pub const SYSTEM_PROMPT: &str = r#"You extract durable engineering memory from a log of coding-agent and developer activity (commits, file changes, and user/agent conversation turns).
 Return ONLY JSON: {"memories":[{"type","title","claim","rationale","quote","evidence","files","confidence"}]}.
 - type: decision | rejected_option | dead_end | fact | preference
 - decision: something chosen, with WHY in "rationale". rejected_option: an alternative considered and not chosen, with why. dead_end: an attempt that failed.
 - quote: a short VERBATIM snippet copied from one cited event that supports the claim. Never invent quotes.
 - evidence: the event numbers (the #N in the log) you used.
 - files: project file paths involved. confidence: 0..1.
+Prefer decisions and their reasons, rejected alternatives, failed attempts, and user preferences stated in conversation.
 Skip trivia, formatting, and anything you cannot ground in the log. An empty list is a good answer."#;
 
 pub fn extract_candidates(llm: &dyn LlmClient, digest: &str) -> Result<Vec<Candidate>> {

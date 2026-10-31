@@ -3,14 +3,15 @@ import type { ProjectApi } from "../api/client.ts";
 import type { DocumentView } from "../api/types.ts";
 import { usePolling } from "../hooks/usePolling.ts";
 
-type Filter = "all" | "docs" | "code" | "added";
+type Filter = "all" | "docs" | "code" | "sessions" | "added";
 
 const isCode = (d: DocumentView) => d.mime.startsWith("text/x-");
 const FILTERS: [Filter, string, (d: DocumentView) => boolean][] = [
   ["all", "All", () => true],
   ["docs", "Docs", (d) => !isCode(d) && d.source === "project"],
   ["code", "Code", isCode],
-  ["added", "Added", (d) => d.source !== "project"],
+  ["sessions", "Conversations", (d) => d.source === "session"],
+  ["added", "Added", (d) => d.source !== "project" && d.source !== "session"],
 ];
 
 /** Everything Engram can quote from: project docs and code (indexed automatically) and added documents. */
@@ -54,7 +55,7 @@ export function DocumentsPanel({ api, onOpen }: { api: ProjectApi; onOpen(id: st
               <b className="clip">{d.title}</b>
               <span className="faint">{d.chunkCount} chunks · {d.charCount < 1000 ? `${d.charCount} chars` : `${Math.round(d.charCount / 1000)}k chars`} · v{d.version}</span>
               <span className="chip small">{isCode(d) ? d.mime.replace("text/x-", "") : d.source}</span>
-              {d.source !== "project" && (
+              {d.source !== "project" && d.source !== "session" && (
                 <button className="btn ghost danger" onClick={(e) => { e.stopPropagation(); api.deleteDocument(d.id).then(reload); }}>Remove</button>
               )}
             </div>

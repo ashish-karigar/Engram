@@ -30,6 +30,7 @@ and serves small, token-budgeted answers over MCP and HTTP. One app watches many
 | `engram-core` | Schema, migrations, event log, memories, graph, decay, request log. Only SQLite I/O. | – |
 | `engram-embed` | `Embedder` trait (built-in hashing, Ollama, OpenAI-compatible), vectors in SQLite, exact top-k, RRF. | core |
 | `engram-rag` | Documents: extractors (markdown, HTML, PDF, text, code), heading/AST-aware chunking, ingest pipeline, hybrid chunk search. | core, embed |
+| `engram-sessions` | Parsers for Claude Code, Codex and Muse session logs; incremental sync; transcripts. | core, capture, embed, rag |
 | `engram-capture` | Watch files and git, scrub secrets, save uncommitted work to a git ref. | core |
 | `engram-understand` | Index Python (tree-sitter), group events into tasks, extract and verify memories, notes. | core, capture |
 | `engram-serve` | Hybrid recall over memories and documents, profile, token-budget packer, MCP server, HTTP API, per-agent tokens. | core, understand, embed, rag |
@@ -115,6 +116,20 @@ Engram is an always-on background process, so idle memory and startup matter. A 
 Tauri keeps it small, ships as one binary with no Node requirement, and the daemon runs inside the
 desktop app process. The UI is web technology because the graph is drawn by Cytoscape; it only speaks
 HTTP, so the shell is replaceable.
+
+## Agent conversations
+
+`engram-sessions` reads each agent's own session log for sessions run inside a watched project:
+Claude Code (`~/.claude/projects/<slug>/*.jsonl`), Codex (`~/.codex/sessions/**/rollout-*.jsonl`) and
+Muse Code (`~/.local/share/muse/sessions/**/session.jsonl`, an event log with nested frames). Only
+appended whole lines are read (byte offsets per file); each user or assistant turn becomes a scrubbed
+`agent.turn` event attributed to that agent's actor, compactions become `agent.compacted`, and every
+changed session is re-rendered as a Markdown transcript document, so conversations are searchable and
+feed memory extraction. Thinking blocks and tool outputs are not stored.
+
+`engram hook claude` (installed by the Claude connector as a SessionStart hook for startup, resume and
+compact) prints the project brief as `additionalContext`, so the agent re-orients right after
+compacting. It fails open: no daemon or no project means no output and exit 0.
 
 ## Settings
 

@@ -25,6 +25,9 @@ pub struct Turn {
     pub tools: Vec<ToolUse>,
     /// The agent compacted its context here: the moment Engram's brief matters most.
     pub compaction: bool,
+    /// Working directory recorded with this turn, when the log has one per turn.
+    #[serde(skip)]
+    pub cwd: Option<String>,
 }
 
 impl Turn {

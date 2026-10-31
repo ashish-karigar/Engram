@@ -21,7 +21,10 @@ repository was written during the event.
    packer picks what fits. No model call at read time.
 5. **Ground in documents**: READMEs, design docs, PDFs and source files in the project are chunked,
    embedded and searched next to memories ("SuperRAG", locally). Agents can add documents too.
-6. **Observe**: every agent request is logged with what came back and why.
+6. **Read agent conversations**: Claude Code, Codex and Muse Code session logs are read locally,
+   scrubbed, and turned into searchable transcripts and extracted decisions. A Claude Code hook
+   re-injects the project brief after the agent compacts its context.
+7. **Observe**: every agent request is logged with what came back and why.
 
 Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Decisions: [docs/ACTION_PLAN.md](docs/ACTION_PLAN.md).
 
@@ -30,7 +33,7 @@ Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Decisions: [docs/ACTION_PL
 Requires Rust (stable), Node 20+, and git.
 
 ```bash
-cargo test --workspace            # 57 tests, including a two-project, two-agent end-to-end run
+cargo test --workspace            # 65 tests, including a two-project, two-agent end-to-end run
 npm install
 npm run app:dev                   # desktop app (Tauri) with hot reload
 npm run app:build                 # release bundle

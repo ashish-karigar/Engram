@@ -112,7 +112,8 @@ export function SettingsPage({ api }: { api: Api }) {
 
         <div className="s-card">
           <h3>Indexing</h3>
-          <p className="muted">Which project files become searchable documents. Files git ignores are always skipped.</p>
+          <p className="muted">What becomes searchable. Conversations are read locally from each agent's own logs, scrubbed of secrets, and never leave this machine. Files git ignores are always skipped.</p>
+          <div className="s-row"><label className="toggle"><span>Agent conversations (Claude Code, Codex, Muse Code session logs for this project)</span><input type="checkbox" checked={idx.sessions} onChange={(e) => set("indexing", { sessions: e.target.checked })} /><i /></label></div>
           <div className="s-row"><label className="toggle"><span>Documents (Markdown, text, HTML, PDF, configs)</span><input type="checkbox" checked={idx.indexDocs} onChange={(e) => set("indexing", { indexDocs: e.target.checked })} /><i /></label></div>
           <div className="s-row"><label className="toggle"><span>Source code</span><input type="checkbox" checked={idx.indexCode} onChange={(e) => set("indexing", { indexCode: e.target.checked })} /><i /></label></div>
           <div className="s-grid">

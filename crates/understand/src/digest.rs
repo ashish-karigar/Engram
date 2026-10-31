@@ -35,6 +35,15 @@ fn render(e: &StoredEvent, diff: &str) -> String {
             format!("files changed: {}", files.join(", "))
         }
         "agent.note" => format!("agent note: {p}"),
+        "agent.turn" => {
+            let who = if p["role"] == "user" { "user" } else { p["agent"].as_str().unwrap_or("agent") };
+            let tools: Vec<String> = p["tools"].as_array().into_iter().flatten().map(|t| {
+                let files: Vec<&str> = t["files"].as_array().into_iter().flatten().filter_map(|f| f.as_str()).collect();
+                format!("{} {}", t["name"].as_str().unwrap_or("tool"), files.join(", ")).trim().to_string()
+            }).collect();
+            let tail = if tools.is_empty() { String::new() } else { format!(" [tools: {}]", tools.join("; ")) };
+            format!("{who}: {}{tail}", p["text"].as_str().unwrap_or(""))
+        }
         other => format!("{other}: {}", p.to_string().chars().take(500).collect::<String>()),
     }
 }

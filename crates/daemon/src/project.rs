@@ -14,6 +14,7 @@ use engram_core::{Connection, Result};
 use engram_embed::{Embedder, embedder_from_env};
 use engram_embed::store::{chunks_missing, embed_and_store, memories_missing};
 use engram_rag::project::{ingest_file, should_index};
+use engram_sessions::{Sources, sync_sessions};
 use engram_serve::{ProjectInfo, ProjectRef};
 use engram_understand::codeindex::index_python;
 use engram_understand::llm::LlmClient;
@@ -21,6 +22,9 @@ use engram_understand::pipeline::{PipelineOptions, run_pipeline};
 
 use crate::paths::{ProjectPaths, project_paths};
 use crate::settings::{IndexSettings, ignored};
+
+/// How often agent session logs are checked for new turns. Reads only appended bytes.
+const SESSIONS_EVERY: Duration = Duration::from_secs(10);
 
 /// Builds the extraction model. A factory, so each project thread owns its own client.
 pub type LlmFactory = Arc<dyn Fn() -> Option<Box<dyn LlmClient>> + Send + Sync>;
@@ -35,6 +39,8 @@ pub struct RuntimeOptions {
     pub capture_debounce: Duration,
     pub snapshot_interval: Duration,
     pub index: IndexSettings,
+    /// Where agents keep their session logs.
+    pub sources: Sources,
 }
 
 impl Default for RuntimeOptions {
@@ -47,6 +53,7 @@ impl Default for RuntimeOptions {
             capture_debounce: Duration::from_millis(500),
             snapshot_interval: Duration::from_secs(15),
             index: IndexSettings::default(),
+            sources: Sources::default(),
         }
     }
 }
@@ -160,6 +167,7 @@ fn spawn_upkeep(paths: &ProjectPaths, opts: RuntimeOptions, stop: Arc<AtomicBool
         }
         let llm = (opts.llm)();
         let (mut last_pipeline, mut last_decay) = (Instant::now(), Instant::now());
+        let mut last_sessions = Instant::now() - SESSIONS_EVERY;
         while !stop.load(Ordering::SeqCst) {
             std::thread::sleep(Duration::from_millis(100));
             if let Some(llm) = llm.as_deref().filter(|_| last_pipeline.elapsed() >= opts.pipeline_every) {
@@ -168,6 +176,12 @@ fn spawn_upkeep(paths: &ProjectPaths, opts: RuntimeOptions, stop: Arc<AtomicBool
                 let mut pipeline = PipelineOptions::new(llm);
                 pipeline.get_diff = Some(&diff);
                 let _ = run_pipeline(&conn, &pipeline);
+            }
+            if opts.index.sessions && last_sessions.elapsed() >= SESSIONS_EVERY {
+                last_sessions = Instant::now();
+                if let Err(err) = sync_sessions(&conn, opts.embedder.as_ref(), &root, &opts.sources) {
+                    eprintln!("engram: session sync failed: {err}");
+                }
             }
             if let Ok(missing) = memories_missing(&conn, &opts.embedder.model_id(), 200) {
                 if !missing.is_empty() {

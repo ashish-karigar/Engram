@@ -11,6 +11,7 @@ engram-understand = { path = "../understand" }
 engram-serve = { path = "../serve" }
 engram-embed = { path = "../embed" }
 engram-rag = { path = "../rag" }
+engram-sessions = { path = "../sessions" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.11.1"
@@ -26,5 +27,6 @@ name = "engram"
 path = "src/main.rs"
 
 [dev-dependencies]
+engram-sessions = { path = "../sessions" }
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls"] }
 tempfile = "3.27.0"

@@ -20,7 +20,7 @@ pub fn parse_line(line: &str) -> Option<Turn> {
     let session_id = v["sessionId"].as_str().unwrap_or_default().to_string();
     let ts = v["timestamp"].as_str().unwrap_or_default().to_string();
     if v["isCompactSummary"].as_bool() == Some(true) {
-        return Some(Turn { session_id, ts, role, text: String::new(), tools: vec![], compaction: true });
+        return Some(Turn { session_id, ts, role, text: String::new(), tools: vec![], compaction: true, cwd: v["cwd"].as_str().map(String::from) });
     }
     let content = &v["message"]["content"];
     let mut texts: Vec<&str> = content.as_str().into_iter().collect();
@@ -37,6 +37,6 @@ pub fn parse_line(line: &str) -> Option<Turn> {
     }
     let text = texts.join("\n");
     let text = if role == Role::User && is_injected(&text) { String::new() } else { text };
-    let turn = Turn { session_id, ts, role, text, tools, compaction: false };
+    let turn = Turn { session_id, ts, role, text, tools, compaction: false, cwd: v["cwd"].as_str().map(String::from) };
     (!turn.is_empty()).then_some(turn)
 }
