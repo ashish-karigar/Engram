@@ -14,6 +14,8 @@ export interface Focus {
   selected: string | null;
   /** A clicked node's traced flow: each line and the step it was reached at. */
   path?: Map<string, number>;
+  /** And how many steps from the clicked node each traced node is. */
+  depth?: Map<string, number>;
 }
 
 const ACCENT = "#7c97ff";
@@ -42,7 +44,7 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
     ctx.strokeStyle = hot ? (focus.path ? stepColor(at) : ACCENT) : focus.id ? "rgba(255,255,255,0.04)" : l.type === "supersedes" ? "rgba(177,132,255,0.35)" : "rgba(200,210,235,0.16)";
     ctx.lineWidth = (hot ? 1.6 : 1) * s.linkWidth / cam.k;
     // Lines to the first neighbours are full strength; each step further along the trace is dimmer.
-    ctx.globalAlpha = Math.min(l.source.fade!, l.target.fade!) * (hot ? Math.max(0.15, 0.72 ** at) : 1);
+    ctx.globalAlpha = Math.min(l.source.fade!, l.target.fade!) * (hot ? Math.max(0.12, 0.6 ** at) : 1);
     ctx.setLineDash(l.type === "supersedes" || l.type === "derives" ? [4 / cam.k, 3 / cam.k] : []);
     ctx.beginPath();
     ctx.moveTo(l.source.sx!, l.source.sy!);
@@ -101,11 +103,13 @@ function labels(ctx: CanvasRenderingContext2D, cam: Camera, nodes: SimNode[], s:
   const placed: [number, number, number, number][] = [];
   const order = [...nodes].sort((a, b) => Number(focus.neighbours.has(b.id)) - Number(focus.neighbours.has(a.id)) || b.degree - a.degree);
   for (const n of order) {
-    const focused = focus.id !== null && focus.neighbours.has(n.id);
-    // On a long traced path only the clicked node is always labelled; the rest give way to overlaps.
+    // On a traced path, only the clicked node and its first neighbours are labelled outright;
+    // deeper nodes are labelled as you zoom in, like the rest of the graph.
+    const focused = focus.id !== null && focus.neighbours.has(n.id) && (focus.depth?.get(n.id) ?? 0) <= 1;
     const forced = focused && (!focus.path || n.id === focus.id);
     const hub = n.degree >= 8 && cam.k > s.textFade * 0.35;
-    const alpha = (focused ? 1 : focus.id ? 0 : hub ? Math.max(zoomAlpha, 0.85) : zoomAlpha) * (focused ? 1 : n.fade!);
+    const deeper = !focused && focus.path !== undefined && focus.neighbours.has(n.id);
+    const alpha = (focused ? 1 : deeper ? zoomAlpha : focus.id ? 0 : hub ? Math.max(zoomAlpha, 0.85) : zoomAlpha) * (focused ? 1 : n.fade!);
     if (alpha <= 0.02) continue;
     const text = shortLabel(n);
     const w = ctx.measureText(text).width, h = size * 1.2;

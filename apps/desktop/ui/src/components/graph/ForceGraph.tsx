@@ -78,7 +78,7 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onZoom, comm
       const neighbours = path?.nodes ?? new Set(focusId ? [focusId, ...(adj.get(focusId) ?? [])] : []);
       const dpr = window.devicePixelRatio || 1;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      draw(ctx, size.current.w, size.current.h, cam.current, nodes, links, live.current.settings, { id: focusId, neighbours, selected: selectedId, path: path?.links });
+      draw(ctx, size.current.w, size.current.h, cam.current, nodes, links, live.current.settings, { id: focusId, neighbours, selected: selectedId, path: path?.links, depth: path?.depth });
     });
   };
 

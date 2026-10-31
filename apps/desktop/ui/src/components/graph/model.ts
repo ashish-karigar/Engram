@@ -125,6 +125,8 @@ export interface Trace {
   nodes: Set<string>;
   /** Each highlighted line and the step it was reached at (0 = touching the start). */
   links: Map<string, number>;
+  /** How many steps from the start each node is (the start is 0, its neighbours 1). */
+  depth: Map<string, number>;
 }
 
 /**
@@ -132,13 +134,15 @@ export interface Trace {
  * contains, along the imports of its files, out through the API calls they make, and across the
  * API to the files that serve them, where it stops. A top-level part (`frontend`) stops at the
  * API, its boundary. The start's own neighbours are always shown, like a hover.
+ * The result is a tree: each node lights up along the one line that first reached it, so a web
+ * of imports shows as clean branches rather than every crossing line at once.
  */
 export function trace(nodes: SimNode[], links: SimLink[], start: string): Trace {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const from = new Map<string, SimLink[]>();
   for (const l of links) for (const id of [l.source.id, l.target.id]) from.set(id, [...(from.get(id) ?? []), l]);
   const origin = byId.get(start);
-  const result: Trace = { nodes: new Set([start]), links: new Map() };
+  const result: Trace = { nodes: new Set([start]), links: new Map(), depth: new Map([[start, 0]]) };
   if (!origin) return result;
   const crosses = origin.part !== origin.id;
   const forward = (u: SimNode, l: SimLink) =>
@@ -153,10 +157,10 @@ export function trace(nodes: SimNode[], links: SimLink[], start: string): Trace 
       for (const l of from.get(u.id) ?? []) {
         const v = l.source.id === u.id ? l.target : l.source;
         const flows = forward(u, l);
-        if (!flows && step > 0) continue;
-        if (!result.links.has(l.id)) result.links.set(l.id, step);
-        if (result.nodes.has(v.id)) continue;
+        if ((!flows && step > 0) || result.nodes.has(v.id)) continue;
+        result.links.set(l.id, step);
         result.nodes.add(v.id);
+        result.depth.set(v.id, step + 1);
         if (v.kind === "api") api ??= { node: v, step: step + 1 };
         else if (flows) next.push(v);
       }
@@ -170,9 +174,10 @@ export function trace(nodes: SimNode[], links: SimLink[], start: string): Trace 
     for (const caller of result.nodes) for (const s of api.node.routes?.[caller] ?? []) reached.add(s);
     for (const l of from.get(api.node.id) ?? []) {
       const v = l.source.id === api.node.id ? l.target : l.source;
-      if (l.type !== "serves" || !reached.has(v.id)) continue;
+      if (l.type !== "serves" || !reached.has(v.id) || result.nodes.has(v.id)) continue;
       result.links.set(l.id, api.step);
       result.nodes.add(v.id);
+      result.depth.set(v.id, api.step + 1);
     }
   }
   return result;
