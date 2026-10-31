@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
-use crate::{codex, muse};
+use crate::{claude, codex, muse};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Agent {
@@ -96,6 +96,13 @@ impl Sources {
                     p.extension().is_some_and(|e| e == "jsonl")
                         && (dir == slug || dir.starts_with(&format!("{slug}-")) || slug.starts_with(&format!("{dir}-")))
                 });
+                // A session started in a parent folder belongs here only if it worked inside the
+                // project at some point; then the whole conversation counts, since the planning
+                // usually happens before the agent moves into the folder.
+                files.retain(|f| {
+                    let dir = f.parent().and_then(|d| d.file_name()).map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                    dir == slug || dir.starts_with(&format!("{slug}-")) || mentions_cwd_within(f, root)
+                });
             }
             Agent::Codex => {
                 walk(&self.codex, 4, &mut files, &|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("rollout-")) && p.extension().is_some_and(|e| e == "jsonl"));
@@ -111,4 +118,9 @@ impl Sources {
         files.sort();
         files
     }
+}
+
+fn mentions_cwd_within(path: &Path, root: &Path) -> bool {
+    let Ok(file) = File::open(path) else { return false };
+    BufReader::new(file).lines().map_while(Result::ok).any(|l| claude::cwd_of(&l).is_some_and(|c| within(&c, root)))
 }

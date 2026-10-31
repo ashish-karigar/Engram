@@ -93,7 +93,7 @@ fn sync_is_incremental_attributed_scrubbed_and_searchable() {
     write(&log, &claude_lines(&cwd)[..2]);
     let other = sources.claude.join(claude_slug(Path::new("/elsewhere"))).join("s9.jsonl");
     write(&other, &claude_lines("/elsewhere"));
-    // A session started in the parent folder: only turns whose cwd is inside the project count.
+    // A session started in the parent folder that later worked inside the project counts whole.
     let parent = root_path.parent().unwrap();
     let parent_log = sources.claude.join(claude_slug(parent)).join("s2.jsonl");
     let mut outside = claude_lines(&parent.to_string_lossy())[..1].to_vec();
@@ -109,7 +109,7 @@ fn sync_is_incremental_attributed_scrubbed_and_searchable() {
     let db = open_memory().unwrap();
     let e = HashEmbedder::default();
     let first = sync_sessions(&db, &e, &root_path, &sources).unwrap();
-    assert_eq!(first.turns, 4, "two Claude turns, one from a parent-folder session, one Codex turn; other projects ignored");
+    assert_eq!(first.turns, 5, "two Claude turns, two from a parent-folder session, one Codex turn; other projects ignored");
     assert_eq!(sync_sessions(&db, &e, &root_path, &sources).unwrap().turns, 0, "nothing new, nothing re-read");
 
     // A half-written line is left for the next sync.
@@ -126,7 +126,28 @@ fn sync_is_incremental_attributed_scrubbed_and_searchable() {
 
     let docs = list_documents(&db, Some("session"), 10).unwrap();
     assert_eq!(docs.len(), 3);
-    assert!(docs.iter().any(|d| d.title.starts_with("Claude Code · 2026-10-30 · Why do we use a voxel grid")));
+    assert!(docs.iter().any(|d| d.title.starts_with("Claude Code session · 2026-10-30") && d.metadata["topic"].as_str().unwrap().starts_with("Why do we use a voxel grid")));
     let hits = search_chunks(&db, Some(&e), "why voxel grid instead of radius outlier", 3).unwrap();
     assert!(hits[0].content.contains("80ms per frame"), "{:?}", hits.iter().map(|h| &h.content).collect::<Vec<_>>());
+}
+
+#[test]
+fn tool_only_turns_fold_into_the_spoken_turn() {
+    let home = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let root_path = root.path().canonicalize().unwrap();
+    let cwd = root_path.to_string_lossy().to_string();
+    let sources = Sources { claude: home.path().join("claude"), codex: home.path().join("c"), muse: home.path().join("m") };
+    let line = |content: serde_json::Value, ts: &str| json!({"type": "assistant", "sessionId": "s1", "timestamp": ts, "cwd": cwd, "message": {"role": "assistant", "content": content}}).to_string();
+    write(&sources.claude.join(claude_slug(&root_path)).join("s1.jsonl"), &[
+        line(json!([{"type": "text", "text": "I will update the lidar filter."}]), "2026-10-30T10:00:00Z"),
+        line(json!([{"type": "tool_use", "name": "Edit", "input": {"file_path": "lidar.py"}}]), "2026-10-30T10:00:01Z"),
+        line(json!([{"type": "tool_use", "name": "Bash", "input": {"command": "pytest"}}]), "2026-10-30T10:00:02Z"),
+    ]);
+    let db = open_memory().unwrap();
+    sync_sessions(&db, &HashEmbedder::default(), &root_path, &sources).unwrap();
+    let docs = list_documents(&db, Some("session"), 10).unwrap();
+    assert_eq!(docs[0].chunk_count, 1, "tool-only turns do not become chunks");
+    let content: String = db.query_row("SELECT content FROM chunks", [], |r| r.get(0)).unwrap();
+    assert!(content.contains("I will update the lidar filter.") && content.contains("Edit lidar.py; Bash"));
 }

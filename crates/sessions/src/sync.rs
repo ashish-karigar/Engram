@@ -11,7 +11,7 @@ use engram_core::{Connection, Result};
 use engram_embed::Embedder;
 use serde_json::json;
 
-use crate::source::{AGENTS, Agent, Sources, within};
+use crate::source::{AGENTS, Agent, Sources};
 use crate::transcript::rebuild_transcript;
 use crate::turn::Turn;
 use crate::{claude, codex, muse};
@@ -103,8 +103,7 @@ pub fn sync_sessions(conn: &Connection, embedder: &dyn Embedder, root: &Path, so
             let mut session_id = get_meta(conn, &format!("sessions.sid:{key}"))?.unwrap_or(fallback);
             let mut at = start;
             for line in text.split_inclusive('\n') {
-                let turns = parse(agent, line, &mut session_id).into_iter().filter(|t| t.cwd.as_deref().is_none_or(|c| within(c, root)));
-                for (i, turn) in turns.enumerate() {
+                for (i, turn) in parse(agent, line, &mut session_id).into_iter().enumerate() {
                     let op_id = format!("turn:{}:{}:{at}:{i}", agent.id(), key);
                     let external = record(conn, agent, &actor_id, &turn, op_id)?;
                     changed.insert((agent.id().to_string(), external));
