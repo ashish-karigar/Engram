@@ -111,6 +111,7 @@ pub fn store_file(conn: &Connection, file: &str, net: &Net, symbols: &[Symbol], 
 
 #[derive(Debug, Default, Serialize)]
 pub struct MapStats {
+    pub calls: crate::calls::CallStats,
     pub areas: usize,
     pub endpoints: usize,
     pub served: usize,
@@ -196,7 +197,7 @@ fn endpoint_name(method: &str, path: &str, prefix: bool) -> String {
 /// Rebuild areas, endpoints, services and their edges from the stored per-file facts.
 /// `files` are the repository's files (to find manifests); `read` returns a file's text.
 pub fn rebuild_map(conn: &Connection, repo_name: &str, files: &[String], read: impl Fn(&str) -> Option<String>) -> Result<MapStats> {
-    let mut stats = MapStats::default();
+    let mut stats = MapStats { calls: crate::calls::link_calls(conn)?, ..Default::default() };
     let areas: Vec<Area> = detect(files, repo_name, read);
 
     // Start from a clean slate for derived nodes and edges.

@@ -36,7 +36,7 @@ fn define(def: Node, outer: Node, src: &[u8], class: Option<&str>, top: bool, ou
     let kind = if is_class { "class" } else if class.is_some() { "method" } else { "function" };
     let full = class.map_or(name.to_string(), |c| format!("{c}.{name}"));
     let (start_line, end_line) = span(outer);
-    out.symbols.push(Symbol { name: full.clone(), kind, start_line, end_line, top_level: top });
+    out.symbols.push(Symbol { name: full.clone(), kind, start_line, end_line, top_level: top, signature: String::new() });
     if let Some(body) = def.child_by_field_name("body").filter(|_| is_class) {
         children(body).into_iter().for_each(|c| visit(c, src, Some(&full), false, out));
     }

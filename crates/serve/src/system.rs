@@ -99,38 +99,67 @@ pub struct Impact {
 
 /// Everything that depends on `target`, up to `depth` steps away, closest first.
 pub fn impact(conn: &Connection, target: &Node, depth: usize) -> Result<Impact> {
-    // Reverse dependencies of one node: (dependent node id, explanation).
+    // Reverse dependencies of one node: (dependent node id, explanation), at function level where
+    // the code allows: callers of a function, callers of the endpoints it serves, users of a service.
+    let edges_into = |id: &str, types: &str| -> Result<Vec<(String, String)>> {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT e.src, x.qualified_name FROM edges e JOIN entities x ON x.id = e.src WHERE e.dst = ? AND e.type IN ({types}) AND e.valid_to IS NULL"
+        ))?;
+        let rows = stmt.query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<engram_core::rusqlite::Result<_>>()?)
+    };
+    let served_by = |id: &str| -> Result<Vec<(String, String)>> {
+        let mut stmt = conn.prepare("SELECT e.dst, d.qualified_name FROM edges e JOIN entities d ON d.id = e.dst WHERE e.src = ? AND e.type = 'serves'")?;
+        let rows = stmt.query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<engram_core::rusqlite::Result<_>>()?)
+    };
+    let functions_in = |n: &Node| -> Result<Vec<(String, String)>> {
+        // A file: its functions; a class: its methods.
+        let (file, prefix) = match n.kind.as_str() {
+            "file" => (n.name.clone(), String::new()),
+            _ => (file_of(n), format!("{}.", n.name.split("::").nth(1).unwrap_or(""))),
+        };
+        let mut stmt = conn.prepare("SELECT entity_id, name FROM code_symbols WHERE file = ? AND kind IN ('function','method')")?;
+        let rows: Vec<(String, String)> = stmt.query_map([&file], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<engram_core::rusqlite::Result<_>>()?;
+        Ok(rows.into_iter().filter(|(_, name)| prefix.is_empty() || name.starts_with(&prefix) || name.starts_with(&prefix.replace('.', "::"))).collect())
+    };
+    let of_function = |id: &str, name: &str, out: &mut Vec<(String, String)>| -> Result<()> {
+        for (caller, _) in edges_into(id, "'invokes'")? {
+            out.push((caller, format!("calls {name}")));
+        }
+        for (endpoint, endpoint_name) in served_by(id)? {
+            out.push((endpoint, format!("{endpoint_name} is served by {name}")));
+        }
+        Ok(())
+    };
     let dependents = |n: &Node| -> Result<Vec<(String, String)>> {
         let mut out = vec![];
-        let mut q = |sql: &str, arg: &str, why: &dyn Fn(&str) -> String| -> Result<()> {
-            let mut stmt = conn.prepare(sql)?;
-            for row in stmt.query_map([arg], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
-                let (id, name) = row?;
-                out.push((id, why(&name)));
-            }
-            Ok(())
-        };
         match n.kind.as_str() {
-            "endpoint" => q("SELECT e.src, x.qualified_name FROM edges e JOIN entities x ON x.id = e.src WHERE e.dst = ? AND e.type = 'calls' AND e.valid_to IS NULL", &n.id, &|_| format!("calls {}", n.name))?,
-            "service" => q("SELECT e.src, x.qualified_name FROM edges e JOIN entities x ON x.id = e.src WHERE e.dst = ? AND e.type IN ('calls','uses') AND e.valid_to IS NULL", &n.id, &|_| format!("uses {}", n.name))?,
-            "file" => {
-                q("SELECT e.src, x.qualified_name FROM edges e JOIN entities x ON x.id = e.src WHERE e.dst = ? AND e.type = 'imports' AND e.valid_to IS NULL", &n.id, &|_| format!("imports {}", n.name))?;
-                // Endpoints this file (or a function in it) serves.
-                q(
-                    "SELECT e.dst, x.qualified_name FROM edges e JOIN entities x ON x.id = e.src
-                     WHERE e.type = 'serves' AND (x.id = ?1 OR x.qualified_name LIKE (SELECT qualified_name FROM entities WHERE id = ?1) || '::%')",
-                    &n.id,
-                    &|handler| format!("is served by {handler}"),
-                )?;
-            }
-            // A function: what it serves, then its file (whose importers are affected too).
-            _ => {
-                q("SELECT e.dst, x.qualified_name FROM edges e JOIN entities x ON x.id = e.src WHERE e.src = ? AND e.type = 'serves'", &n.id, &|handler| format!("is served by {handler}"))?;
-                let file = file_of(n);
-                if let Some(id) = conn.query_row("SELECT id FROM entities WHERE kind = 'file' AND qualified_name = ?", [&file], |r| r.get::<_, String>(0)).optional()? {
-                    out.push((id, format!("contains {}", n.name)));
+            "endpoint" => out.extend(edges_into(&n.id, "'calls'")?.into_iter().map(|(id, _)| (id, format!("calls {}", n.name)))),
+            "service" => out.extend(edges_into(&n.id, "'calls','uses'")?.into_iter().map(|(id, _)| (id, format!("uses {}", n.name)))),
+            "function" | "method" => of_function(&n.id, &n.name, &mut out)?,
+            "file" | "class" | "struct" | "trait" | "interface" | "enum" => {
+                let mut callers_found: HashSet<String> = HashSet::new();
+                for (id, name) in functions_in(n)? {
+                    let before = out.len();
+                    of_function(&id, &format!("{}::{name}", file_of(n)), &mut out)?;
+                    for (dep, _) in &out[before..] {
+                        if let Some(dep_node) = node(conn, dep)? {
+                            callers_found.insert(file_of(&dep_node));
+                        }
+                    }
+                }
+                // Importers that use something other than its functions (types, constants, the
+                // module itself) still depend on it.
+                if n.kind == "file" {
+                    for (importer, name) in edges_into(&n.id, "'imports'")? {
+                        if !callers_found.contains(&name) {
+                            out.push((importer, format!("imports {}", n.name)));
+                        }
+                    }
                 }
             }
+            _ => {}
         }
         Ok(out)
     };

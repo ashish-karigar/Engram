@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+regex = "1.13.1"
 engram-core = { path = "../core" }
 engram-capture = { path = "../capture" }
 engram-code = { path = "../code" }

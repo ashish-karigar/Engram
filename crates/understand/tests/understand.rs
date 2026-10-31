@@ -233,3 +233,36 @@ fn weak_memories_are_suggested_with_reasons_and_archiving_is_reversible() {
     assert_eq!(set_archived(&db, &[good.id.clone()], false).unwrap(), 1);
     assert_eq!(get_memory(&db, &good.id).unwrap().unwrap().status, "current");
 }
+
+#[test]
+fn calls_resolve_through_imports_services_templates_and_module_paths() {
+    use engram_understand::calls::link_calls;
+    let root = tempfile::tempdir().unwrap();
+    let w = |p: &str, body: &str| {
+        let full = root.path().join(p);
+        std::fs::create_dir_all(full.parent().unwrap()).unwrap();
+        std::fs::write(full, body).unwrap();
+    };
+    w("app/llm.py", "def extract_fields(text):\n    return json.dumps(text)\n");
+    w("app/worker.py", "from app import llm\nfrom app.llm import extract_fields\n\ndef run_once(job):\n    a = extract_fields(job)\n    b = llm.extract_fields(job)\n    return json.loads(a)\n");
+    w("ui/jobs-api.ts", "export class JobsApi {\n  load(id: string) { return this.http.get(`/jobs/${id}`); }\n}\n");
+    w("ui/page.ts", "import { JobsApi } from './jobs-api';\n@Component({ templateUrl: './page.html' })\nexport class Page {\n  private api = inject(JobsApi);\n  refresh() { this.api.load('1'); }\n}\n");
+    w("ui/page.html", "<button (click)=\"refresh()\">Reload</button>\n");
+    let files: Vec<String> = ["app/llm.py", "app/worker.py", "ui/jobs-api.ts", "ui/page.ts"].iter().map(|s| s.to_string()).collect();
+    let known: HashSet<String> = files.iter().cloned().collect();
+    let db = open_memory().unwrap();
+    index_code(&db, root.path(), &files, &Resolver::new(&known, &[]), None).unwrap();
+    link_calls(&db).unwrap();
+
+    let invokes: HashSet<(String, String)> = {
+        let mut stmt = db.prepare("SELECT s.qualified_name, d.qualified_name FROM edges e JOIN entities s ON s.id = e.src JOIN entities d ON d.id = e.dst WHERE e.type = 'invokes'").unwrap();
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().map(Result::unwrap).collect()
+    };
+    let has = |a: &str, b: &str| invokes.contains(&(a.to_string(), b.to_string()));
+    assert!(has("app/worker.py::run_once", "app/llm.py::extract_fields"), "through an import and a module path: {invokes:?}");
+    assert!(has("ui/page.ts::Page.refresh", "ui/jobs-api.ts::JobsApi.load"), "through an injected service: {invokes:?}");
+    assert!(has("ui/page.html", "ui/page.ts::Page.refresh"), "a template calling its component: {invokes:?}");
+    assert!(!invokes.iter().any(|(_, d)| d.contains("dumps") || d.contains("loads") || d.ends_with("::get")), "library calls stay unlinked");
+    let signature: String = db.query_row("SELECT signature FROM code_symbols WHERE name = 'run_once'", [], |r| r.get(0)).unwrap();
+    assert_eq!(signature, "def run_once(job):");
+}

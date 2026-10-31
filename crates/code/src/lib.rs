@@ -10,7 +10,7 @@ pub mod resolve;
 pub mod rust;
 pub mod ts;
 
-pub use lang::{FileIndex, Import, Lang, Symbol, parse_file};
+pub use lang::{CallSite, FileIndex, Import, Lang, Symbol, parse_file};
 pub use resolve::Resolver;
 pub use areas::{Area, area_of, detect};
 pub use net::{Call, Net, NetLang, Route};

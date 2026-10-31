@@ -7,7 +7,7 @@ pub(crate) fn visit(node: Node, src: &[u8], owner: Option<&str>, top: bool, out:
         if let Some(n) = node.child_by_field_name("name") {
             let (start_line, end_line) = span(node);
             let name = owner.map_or(text(n, src).to_string(), |o| format!("{o}::{}", text(n, src)));
-            out.symbols.push(Symbol { name, kind, start_line, end_line, top_level: top });
+            out.symbols.push(Symbol { name, kind, start_line, end_line, top_level: top, signature: String::new() });
         }
     };
     match node.kind() {
@@ -26,7 +26,7 @@ pub(crate) fn visit(node: Node, src: &[u8], owner: Option<&str>, top: bool, out:
         "impl_item" => {
             let ty = node.child_by_field_name("type").map(|t| text(t, src).to_string()).unwrap_or_default();
             let (start_line, end_line) = span(node);
-            out.symbols.push(Symbol { name: format!("impl {ty}"), kind: "impl", start_line, end_line, top_level: top });
+            out.symbols.push(Symbol { name: format!("impl {ty}"), kind: "impl", start_line, end_line, top_level: top, signature: String::new() });
             let base = ty.split('<').next().unwrap_or(&ty).trim().to_string();
             if let Some(body) = node.child_by_field_name("body") {
                 children(body).into_iter().for_each(|c| visit(c, src, Some(&base), false, out));

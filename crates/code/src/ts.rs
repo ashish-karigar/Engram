@@ -8,7 +8,7 @@ fn unquote(s: &str) -> String {
 
 fn push(out: &mut FileIndex, name: String, kind: &'static str, at: Node, top: bool) {
     let (start_line, end_line) = span(at);
-    out.symbols.push(Symbol { name, kind, start_line, end_line, top_level: top });
+    out.symbols.push(Symbol { name, kind, start_line, end_line, top_level: top, signature: String::new() });
 }
 
 /// `outer` spans are used for top-level symbols so `export` stays inside the chunk.

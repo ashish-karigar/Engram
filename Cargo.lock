@@ -1489,6 +1489,7 @@ dependencies = [
  "engram-capture",
  "engram-code",
  "engram-core",
+ "regex",
  "reqwest 0.13.5",
  "serde",
  "serde_json",
