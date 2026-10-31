@@ -1,6 +1,8 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use std::io::{Read, Seek, SeekFrom};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use engram_capture::scrub::scrub;
 use engram_core::db::{new_id, now};
@@ -19,6 +21,13 @@ use crate::{claude, codex, muse};
 
 /// Turn text kept in the event log. Long pastes and outputs are truncated, not dropped.
 const MAX_TEXT: usize = 4000;
+
+/// A busy session changes every few seconds; its transcript document is rebuilt at most this
+/// often (turns themselves are recorded as events immediately).
+const TRANSCRIPT_EVERY: Duration = Duration::from_secs(60);
+
+/// Per (project root, session): when its transcript was last rebuilt, and whether turns are waiting.
+static TRANSCRIPTS: Mutex<Option<HashMap<(PathBuf, String), (Option<Instant>, bool)>>> = Mutex::new(None);
 
 #[derive(Debug, Default)]
 pub struct SyncReport {
@@ -137,9 +146,26 @@ pub fn sync_sessions(conn: &Connection, embedder: &dyn Embedder, root: &Path, so
             set_meta(conn, &format!("sessions.sid:{key}"), &session_id)?;
         }
     }
-    for (agent, external) in changed {
+    for (agent, external) in &changed {
+        report.sessions.push((agent.clone(), external.clone()));
+    }
+    let due: Vec<String> = {
+        let mut guard = TRANSCRIPTS.lock().unwrap();
+        let state = guard.get_or_insert_with(HashMap::new);
+        for (_, external) in changed {
+            state.entry((root.to_path_buf(), external)).or_insert((None, false)).1 = true;
+        }
+        state
+            .iter_mut()
+            .filter(|((r, _), (last, pending))| r == root && *pending && last.is_none_or(|t| t.elapsed() >= TRANSCRIPT_EVERY))
+            .map(|((_, external), entry)| {
+                *entry = (Some(Instant::now()), false);
+                external.clone()
+            })
+            .collect()
+    };
+    for external in due {
         rebuild_transcript(conn, embedder, &external)?;
-        report.sessions.push((agent, external));
     }
     Ok(report)
 }

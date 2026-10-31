@@ -51,7 +51,9 @@ pub fn hook_output(agent: &str, input: &Value) -> Option<String> {
     let text = brief(actor, input)?;
     let event = input["hook_event_name"].as_str().unwrap_or("SessionStart");
     let why = if input["source"] == "compact" { "Context was just compacted; this is what the project remembers." } else { "Shared project memory from Engram." };
-    let context = format!("{why} Use the engram MCP tools (search, expand, note) for more.\n\n{text}");
+    let context = format!(
+        "{why} Search it (engram `search`) before changing code you did not write. Record each decision, rejected option or dead end with engram `note` when it happens, with the reason.\n\n{text}"
+    );
     Some(json!({"hookSpecificOutput": {"hookEventName": event, "additionalContext": context}}).to_string())
 }
 

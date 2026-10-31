@@ -1,6 +1,8 @@
+use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use crate::{claude, codex, muse};
 
@@ -83,8 +85,26 @@ fn first_match(path: &Path, lines: usize, find: impl Fn(&str) -> Option<String>)
     reader.lines().take(lines).map_while(Result::ok).find_map(|l| find(&l))
 }
 
+/// What a Codex log's opening lines say: its folder and whether it is a reviewer sub-session.
+/// Fixed once written, and those lines are large (they carry Codex's instructions), so each file
+/// is read once per process.
+static CODEX_META: Mutex<Option<HashMap<PathBuf, (Option<String>, bool)>>> = Mutex::new(None);
+
+fn codex_meta(path: &Path) -> (Option<String>, bool) {
+    if let Some(known) = CODEX_META.lock().unwrap().get_or_insert_with(HashMap::new).get(path) {
+        return known.clone();
+    }
+    let cwd = first_match(path, 5, codex::cwd_of);
+    let review = first_match(path, 3, |l| codex::is_review(l).then(String::new)).is_some();
+    // A log still being created has no session_meta yet; look again next time.
+    if cwd.is_some() {
+        CODEX_META.lock().unwrap().get_or_insert_with(HashMap::new).insert(path.to_path_buf(), (cwd.clone(), review));
+    }
+    (cwd, review)
+}
+
 fn is_codex_review(path: &Path) -> bool {
-    first_match(path, 3, |l| codex::is_review(l).then(String::new)).is_some()
+    codex_meta(path).1
 }
 
 impl Sources {
@@ -92,7 +112,7 @@ impl Sources {
     fn codex_files(&self, root: &Path) -> Vec<PathBuf> {
         let mut files = vec![];
         walk(&self.codex, 4, &mut files, &|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("rollout-")) && p.extension().is_some_and(|e| e == "jsonl"));
-        files.retain(|f| first_match(f, 5, codex::cwd_of).is_some_and(|cwd| within(&cwd, root)));
+        files.retain(|f| codex_meta(f).0.is_some_and(|cwd| within(&cwd, root)));
         files
     }
 
@@ -138,7 +158,33 @@ impl Sources {
     }
 }
 
+/// Per (log, project): how far the log has been checked, and whether it worked inside the project.
+/// Session logs only grow, so a yes is final and a no only needs the bytes added since.
+static SCANNED: Mutex<Option<HashMap<(PathBuf, PathBuf), (u64, bool)>>> = Mutex::new(None);
+
 fn mentions_cwd_within(path: &Path, root: &Path) -> bool {
-    let Ok(file) = File::open(path) else { return false };
-    BufReader::new(file).lines().map_while(Result::ok).any(|l| claude::cwd_of(&l).is_some_and(|c| within(&c, root)))
+    let key = (path.to_path_buf(), root.to_path_buf());
+    let (from, found) = SCANNED.lock().unwrap().get_or_insert_with(HashMap::new).get(&key).copied().unwrap_or((0, false));
+    if found {
+        return true;
+    }
+    let Ok(mut file) = File::open(path) else { return false };
+    let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let start = if len < from { 0 } else { from };
+    if file.seek(SeekFrom::Start(start)).is_err() {
+        return false;
+    }
+    let needle = root.to_string_lossy().to_string();
+    let (mut at, mut found) = (start, false);
+    for line in BufReader::new(file).split(b'\n').map_while(Result::ok) {
+        at += line.len() as u64 + 1;
+        // Most lines never mention the folder; only those are parsed.
+        let Ok(line) = std::str::from_utf8(&line) else { continue };
+        if line.contains(&needle) && claude::cwd_of(line).is_some_and(|c| within(&c, root)) {
+            found = true;
+            break;
+        }
+    }
+    SCANNED.lock().unwrap().get_or_insert_with(HashMap::new).insert(key, (at.min(len), found));
+    found
 }

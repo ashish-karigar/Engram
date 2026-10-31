@@ -1,8 +1,9 @@
 import type { ProjectApi } from "../api/client.ts";
 import type { InferredMemory } from "../api/types.ts";
 import { usePolling } from "../hooks/usePolling.ts";
+import { WeakMemories } from "./WeakMemories.tsx";
 
-/** Inferred memories wait here until a person approves or declines them. */
+/** Inferred memories wait here until a person approves or declines them; weak ones can be archived. */
 export function ReviewPanel({ api }: { api: ProjectApi }) {
   const { data = [], reload } = usePolling<InferredMemory[]>(() => api.review(), 4000, [api]);
   const decide = (id: string, action: "approve" | "decline") => api.decide(id, action).then(reload);
@@ -20,8 +21,9 @@ export function ReviewPanel({ api }: { api: ProjectApi }) {
             </div>
           </li>
         ))}
-        {data.length === 0 && <li className="row muted">Nothing to review.</li>}
+        {data.length === 0 && <li className="row muted">No inferred memories to review.</li>}
       </ul>
+      <WeakMemories api={api} />
     </div>
   );
 }

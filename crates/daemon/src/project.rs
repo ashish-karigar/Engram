@@ -26,6 +26,8 @@ use crate::settings::{IndexSettings, ignored};
 
 /// How often agent session logs are checked for new turns. Reads only appended bytes.
 const SESSIONS_EVERY: Duration = Duration::from_secs(10);
+/// How often new memories are checked for a missing vector (search also catches up on demand).
+const EMBED_EVERY: Duration = Duration::from_secs(5);
 
 /// A local model holds most of the machine's memory while loaded, so extraction runs in short
 /// bursts: at most `LOCAL_BURST` tasks, then every project rests for `LOCAL_REST` while the model
@@ -207,6 +209,7 @@ fn spawn_upkeep(paths: &ProjectPaths, opts: RuntimeOptions, stop: Arc<AtomicBool
         let llm = (opts.llm)();
         let (mut last_pipeline, mut last_decay) = (Instant::now(), Instant::now());
         let mut last_sessions = Instant::now() - SESSIONS_EVERY;
+        let mut last_embed = Instant::now();
         while !stop.load(Ordering::SeqCst) {
             std::thread::sleep(Duration::from_millis(100));
             let due = last_pipeline.elapsed() >= opts.pipeline_every;
@@ -229,9 +232,12 @@ fn spawn_upkeep(paths: &ProjectPaths, opts: RuntimeOptions, stop: Arc<AtomicBool
                     eprintln!("engram: session sync failed: {err}");
                 }
             }
-            if let Ok(missing) = memories_missing(&conn, &opts.embedder.model_id(), 200) {
-                if !missing.is_empty() {
-                    let _ = embed_and_store(&conn, opts.embedder.as_ref(), "memory", &missing);
+            if last_embed.elapsed() >= EMBED_EVERY {
+                last_embed = Instant::now();
+                if let Ok(missing) = memories_missing(&conn, &opts.embedder.model_id(), 200) {
+                    if !missing.is_empty() {
+                        let _ = embed_and_store(&conn, opts.embedder.as_ref(), "memory", &missing);
+                    }
                 }
             }
             if last_decay.elapsed() >= opts.decay_every {

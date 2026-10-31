@@ -237,3 +237,13 @@ kbd { font: 10px var(--mono); color: var(--faint); border: 1px solid var(--line-
 .tl-msg.assistant p { color: var(--muted); }
 .tl-msg.compacted { color: var(--t-dead_end); font-size: 11.5px; padding-left: 52px; }
 .tl-more { margin: 14px 0 6px 28px; }
+
+/* ---- Review: weak memories ---- */
+.weak { margin-top: 28px; }
+.weak-head h3 { margin: 0 0 4px; font-size: 14px; }
+.weak-head .actions { margin: 10px 0 6px; }
+.weak-group { margin-top: 16px; }
+.weak-group-head { display: flex; gap: 8px; align-items: baseline; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.weak-row label { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; font-size: 13px; line-height: 1.5; }
+.weak-row input { margin-top: 4px; flex: none; }
+.weak-detail { display: block; font-size: 11.5px; }

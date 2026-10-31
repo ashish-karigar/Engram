@@ -1,5 +1,5 @@
 import type {
-  ActivityPage, AppSettings, ConnectResult, Connection, TestResult, DocumentView, EventEntry, Graph, InferredMemory, MemoryView, NodeDetail, OpResult, Project,
+  ActivityPage, AppSettings, ConnectResult, Connection, TestResult, DocumentView, EventEntry, Graph, InferredMemory, MemoryView, WeakMemory, NodeDetail, OpResult, Project,
   RequestEntry, SearchMode, Stats,
 } from "./types.ts";
 
@@ -41,6 +41,8 @@ export const projectApi = (c: Connection, id: string) => {
     addDocument: (title: string, content: string) => call<OpResult>(c, `${base}/documents`, post({ title, content })),
     deleteDocument: (id: string) => call<{ ok: boolean }>(c, `${base}/documents/delete`, post({ id })),
     review: () => call<InferredMemory[]>(c, `${base}/review`),
+    weak: () => call<WeakMemory[]>(c, `${base}/weak`),
+    archive: (ids: string[], restore = false) => call<{ changed: number }>(c, `${base}/memories/archive`, post({ ids, restore })),
     decide: (id: string, action: "approve" | "decline" | "undo") => call<MemoryView>(c, `${base}/review`, post({ id, action })),
     connect: (agent: string, apply: boolean) => call<ConnectResult>(c, `${base}/connect`, post({ agent, apply })),
   };

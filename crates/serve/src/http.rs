@@ -21,6 +21,7 @@ use crate::mcp::{call_tool, handle_body, handle_body_with, shared_tool_definitio
 use crate::ops::{Ctx, OpResult, op_add_document, op_brief, op_expand, op_note, op_profile, op_search};
 use crate::project::{ProjectManager, ProjectRef};
 use crate::route::{pick_project, with_conn};
+use engram_understand::quality::{set_archived, weak_memories};
 use crate::tokens::verify_token;
 
 struct AppState {
@@ -297,6 +298,12 @@ fn project_route(
             Ok(reply(StatusCode::OK, &serde_json::to_value(memory)?))
         }
         (&Method::POST, ["api", "connect"]) if is_admin => connect(state.manager.as_ref(), &body),
+        (&Method::GET, ["api", "weak"]) => json_ok(weak_memories(conn).and_then(|w| Ok(serde_json::to_value(w)?))),
+        (&Method::POST, ["api", "memories", "archive"]) if is_admin => {
+            let ids: Vec<String> = serde_json::from_value(body["ids"].clone()).unwrap_or_default();
+            let changed = set_archived(conn, &ids, !body["restore"].as_bool().unwrap_or(false))?;
+            Ok(reply(StatusCode::OK, &json!({"changed": changed})))
+        }
         (&Method::GET, ["api", "stats"]) => json_ok(stats(&conn)),
         (&Method::GET, ["api", "graph"]) => json_ok(graph_data(&conn, query_param(query, "archived").as_deref() == Some("1"), 300)),
         (&Method::GET, ["api", "node"]) => json_ok(node_detail(&conn, &query_param(query, "id").unwrap_or_default())),

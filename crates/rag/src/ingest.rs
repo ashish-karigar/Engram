@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use engram_core::db::{new_id, now, tx};
 use engram_core::events::{NewEvent, append_event};
@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::chunk::{Chunk, chunk};
-use crate::document::{Document, chunk_ids, get_by_external_id, get_document, set_status};
+use crate::document::{Document, get_by_external_id, get_document, set_status};
 use crate::extract::extract;
 
 pub struct DocumentInput {
@@ -80,11 +80,10 @@ pub fn ingest(conn: &Connection, embedder: &dyn Embedder, input: DocumentInput) 
 
     set_status(conn, &id, "chunking", None)?;
     let chunks = chunk(&extracted.text, &extracted.kind);
-    let stored = replace_chunks(conn, &id, &input.title, &chunks)?;
+    let (stored, fresh) = replace_chunks(conn, &id, &input.title, &chunks)?;
 
     set_status(conn, &id, "embedding", None)?;
-    let texts: Vec<(String, String)> = stored.iter().map(|(cid, context, content)| (cid.clone(), format!("{context}\n{content}"))).collect();
-    embed_and_store(conn, embedder, "chunk", &texts)?;
+    embed_and_store(conn, embedder, "chunk", &fresh)?;
 
     set_status(conn, &id, "indexing", None)?;
     link_mentions(conn, &id, input.path.as_deref(), &extracted.text)?;
@@ -125,25 +124,70 @@ fn upsert_row(conn: &Connection, id: &str, external_id: &str, input: &DocumentIn
 
 /// Replace a document's chunks atomically. Each chunk gets a contextual header
 /// ("title > section") that is indexed and embedded with it.
-fn replace_chunks(conn: &Connection, doc_id: &str, title: &str, chunks: &[Chunk]) -> Result<Vec<(String, String, String)>> {
+/// Bring the document's chunks in line with `chunks`. A chunk whose context and text are unchanged
+/// keeps its id and vector (only its position is updated), so an appended transcript or a small
+/// edit re-embeds only what changed. Returns all chunk ids and the `(id, text)` pairs to embed.
+fn replace_chunks(conn: &Connection, doc_id: &str, title: &str, chunks: &[Chunk]) -> Result<(Vec<String>, Vec<(String, String)>)> {
     tx(conn, |conn| {
-        delete_owners(conn, &chunk_ids(conn, doc_id)?)?;
-        conn.execute("DELETE FROM chunks WHERE document_id = ?", [doc_id])?;
-        let mut stored = Vec::with_capacity(chunks.len());
+        // (context, content) -> [(id, ordinal, start_line, end_line)], last-popped = earliest.
+        type Placed = (String, i64, Option<i64>, Option<i64>);
+        let mut existing: HashMap<(String, String), Vec<Placed>> = HashMap::new();
+        let mut stmt = conn.prepare("SELECT id, context, content, ordinal, start_line, end_line FROM chunks WHERE document_id = ? ORDER BY ordinal DESC")?;
+        let rows = stmt.query_map([doc_id], |r| Ok(((r.get::<_, String>(1)?, r.get::<_, String>(2)?), (r.get(0)?, r.get(3)?, r.get(4)?, r.get(5)?))))?;
+        for row in rows {
+            let (key, placed) = row?;
+            existing.entry(key).or_default().push(placed);
+        }
+
+        let (mut stored, mut fresh) = (Vec::with_capacity(chunks.len()), vec![]);
         for (i, c) in chunks.iter().enumerate() {
-            let id = new_id("chk");
             let context = match &c.heading {
                 Some(h) => format!("{title} > {h}"),
                 None => title.to_string(),
             };
-            conn.execute(
-                "INSERT INTO chunks (id, document_id, ordinal, heading, context, content, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                params![id, doc_id, i as i64, c.heading, context, c.content, c.start_line as i64, c.end_line as i64],
-            )?;
-            stored.push((id, context, c.content.clone()));
+            let kept = existing.get_mut(&(context.clone(), c.content.clone())).and_then(Vec::pop);
+            let place = (i as i64, Some(c.start_line as i64), Some(c.end_line as i64));
+            let id = match kept {
+                Some((id, ordinal, start, end)) => {
+                    if (ordinal, start, end) != place {
+                        conn.execute("UPDATE chunks SET ordinal = ?, start_line = ?, end_line = ? WHERE id = ?", params![place.0, place.1, place.2, id])?;
+                    }
+                    id
+                }
+                None => {
+                    let id = new_id("chk");
+                    conn.execute(
+                        "INSERT INTO chunks (id, document_id, ordinal, heading, context, content, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        params![id, doc_id, i as i64, c.heading, context, c.content, c.start_line as i64, c.end_line as i64],
+                    )?;
+                    fresh.push((id.clone(), format!("{context}\n{}", c.content)));
+                    id
+                }
+            };
+            stored.push(id);
         }
-        Ok(stored)
+        let gone: Vec<String> = existing.into_values().flatten().map(|(id, ..)| id).collect();
+        delete_owners(conn, &gone)?;
+        conn.execute("DELETE FROM chunks WHERE id IN (SELECT value FROM json_each(?))", [serde_json::to_string(&gone)?])?;
+        Ok((stored, fresh))
     })
+}
+
+/// Every path-like token in `text` and each of its trailing sub-paths, so `/repo/src/app.py:12`
+/// yields `src/app.py` and `app.py`. One pass over the text instead of one search per file.
+fn path_tokens(text: &str) -> HashSet<&str> {
+    let mut out = HashSet::new();
+    for token in text.split(|c: char| !(c.is_alphanumeric() || "/._-".contains(c))) {
+        let token = token.trim_matches(|c: char| c == '.' || c == '/');
+        if token.is_empty() {
+            continue;
+        }
+        out.insert(token);
+        for (i, _) in token.match_indices('/') {
+            out.insert(&token[i + 1..]);
+        }
+    }
+    out
 }
 
 /// Connect the document to code it talks about: `describes` its own file, `mentions` any other
@@ -153,11 +197,16 @@ fn link_mentions(conn: &Connection, doc_id: &str, own_path: Option<&str>, text: 
     let mut stmt = conn.prepare("SELECT id, qualified_name FROM entities WHERE kind = 'file' AND status = 'active'")?;
     let files: Vec<(String, String)> = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<engram_core::rusqlite::Result<_>>()?;
     let basenames: Vec<&str> = files.iter().map(|(_, p)| p.rsplit('/').next().unwrap_or(p)).collect();
+    let mut base_count: HashMap<&str, usize> = HashMap::new();
+    for b in &basenames {
+        *base_count.entry(b).or_default() += 1;
+    }
+    let tokens = path_tokens(text);
     let mut linked = HashSet::new();
     for ((entity_id, path), base) in files.iter().zip(&basenames) {
         let kind = if Some(path.as_str()) == own_path {
             "describes"
-        } else if text.contains(path.as_str()) || (basenames.iter().filter(|b| *b == base).count() == 1 && text.contains(base)) {
+        } else if tokens.contains(path.as_str()) || (base_count[base] == 1 && tokens.contains(base)) {
             "mentions"
         } else {
             continue;

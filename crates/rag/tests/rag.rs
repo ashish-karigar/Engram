@@ -143,3 +143,26 @@ fn rust_and_tsx_chunks_follow_top_level_items() {
     let heads: Vec<_> = chunk(tsx, &DocKind::Code("tsx".into())).into_iter().map(|c| c.heading.unwrap_or_else(|| "(module)".into())).collect();
     assert_eq!(heads, ["(module)", "App", "Panel"]);
 }
+
+#[test]
+fn appending_to_a_document_keeps_unchanged_chunks_and_embeds_only_new_ones() {
+    let db = open_memory().unwrap();
+    let e = HashEmbedder::default();
+    let first = "# Log\n\n## One\n\nFirst entry about src/lidar.py.\n\n## Two\n\nSecond entry.\n";
+    ingest(&db, &e, input("log", "log.md", first)).unwrap();
+    let ids = |db: &engram_core::Connection| -> Vec<String> {
+        let mut s = db.prepare("SELECT id FROM chunks ORDER BY ordinal").unwrap();
+        s.query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect()
+    };
+    let before = ids(&db);
+    let vectors = |db: &engram_core::Connection| -> i64 { db.query_row("SELECT COUNT(*) FROM embeddings", [], |r| r.get(0)).unwrap() };
+    assert_eq!(vectors(&db), before.len() as i64);
+
+    ingest(&db, &e, input("log", "log.md", &format!("{first}\n## Three\n\nThird entry.\n"))).unwrap();
+    let after = ids(&db);
+    assert_eq!(after.len(), before.len() + 1);
+    assert_eq!(&after[..before.len()], &before[..], "unchanged chunks keep their ids");
+    assert_eq!(vectors(&db), after.len() as i64, "one new vector, none duplicated or orphaned");
+    let hits = search_chunks(&db, Some(&e), "third entry", 3).unwrap();
+    assert!(hits[0].content.contains("Third entry"));
+}

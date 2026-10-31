@@ -204,3 +204,32 @@ fn max_tasks_stops_early_and_leaves_the_rest_for_the_next_run() {
     assert_eq!(run_pipeline(&db, &opts).unwrap().tasks, 2);
     assert_eq!(run_pipeline(&db, &opts).unwrap().tasks, 1);
 }
+
+#[test]
+fn weak_memories_are_suggested_with_reasons_and_archiving_is_reversible() {
+    use engram_core::memory::{NewMemory, create_memory};
+    use engram_understand::quality::{set_archived, weak_memories};
+    let db = open_memory().unwrap();
+    let make = |kind: &str, title: &str, claim: &str, rationale: Option<&str>, confidence: f64| {
+        create_memory(&db, NewMemory { rationale: rationale.map(String::from), confidence: Some(confidence), ..NewMemory::new(kind, title, claim) }).unwrap()
+    };
+    let good = make("decision", "Session auth", "Use signed session cookies", Some("both sites share one domain"), 0.9);
+    let changelog = make("decision", "Job deletion", "A delete endpoint for jobs was added", None, 1.0);
+    let identifier = make("fact", "Auth0 client", "The Auth0 client ID is 'TeYnrICvXmwNhRjiGWZcCoUX12'", None, 1.0);
+    let unsure = make("fact", "Maybe Redis", "The cache might be Redis", None, 0.5);
+    let keep = make("fact", "Viewer controls", "The viewer has freeze, fit to view and range filters", Some("users asked for them"), 1.0);
+    let dupe = make("fact", "Viewer functionality", "The viewer has freeze, fit to view and range filters", None, 1.0);
+
+    let weak = weak_memories(&db).unwrap();
+    let reason = |id: &str| weak.iter().find(|w| w.memory.id == id).map(|w| w.reason.as_str());
+    assert_eq!(reason(&good.id), None);
+    assert_eq!(reason(&changelog.id), Some("changelog"));
+    assert_eq!(reason(&identifier.id), Some("identifier"));
+    assert_eq!(reason(&unsure.id), Some("low_confidence"));
+    assert_eq!((reason(&keep.id), reason(&dupe.id)), (None, Some("duplicate")), "the one with a reason is kept");
+
+    assert_eq!(set_archived(&db, &[changelog.id.clone(), good.id.clone()], true).unwrap(), 2);
+    assert_eq!(get_memory(&db, &changelog.id).unwrap().unwrap().status, "archived");
+    assert_eq!(set_archived(&db, &[good.id.clone()], false).unwrap(), 1);
+    assert_eq!(get_memory(&db, &good.id).unwrap().unwrap().status, "current");
+}

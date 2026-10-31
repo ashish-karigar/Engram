@@ -42,6 +42,12 @@ export interface InferredMemory {
   parentCount: number;
 }
 
+export interface WeakMemory {
+  memory: MemoryView;
+  reason: "changelog" | "duplicate" | "identifier" | "low_confidence";
+  detail: string;
+}
+
 export type SearchMode = "hybrid" | "memories" | "documents";
 
 export interface Project {

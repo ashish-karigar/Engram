@@ -6,6 +6,7 @@ pub mod extract;
 pub mod link;
 pub mod llm;
 pub mod notes;
+pub mod quality;
 pub mod pipeline;
 pub mod reconcile;
 pub mod tasks;
