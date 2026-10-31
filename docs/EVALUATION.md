@@ -114,6 +114,41 @@ Caveat: uniformly random vectors (no structure at all) are a worst case for any 
 them an early configuration scored 0.18 recall@10. Real embeddings are structured, which is why the
 suite uses structured vectors, but this suite does not replace a measurement on real embeddings at scale.
 
+### G. System map and impact *(done, small samples)*
+
+The map is built from code alone (no model): parts from manifests, HTTP routes and calls across
+languages, linked into endpoints with handlers and callers, plus external services.
+
+Run: `cargo run --release -p engram-eval -- map <repo>` and `-- history <repo> --commits 400`
+
+**Map accuracy against an independent answer.** For careerbricks, Codex had explained "how the frontend
+and backend connect" by reading the code, before the map existed. Scored against that answer:
+
+| Codex listed | Engram's map |
+|---|---|
+| 16 endpoints by name | 16 / 16, each with its handler function |
+| the frontend service method calling each | 16 / 16 linked |
+| "email … and related routes" | all 8 email routes, with handlers and callers |
+| Auth0, Ollama `POST /api/generate`, Gmail / Google OAuth | all 3 |
+
+Also found, not in Codex's answer: `GET /health/ready` (tests only) and `GET /email/callback` (no caller in
+the repo; Google calls it). Unmatched calls after fixes: 0 in careerbricks, LiTheR and Engram. LiTheR and
+Engram were checked by hand only (no independent answer exists), so they are not scored here.
+
+**Impact against git history.** For each commit that changed 2–25 indexed files: did impact for one
+changed file name the others? Compared with an imports-only walk (what the earlier graph could see).
+
+| Repo | Companion files found | …in another part | …server file → caller in another part | Predicted files that changed |
+|---|---|---|---|---|
+| careerbricks (20 commits) | 12.7% (imports-only 10.6%) | 3.9% (0.0%) | **6 / 6 (0 / 6)** | 21% |
+| Engram (33 commits) | 27.0% (26.2%) | 19.8% (18.2%) | **9 / 9 (3 / 9)** | 22% |
+
+Reading it honestly: co-change is a weak truth (feature commits change unrelated files together), so
+overall recall is low for any dependency graph. Where the map is meant to help, API-contract changes, it
+found every companion file the imports-only graph missed, but on only 15 pairs. Precision (about a fifth
+of predicted files actually changed) is limited by file-level granularity: a page that imports an API
+service is listed even if it does not use the changed method. Function-level calls are the next step.
+
 ### E. Live agents, with and without Engram *(planned)*
 
 The test that matters most: real Claude Code and Codex sessions on a real repository.

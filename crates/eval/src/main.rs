@@ -2,6 +2,7 @@
 //! in-process, with a fresh in-memory database per question. Rules and suites: docs/EVALUATION.md.
 
 mod cache;
+mod history;
 mod longmemeval;
 mod map;
 mod report;
@@ -92,6 +93,14 @@ enum Suite {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Impact against git history: did impact point at the files really changed together?
+    History {
+        root: PathBuf,
+        #[arg(long, default_value_t = 300)]
+        commits: usize,
+        #[arg(long, default_value_t = 3)]
+        depth: usize,
+    },
     /// Print a repository's system map (areas, endpoints, callers, services).
     Map {
         /// Repository root.
@@ -132,6 +141,7 @@ fn main() {
         }
         Suite::Scale { dir, sizes, queries } => scale::run(&dir, &sizes, queries),
         Suite::Map { root } => map::run(&root),
+        Suite::History { root, commits, depth } => history::run(&root, commits, depth),
     };
     if let Err(err) = result {
         eprintln!("error: {err}");
