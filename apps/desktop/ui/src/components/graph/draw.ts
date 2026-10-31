@@ -32,15 +32,17 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
   ctx.scale(cam.k, cam.k);
   const lit = (id: string) => !focus.id || focus.neighbours.has(id);
 
-  // Lit lines last, so a traced path is never painted over by a dimmed one.
+  // Lit lines last and the nearest steps on top, so a traced path is never painted over by a dimmer line.
   const step = (l: SimLink) => (focus.path ? focus.path.get(l.id) : focus.id && (l.source.id === focus.id || l.target.id === focus.id) ? 0 : undefined);
-  const ordered = focus.id ? [...links].sort((a, b) => Number(step(a) !== undefined) - Number(step(b) !== undefined)) : links;
+  const rank = (l: SimLink) => { const at = step(l); return at === undefined ? -1 : 1000 - at; };
+  const ordered = focus.id ? [...links].sort((a, b) => rank(a) - rank(b)) : links;
   for (const l of ordered) {
     const at = step(l);
     const hot = at !== undefined;
     ctx.strokeStyle = hot ? (focus.path ? stepColor(at) : ACCENT) : focus.id ? "rgba(255,255,255,0.04)" : l.type === "supersedes" ? "rgba(177,132,255,0.35)" : "rgba(200,210,235,0.16)";
     ctx.lineWidth = (hot ? 1.6 : 1) * s.linkWidth / cam.k;
-    ctx.globalAlpha = Math.min(l.source.fade!, l.target.fade!);
+    // Lines to the first neighbours are full strength; each step further along the trace is dimmer.
+    ctx.globalAlpha = Math.min(l.source.fade!, l.target.fade!) * (hot ? Math.max(0.15, 0.72 ** at) : 1);
     ctx.setLineDash(l.type === "supersedes" || l.type === "derives" ? [4 / cam.k, 3 / cam.k] : []);
     ctx.beginPath();
     ctx.moveTo(l.source.sx!, l.source.sy!);
