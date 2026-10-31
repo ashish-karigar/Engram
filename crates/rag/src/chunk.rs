@@ -1,4 +1,4 @@
-use tree_sitter::Parser;
+use engram_code::{Lang, parse_file};
 
 use crate::extract::DocKind;
 
@@ -20,8 +20,9 @@ const CODE_OVERLAP: usize = 8;
 pub fn chunk(text: &str, kind: &DocKind) -> Vec<Chunk> {
     let chunks = match kind {
         DocKind::Markdown => chunk_markdown(text),
-        DocKind::Code(lang) if lang == "python" => chunk_python(text).unwrap_or_else(|| chunk_lines(text, None)),
-        DocKind::Code(_) => chunk_lines(text, None),
+        DocKind::Code(ext) => Lang::from_path(&format!("file.{ext}"))
+            .and_then(|lang| chunk_symbols(text, lang))
+            .unwrap_or_else(|| chunk_lines(text, None)),
         DocKind::Text => chunk_paragraphs(text, None, 1),
     };
     chunks.into_iter().filter(|c| !c.content.trim().is_empty()).collect()
@@ -94,31 +95,26 @@ fn chunk_lines(text: &str, heading: Option<String>) -> Vec<Chunk> {
     out
 }
 
-/// AST-aware: each top-level function or class is one chunk (split further if huge);
-/// the code between them (imports, constants) is grouped into its own chunks.
-fn chunk_python(text: &str) -> Option<Vec<Chunk>> {
-    let mut parser = Parser::new();
-    parser.set_language(&tree_sitter_python::LANGUAGE.into()).ok()?;
-    let tree = parser.parse(text, None)?;
+/// AST-aware: each top-level symbol (function, class, struct, impl block, component...) is one
+/// chunk, split further if huge; code between symbols (imports, constants) gets its own chunks.
+fn chunk_symbols(text: &str, lang: Lang) -> Option<Vec<Chunk>> {
+    let index = parse_file(lang, text)?;
     let lines: Vec<&str> = text.lines().collect();
+    let mut tops: Vec<_> = index.symbols.iter().filter(|s| s.top_level).collect();
+    tops.sort_by_key(|s| s.start_line);
     let mut out = vec![];
     let mut loose_start = 0;
-    let mut cursor = tree.root_node().walk();
-    for node in tree.root_node().named_children(&mut cursor) {
-        let def = match node.kind() {
-            "decorated_definition" => node.child_by_field_name("definition"),
-            "function_definition" | "class_definition" => Some(node),
-            _ => None,
-        };
-        let Some(def) = def else { continue };
-        let (start, end) = (node.start_position().row, node.end_position().row + 1);
+    for s in tops {
+        let (start, end) = (s.start_line - 1, s.end_line.min(lines.len()));
+        if start < loose_start {
+            continue;
+        }
         if start > loose_start {
             out.extend(chunk_lines(&lines[loose_start..start].join("\n"), None).into_iter().map(|c| shift(c, loose_start)));
         }
-        let name = def.child_by_field_name("name").and_then(|n| n.utf8_text(text.as_bytes()).ok()).unwrap_or("?");
-        let body = lines[start..end.min(lines.len())].join("\n");
+        let body = lines[start..end].join("\n");
         let parts = if body.len() > MAX_CHARS * 2 { chunk_lines(&body, None) } else { vec![Chunk { heading: None, content: body, start_line: 1, end_line: end - start }] };
-        out.extend(parts.into_iter().map(|c| Chunk { heading: Some(name.to_string()), ..shift(c, start) }));
+        out.extend(parts.into_iter().map(|c| Chunk { heading: Some(s.name.clone()), ..shift(c, start) }));
         loose_start = end;
     }
     if loose_start < lines.len() {

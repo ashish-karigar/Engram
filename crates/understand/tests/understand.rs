@@ -4,54 +4,44 @@ use engram_core::db::open_memory;
 use engram_core::events::{NewEvent, append_event, ensure_actor, list_events};
 use engram_core::graph::{ExpandOpts, expand};
 use engram_core::memory::{SearchOpts, get_memory, search_memories};
-use engram_understand::codeindex::{IndexResult, index_python};
+use engram_code::{Import, Lang, Resolver, parse_file};
+use engram_understand::codeindex::{IndexResult, index_code};
 use engram_understand::extract::{Candidate, parse_candidates};
 use engram_understand::llm::{LlmClient, LlmRequest, ScriptedClient};
 use engram_understand::notes::{NoteContext, NoteInput, record_note};
 use engram_understand::pipeline::{PipelineOptions, run_pipeline};
-use engram_understand::pyindex::{PyImport, parse_python, resolve_import};
 use engram_understand::reconcile::{SaveAction, similarity};
 use engram_understand::tasks::group_tasks;
 use engram_understand::verify::verify_candidate;
 use serde_json::json;
 
 #[test]
-fn tree_sitter_extracts_symbols_and_imports() {
-    let idx = parse_python(
-        "import os\nimport numpy as np\nfrom perception.lidar import voxel\nfrom . import utils\nfrom ..common.geometry import Pose\n\nclass Fusion:\n    def update(self): pass\n\ndef run(): pass\n",
-    )
-    .unwrap();
-    let symbols: Vec<_> = idx.symbols.iter().map(|s| format!("{}:{}", s.kind, s.name)).collect();
-    assert_eq!(symbols, ["class:Fusion", "method:update", "function:run"]);
-    let imports: Vec<_> = idx.imports.iter().map(|i| format!("{}{}", ".".repeat(i.level), i.module)).collect();
-    assert_eq!(imports, ["os", "numpy", "perception.lidar", ".", "..common.geometry"]);
-}
-
-#[test]
-fn imports_resolve_to_project_files_only() {
-    let files: HashSet<String> =
-        ["perception/lidar.py", "perception/fusion.py", "common/geometry.py", "perception/__init__.py"].map(String::from).into();
-    let imp = |m: &str, level| PyImport { module: m.into(), level };
-    assert_eq!(resolve_import(&imp("perception.lidar", 0), "main.py", &files).as_deref(), Some("perception/lidar.py"));
-    assert_eq!(resolve_import(&imp("lidar", 1), "perception/fusion.py", &files).as_deref(), Some("perception/lidar.py"));
-    assert_eq!(resolve_import(&imp("common.geometry", 3), "perception/sub/x.py", &files).as_deref(), Some("common/geometry.py"));
-    assert_eq!(resolve_import(&imp("numpy", 0), "main.py", &files), None);
-}
-
-#[test]
-fn index_python_builds_entities_and_import_edges() {
+fn index_code_builds_entities_and_import_edges_across_languages() {
     let root = tempfile::tempdir().unwrap();
-    std::fs::create_dir(root.path().join("perception")).unwrap();
-    std::fs::write(root.path().join("perception/lidar.py"), "def voxel(): pass\n").unwrap();
-    std::fs::write(root.path().join("perception/fusion.py"), "from perception.lidar import voxel\nclass Fusion: pass\n").unwrap();
+    let w = |p: &str, body: &str| {
+        let full = root.path().join(p);
+        std::fs::create_dir_all(full.parent().unwrap()).unwrap();
+        std::fs::write(full, body).unwrap();
+    };
+    w("perception/lidar.py", "def voxel(): pass\n");
+    w("perception/fusion.py", "from perception.lidar import voxel\nclass Fusion: pass\n");
+    w("core/Cargo.toml", "[package]\nname = \"drive-core\"\n");
+    w("core/src/lib.rs", "pub mod plan;\npub struct Pose;\n");
+    w("core/src/plan.rs", "use crate::Pose;\npub fn plan(p: Pose) {}\n");
+    w("ui/app.ts", "import { plan } from './plan';\nexport function App() {}\n");
+    w("ui/plan.ts", "export const plan = () => 1;\n");
+    let paths: Vec<String> = ["perception/lidar.py", "perception/fusion.py", "core/src/lib.rs", "core/src/plan.rs", "ui/app.ts", "ui/plan.ts"].map(String::from).into();
+    let files: HashSet<String> = paths.iter().cloned().collect();
+    let manifests = vec![("core/Cargo.toml".to_string(), std::fs::read_to_string(root.path().join("core/Cargo.toml")).unwrap())];
     let db = open_memory().unwrap();
-    let all: HashSet<String> = ["perception/lidar.py", "perception/fusion.py"].map(String::from).into();
-    let paths: Vec<String> = all.iter().cloned().collect();
-    let res = index_python(&db, root.path(), &paths, &all, None).unwrap();
-    assert_eq!(res, IndexResult { files: 2, symbols: 2, import_edges: 1 });
+    let res = index_code(&db, root.path(), &paths, &Resolver::new(&files, &manifests), None).unwrap();
+    assert_eq!(res, IndexResult { files: 6, symbols: 7, import_edges: 4 });
     let fusion: String = db.query_row("SELECT id FROM entities WHERE qualified_name = 'perception/fusion.py'", [], |r| r.get(0)).unwrap();
     let opts = ExpandOpts { max_depth: 1, edge_types: Some(vec!["imports".into()]), ..Default::default() };
     assert_eq!(expand(&db, &[fusion], &opts).unwrap().len(), 2);
+    let plan_rs: i64 = db.query_row("SELECT COUNT(*) FROM entities WHERE qualified_name = 'core/src/plan.rs::plan' AND kind = 'function'", [], |r| r.get(0)).unwrap();
+    assert_eq!(plan_rs, 1);
+    let _ = (Import::Js { specifier: String::new() }, Lang::Rust, parse_file(Lang::Python, "x = 1"));
 }
 
 #[test]

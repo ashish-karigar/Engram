@@ -35,7 +35,7 @@ fn markdown_chunks_follow_headings_and_keep_the_section_path() {
 #[test]
 fn python_chunks_are_one_per_top_level_symbol() {
     let src = "import numpy as np\n\nVOXEL = 0.2\n\ndef voxel_filter(points):\n    return points\n\n@dataclass\nclass Fusion:\n    def update(self):\n        pass\n";
-    let chunks = chunk(src, &DocKind::Code("python".into()));
+    let chunks = chunk(src, &DocKind::Code("py".into()));
     let names: Vec<_> = chunks.iter().map(|c| c.heading.clone().unwrap_or_else(|| "(module)".into())).collect();
     assert_eq!(names, ["(module)", "voxel_filter", "Fusion"]);
     assert_eq!((chunks[2].start_line, chunks[2].end_line), (8, 11), "decorators stay with their class");
@@ -132,4 +132,14 @@ fn project_files_are_filtered_and_tracked_by_path() {
     std::fs::remove_file(root.path().join("README.md")).unwrap();
     assert!(ingest_file(&db, &e, root.path(), "README.md", engram_rag::project::MAX_FILE_BYTES).unwrap().is_none());
     assert!(list_documents(&db, None, 10).unwrap().is_empty(), "deleted files leave the index");
+}
+
+#[test]
+fn rust_and_tsx_chunks_follow_top_level_items() {
+    let rs = "use std::fmt;\n\npub struct Store;\n\nimpl Store {\n    pub fn open() {}\n}\n\npub fn run() {}\n";
+    let heads: Vec<_> = chunk(rs, &DocKind::Code("rs".into())).into_iter().map(|c| c.heading.unwrap_or_else(|| "(module)".into())).collect();
+    assert_eq!(heads, ["(module)", "Store", "impl Store", "run"]);
+    let tsx = "import React from 'react';\n\nexport function App() {\n  return <div/>;\n}\n\nexport const Panel = () => <p/>;\n";
+    let heads: Vec<_> = chunk(tsx, &DocKind::Code("tsx".into())).into_iter().map(|c| c.heading.unwrap_or_else(|| "(module)".into())).collect();
+    assert_eq!(heads, ["(module)", "App", "Panel"]);
 }

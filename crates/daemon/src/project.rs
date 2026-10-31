@@ -16,7 +16,8 @@ use engram_embed::store::{chunks_missing, embed_and_store, memories_missing};
 use engram_rag::project::{ingest_file, should_index};
 use engram_sessions::{Sources, sync_sessions};
 use engram_serve::{ProjectInfo, ProjectRef};
-use engram_understand::codeindex::index_python;
+use engram_code::{Lang, Resolver};
+use engram_understand::codeindex::index_code;
 use engram_understand::llm::LlmClient;
 use engram_understand::pipeline::{PipelineOptions, run_pipeline};
 
@@ -76,9 +77,6 @@ fn list_files(root: &Path, pathspec: Option<&str>) -> Vec<String> {
     git(root, &args).map(|out| out.lines().map(String::from).collect()).unwrap_or_default()
 }
 
-fn list_python(root: &Path) -> Vec<String> {
-    list_files(root, Some("*.py"))
-}
 
 /// Keep the document index in step with the folder: new and changed files are (re)ingested,
 /// deleted ones removed. Unchanged files are skipped by content hash.
@@ -98,15 +96,25 @@ fn sync_documents(conn: &Connection, embedder: &dyn Embedder, root: &Path, paths
     }
 }
 
+/// Rebuild the code graph for changed source files (all of them when `changed` is None).
+/// Cargo manifests are read so `use other_crate::...` resolves inside a workspace.
 fn reindex(conn: &Connection, root: &Path, changed: Option<&[String]>) {
-    let all = list_python(root);
-    let known: HashSet<String> = all.iter().cloned().collect();
+    let all = list_files(root, None);
+    let known: HashSet<String> = all.iter().filter(|p| Lang::from_path(p).is_some()).cloned().collect();
     let paths: Vec<String> = match changed {
         Some(c) => c.iter().filter(|p| known.contains(*p)).cloned().collect(),
-        None => all,
+        None => known.iter().cloned().collect(),
     };
-    if !paths.is_empty() {
-        let _ = index_python(conn, root, &paths, &known, None);
+    if paths.is_empty() {
+        return;
+    }
+    let manifests: Vec<(String, String)> = all
+        .iter()
+        .filter(|p| p.rsplit('/').next() == Some("Cargo.toml"))
+        .filter_map(|p| Some((p.clone(), std::fs::read_to_string(root.join(p)).ok()?)))
+        .collect();
+    if let Err(err) = index_code(conn, root, &paths, &Resolver::new(&known, &manifests), None) {
+        eprintln!("engram: code indexing failed: {err}");
     }
 }
 

@@ -7,6 +7,7 @@ use regex::Regex;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DocKind {
     Markdown,
+    /// Source code, tagged with the file extension so the chunker can pick a parser.
     Code(String),
     Text,
 }
@@ -18,8 +19,8 @@ pub struct Extracted {
 }
 
 const CODE: &[(&str, &str)] = &[
-    ("py", "python"), ("rs", "rust"), ("ts", "typescript"), ("tsx", "typescript"), ("js", "javascript"),
-    ("jsx", "javascript"), ("go", "go"), ("java", "java"), ("c", "c"), ("h", "c"), ("cpp", "cpp"),
+    ("py", "python"), ("rs", "rust"), ("ts", "typescript"), ("tsx", "typescript"), ("mts", "typescript"), ("js", "javascript"),
+    ("jsx", "javascript"), ("mjs", "javascript"), ("cjs", "javascript"), ("go", "go"), ("java", "java"), ("c", "c"), ("h", "c"), ("cpp", "cpp"),
     ("hpp", "cpp"), ("cs", "csharp"), ("rb", "ruby"), ("swift", "swift"), ("kt", "kotlin"), ("sh", "shell"),
     ("sql", "sql"),
 ];
@@ -75,7 +76,7 @@ pub fn extract(path: &str, bytes: &[u8]) -> Result<Extracted> {
         return Ok(Extracted { text, mime: "text/markdown".into(), kind: DocKind::Markdown });
     }
     if let Some((_, lang)) = CODE.iter().find(|(e, _)| *e == ext) {
-        return Ok(Extracted { text, mime: format!("text/x-{lang}"), kind: DocKind::Code(lang.to_string()) });
+        return Ok(Extracted { text, mime: format!("text/x-{lang}"), kind: DocKind::Code(ext) });
     }
     Ok(Extracted { text, mime: "text/plain".into(), kind: DocKind::Text })
 }

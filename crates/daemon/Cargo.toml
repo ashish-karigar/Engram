@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 engram-core = { path = "../core" }
+engram-code = { path = "../code" }
 engram-capture = { path = "../capture" }
 engram-understand = { path = "../understand" }
 engram-serve = { path = "../serve" }

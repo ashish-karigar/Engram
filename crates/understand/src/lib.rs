@@ -7,7 +7,6 @@ pub mod link;
 pub mod llm;
 pub mod notes;
 pub mod pipeline;
-pub mod pyindex;
 pub mod reconcile;
 pub mod tasks;
 pub mod verify;
