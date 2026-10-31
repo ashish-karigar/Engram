@@ -37,6 +37,8 @@ one-off tasks, plans that were not carried out, or anything that will not still 
 Rules:
 - "quote" must be copied character-for-character from ONE event you cite, 5 to 25 words. If you cannot quote it, do not record it.
 - "evidence": the event numbers (#N) the quote and claim come from.
+- "rationale": the project's own reason, as stated in the log (e.g. "the mobile app cannot hold cookies").
+  Leave it empty when the log gives no reason. Never explain why you chose to record the memory.
 - "title": a short noun phrase naming the topic (e.g. "Auth strategy"), so a later change to the same topic can replace it.
 - "confidence": 0.5 if inferred, 0.8 if stated, 1.0 only if stated and confirmed by a commit.
 Returning {"memories": []} is correct when nothing qualifies. Fewer, better memories beat many weak ones."#;
