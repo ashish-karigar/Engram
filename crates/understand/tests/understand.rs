@@ -72,13 +72,26 @@ fn parse_candidates_tolerates_fences_and_drops_malformed() {
 }
 
 #[test]
-fn verify_requires_the_quote_in_the_cited_evidence() {
-    let seen: HashMap<i64, String> = [(1, "commit abc: Switch to token auth because mobile app cannot hold cookies".to_string())].into();
+fn grounding_accepts_real_quotes_fixes_citations_and_rejects_inventions() {
+    let seen: HashMap<i64, String> = [
+        (1, "commit abc: Switch to token auth because the **mobile app** cannot hold cookies".to_string()),
+        (2, "user: we also decided the session store moves to Redis for horizontal scaling".to_string()),
+    ].into();
     let base = Candidate { kind: "decision".into(), title: "t".into(), claim: "c".into(), rationale: None, quote: String::new(), evidence: vec![1], files: vec![], confidence: 0.9 };
     let with = |quote: &str, evidence: Vec<i64>| Candidate { quote: quote.into(), evidence, ..base.clone() };
-    assert!(verify_candidate(&with("cannot hold   COOKIES", vec![1]), &seen).is_ok());
-    assert!(verify_candidate(&with("made up", vec![1]), &seen).is_err());
-    assert!(verify_candidate(&with("token", vec![9]), &seen).is_err());
+
+    let exact = verify_candidate(&with("the mobile app cannot hold   COOKIES", vec![1]), &seen).unwrap();
+    assert_eq!((exact.evidence, exact.exact), (vec![1], true), "markdown and case are ignored");
+
+    let moved = verify_candidate(&with("session store moves to Redis", vec![1]), &seen).unwrap();
+    assert_eq!(moved.evidence, vec![2], "a wrong citation is corrected to where the quote really is");
+
+    let near = verify_candidate(&with("the session store moves to Redis for scaling", vec![2]), &seen).unwrap();
+    assert!(!near.exact, "near-verbatim is accepted but marked");
+
+    assert!(verify_candidate(&with("we chose a single agent for everything", vec![1]), &seen).is_err());
+    assert!(verify_candidate(&with("token", vec![9]), &seen).is_ok(), "a short exact quote still counts");
+    assert!(verify_candidate(&with("", vec![1]), &seen).is_err());
 }
 
 #[test]

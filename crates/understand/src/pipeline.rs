@@ -89,18 +89,22 @@ fn process_task(conn: &Connection, task: &Task, opts: &PipelineOptions, author: 
     let paths = known_paths(&task.events);
     let commit_sha = task.events.iter().rev().find_map(|e| e.commit_sha.clone());
     for c in extract_candidates(opts.llm, &digest.text)? {
-        if let Err(reason) = verify_candidate(&c, &digest.by_seq) {
-            report.rejected.push((c.title, reason.to_string()));
-            continue;
-        }
+        let grounding = match verify_candidate(&c, &digest.by_seq) {
+            Ok(g) => g,
+            Err(reason) => {
+                report.rejected.push((c.title, reason.to_string()));
+                continue;
+            }
+        };
+        let confidence = if grounding.exact { c.confidence } else { c.confidence * 0.8 };
         let memory = NewMemory {
             rationale: c.rationale.clone(),
-            confidence: Some(c.confidence),
-            salience: Some(0.4 + 0.4 * c.confidence),
+            confidence: Some(confidence),
+            salience: Some(0.4 + 0.4 * confidence),
             observed_at: Some(task.ended_at.clone()),
             commit_sha: commit_sha.clone(),
             authored_by: Some(author.to_string()),
-            evidence: c.evidence.clone(),
+            evidence: grounding.evidence.clone(),
             touches: link_files(conn, &c.files, &paths)?,
             ..NewMemory::new(&c.kind, &c.title, &c.claim)
         };
