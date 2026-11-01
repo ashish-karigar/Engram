@@ -20,7 +20,7 @@ export function Sidebar({ projects, selectedId, page, onSelect, onAdd, onRemove,
       {/* Room for the window's traffic lights, and a handle to move the window. */}
       <div className="side-drag" data-tauri-drag-region />
       <div className="brand" data-tauri-drag-region><Mark size={15} /><span>MemoryOS</span></div>
-      <Credit className="side-credit" />
+      <Credit className="side-credit" prefix="~" />
 
       <div className="side-label">
         <span>Projects</span>

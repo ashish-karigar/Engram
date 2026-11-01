@@ -14,10 +14,10 @@ async function openProfile() {
 }
 
 /** "Created by Ashish Karigar", linking to the author's Instagram. */
-export function Credit({ className = "" }: { className?: string }) {
+export function Credit({ className = "", prefix = "Created by " }: { className?: string; prefix?: string }) {
   return (
     <span className={`credit ${className}`}>
-      <span className="credit-by">Created by </span>
+      <span className="credit-by">{prefix}</span>
       <a href={PROFILE} onClick={(e) => { e.preventDefault(); void openProfile(); }} title="@ashish.karigar on Instagram">{AUTHOR}</a>
     </span>
   );
