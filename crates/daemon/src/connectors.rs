@@ -118,7 +118,7 @@ fn backup(file: &Path) -> Result<()> {
 
 pub fn plan_connect(agent: Agent, e: Endpoint) -> ConnectPlan {
     match agent {
-        Agent::Codex => codex_plan(e, home().join(".codex/config.toml")),
+        Agent::Codex => codex_plan(e, home().join(".codex/config.toml"), home().join(".codex/hooks.json")),
         Agent::Muse => muse_plan(e, home().join(".config/muse/settings.json")),
         Agent::Claude => claude_plan(e),
     }
@@ -128,8 +128,17 @@ fn codex_block(url: &str, token: &str) -> String {
     format!("[mcp_servers.{SERVER}]\nurl = \"{url}\"\nhttp_headers = {{ Authorization = \"Bearer {token}\" }}")
 }
 
-pub fn codex_plan(e: Endpoint, file: PathBuf) -> ConnectPlan {
-    let preview = format!("Add to {}:\n{}", file.display(), codex_block(&e.mcp_url(), "<token>"));
+/// Like Muse, Codex listed the tools and answered from `rg` without calling them, so it gets the
+/// same SessionStart hook. Codex's hooks.json uses Claude Code's format; Codex runs a new hook only
+/// after the user trusts it once (`/hooks`).
+pub fn codex_plan(e: Endpoint, file: PathBuf, hooks: PathBuf) -> ConnectPlan {
+    let command = hook_command("codex");
+    let preview = format!(
+        "1. Add to {}:\n{}\n2. Add a SessionStart hook to {} (startup, resume and after compaction):\n   {command}\n   It injects the project brief at the start of every session.",
+        file.display(),
+        codex_block(&e.mcp_url(), "<token>"),
+        hooks.display()
+    );
     ConnectPlan {
         agent: Agent::Codex,
         preview,
@@ -137,7 +146,14 @@ pub fn codex_plan(e: Endpoint, file: PathBuf) -> ConnectPlan {
             backup(&file)?;
             let current = std::fs::read_to_string(&file).unwrap_or_default();
             std::fs::write(&file, upsert_block(&current, &codex_block(&e.mcp_url(), &e.token)))?;
-            Ok(format!("Updated {} (backup: {}.memoryos.bak). Restart Codex.", file.display(), file.display()))
+            backup(&hooks)?;
+            let current = std::fs::read_to_string(&hooks).unwrap_or_default();
+            std::fs::write(&hooks, merge_session_hook(&current, Agent::Codex, &command)?)?;
+            Ok(format!(
+                "Updated {} and {} (backups: .memoryos.bak). Restart Codex, then trust the MemoryOS hook once with /hooks.",
+                file.display(),
+                hooks.display()
+            ))
         }),
     }
 }

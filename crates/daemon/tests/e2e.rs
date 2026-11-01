@@ -56,12 +56,16 @@ fn connecting_codex_and_muse_writes_only_the_target_file() {
 
     let toml = dir.path().join("codex.toml");
     std::fs::write(&toml, "model = \"o\"\n").unwrap();
-    let plan = codex_plan(ep(), toml.clone());
+    let hooks_file = dir.path().join("hooks.json");
+    let plan = codex_plan(ep(), toml.clone(), hooks_file.clone());
     assert!(!plan.preview.contains("egm_secret"), "preview must not leak the token");
     plan.apply().unwrap();
     let written = std::fs::read_to_string(&toml).unwrap();
     assert!(written.contains("model = \"o\"") && written.contains("/p/abc/mcp") && written.contains("egm_secret"));
     assert!(dir.path().join("codex.toml.memoryos.bak").exists());
+    let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&hooks_file).unwrap()).unwrap();
+    let hook = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"].as_str().unwrap();
+    assert!(hook.ends_with(" hook codex") && !hook.contains("egm_secret"), "{hook}");
 
     let json_file = dir.path().join("settings.json");
     muse_plan(ep(), json_file.clone()).apply().unwrap();
