@@ -63,7 +63,7 @@ export function SettingsPage({ api }: { api: Api }) {
 
   return (
     <section className="workspace">
-      <div className="topbar" data-tauri-drag-region><div className="title"><h2>Settings</h2><div className="path">Applies to every project on this machine</div></div></div>
+      <header className="topbar" data-tauri-drag-region><h2>Settings</h2><span className="topbar-note">Applies to every project on this machine</span></header>
       <div className="content"><div className="scroll settings">
 
         <div className="s-card">

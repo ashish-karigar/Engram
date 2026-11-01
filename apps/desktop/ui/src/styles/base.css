@@ -19,8 +19,8 @@ h1, h2, h3, h4, p { margin: 0; }
   padding: 6px 12px; transition: background .15s, border-color .15s;
 }
 .btn:hover { background: var(--surface-3); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500; }
-.btn.primary:hover { filter: brightness(1.1); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 500; }
+.btn.primary:hover { background: #ffffff; }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
 .btn.ghost:hover { color: var(--text); background: var(--surface-2); }
 .btn.danger:hover { color: var(--danger); }

@@ -1,16 +1,18 @@
 :root {
   color-scheme: dark;
-  --bg: #0b0e14;
-  --surface: #11151d;
-  --surface-2: #171c27;
-  --surface-3: #1e2430;
-  --line: rgba(255, 255, 255, 0.07);
-  --line-strong: rgba(255, 255, 255, 0.13);
-  --text: #e7ebf3;
-  --muted: #8a93a6;
-  --faint: #5b6478;
-  --accent: #6d8dff;
-  --accent-soft: rgba(109, 141, 255, 0.16);
+  /* Neutral greys; colour is kept for meaning (graph kinds, status), not decoration. */
+  --bg: #0f0f0f;
+  --surface: #141414;
+  --surface-2: #1a1a1a;
+  --surface-3: #222222;
+  --line: #222222;
+  --line-strong: #2e2e2e;
+  --text: #ededed;
+  --muted: #9a9a9a;
+  --faint: #666666;
+  --accent: #ededed;
+  --accent-soft: rgba(255, 255, 255, 0.08);
+  --on-accent: #0f0f0f;
   --danger: #ef6a62;
   --ok: #47c394;
 
@@ -39,6 +41,6 @@
   --a-muse-code: #5b9cf8;
 
   --radius: 10px;
-  --font: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
 }

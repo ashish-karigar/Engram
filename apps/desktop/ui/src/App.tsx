@@ -20,7 +20,7 @@ import { usePolling } from "./hooks/usePolling.ts";
 
 type Tab = "graph" | "documents" | "review" | "timeline" | "requests" | "agents";
 const TABS: [Tab, string][] = [
-  ["graph", "Memory graph"], ["documents", "Documents"], ["review", "Review"], ["timeline", "Timeline"], ["requests", "Requests"], ["agents", "Agents"],
+  ["graph", "Graph"], ["documents", "Documents"], ["review", "Review"], ["timeline", "Timeline"], ["requests", "Requests"], ["agents", "Agents"],
 ];
 const LAST_PROJECT = "engram.lastProject";
 
@@ -51,28 +51,17 @@ function Workspace({ connection, project }: { connection: Connection; project: P
 
   return (
     <section className="workspace">
-      <div className="topbar" data-tauri-drag-region>
-        <div className="title">
-          <h2 className="clip">{project.name}</h2>
-          <div className="path clip">{project.root}</div>
-        </div>
+      <header className="topbar" data-tauri-drag-region>
+        <h2 className="clip" title={stats ? `${project.root}\n${stats.memories} memories · ${stats.documents} documents · ${stats.entities} code nodes · ${stats.requests} requests` : project.root}>{project.name}</h2>
+        <nav className="tabs">
+          {TABS.map(([id, label]) => (
+            <button key={id} className={`tab ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>
+              {label}{id === "review" && stats?.inferred ? <span className="count">{stats.inferred}</span> : null}
+            </button>
+          ))}
+        </nav>
         <AskBar api={api} onPick={(id) => { setTab("graph"); select(id); }} />
-        {stats && (
-          <div className="chips">
-            <span className="chip"><b>{stats.memories}</b>memories</span>
-            <span className="chip"><b>{stats.documents}</b>documents</span>
-            <span className="chip"><b>{stats.entities}</b>code nodes</span>
-            <span className="chip"><b>{stats.requests}</b>requests</span>
-          </div>
-        )}
-      </div>
-      <nav className="tabs">
-        {TABS.map(([id, label]) => (
-          <button key={id} className={`tab ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>
-            {label}{id === "review" && stats?.inferred ? <span className="count">{stats.inferred}</span> : null}
-          </button>
-        ))}
-      </nav>
+      </header>
       <div className="content">
         {tab === "graph" && (
           <div className={`graph ${selected && drawer ? "with-drawer" : ""}`}>
@@ -126,8 +115,6 @@ export function App() {
 
   return (
     <div className="shell">
-      {/* The title bar is drawn by the page: this strip along the top moves the window from anywhere. */}
-      <div className="drag-strip" data-tauri-drag-region />
       <Sidebar
         projects={projects}
         selectedId={current?.id ?? null}

@@ -1,5 +1,5 @@
 import type { Project } from "../api/types.ts";
-import { CloseIcon, InfoIcon, Logo, PlusIcon, SettingsIcon } from "./icons.tsx";
+import { CloseIcon, FolderIcon, InfoIcon, Mark, PlusIcon, SettingsIcon } from "./icons.tsx";
 
 export type Page = "project" | "settings" | "about";
 
@@ -13,28 +13,16 @@ interface Props {
   onPage(page: Page): void;
 }
 
-/** A quiet, stable colour per project name, for its initial. */
-function hue(name: string): number {
-  let h = 0;
-  for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360;
-  return h;
-}
-
 export function Sidebar({ projects, selectedId, page, onSelect, onAdd, onRemove, onPage }: Props) {
   return (
     <aside className="sidebar">
+      {/* Room for the window's traffic lights, and a handle to move the window. */}
       <div className="side-drag" data-tauri-drag-region />
-      <div className="brand" data-tauri-drag-region>
-        <Logo size={28} />
-        <div className="brand-text">
-          <b>Engram</b>
-          <small>Shared memory for agents</small>
-        </div>
-      </div>
+      <div className="brand" data-tauri-drag-region><Mark size={15} /><span>engram</span></div>
 
       <div className="side-label">
-        <span>Projects{projects.length > 0 && <em>{projects.length}</em>}</span>
-        <button className="icon-btn" onClick={onAdd} title="Add a project folder" aria-label="Add a project folder"><PlusIcon size={15} /></button>
+        <span>Projects</span>
+        <button className="icon-btn" onClick={onAdd} title="Add a project folder" aria-label="Add a project folder"><PlusIcon size={14} /></button>
       </div>
       <div className="projects">
         {projects.map((p) => (
@@ -42,37 +30,28 @@ export function Sidebar({ projects, selectedId, page, onSelect, onAdd, onRemove,
             key={p.id}
             role="button"
             tabIndex={0}
-            className={`project ${p.id === selectedId && page === "project" ? "active" : ""}`}
+            className={`side-item ${p.id === selectedId && page === "project" ? "active" : ""}`}
             onClick={() => onSelect(p.id)}
             onKeyDown={(e) => { if (e.key === "Enter") onSelect(p.id); }}
-            title={p.root}
+            title={p.stats ? `${p.root}\n${p.stats.memories} memories · ${p.stats.entities} code nodes` : p.root}
           >
-            <span className="avatar" style={{ "--h": hue(p.name) } as React.CSSProperties}>{p.name.slice(0, 1).toUpperCase()}</span>
-            <span className="project-text">
-              <b className="clip">{p.name}</b>
-              <small className="clip">{p.stats ? `${p.stats.memories} memories · ${p.stats.entities} nodes` : "Indexing…"}</small>
-            </span>
+            <FolderIcon size={14} />
+            <span className="clip">{p.name}</span>
             <button
               className="icon-btn remove"
               title="Stop watching this folder"
               aria-label={`Stop watching ${p.name}`}
               onClick={(e) => { e.stopPropagation(); onRemove(p); }}
-            ><CloseIcon size={13} /></button>
+            ><CloseIcon size={12} /></button>
           </div>
         ))}
-        {projects.length === 0 && (
-          <button className="project-add" onClick={onAdd}><PlusIcon size={14} />Add a project folder</button>
-        )}
+        {projects.length === 0 && <button className="side-item quiet" onClick={onAdd}><PlusIcon size={14} />Add a project</button>}
       </div>
 
       <nav className="side-nav">
-        <button className={`nav-item ${page === "settings" ? "active" : ""}`} onClick={() => onPage("settings")}><SettingsIcon size={15} />Settings</button>
-        <button className={`nav-item ${page === "about" ? "active" : ""}`} onClick={() => onPage("about")}><InfoIcon size={15} />About</button>
+        <button className={`side-item ${page === "settings" ? "active" : ""}`} onClick={() => onPage("settings")}><SettingsIcon size={14} />Settings</button>
+        <button className={`side-item ${page === "about" ? "active" : ""}`} onClick={() => onPage("about")}><InfoIcon size={14} />About</button>
       </nav>
-      <div className="side-foot">
-        <span className="dot" />
-        {projects.length === 0 ? "Running locally" : `Watching ${projects.length} ${projects.length === 1 ? "project" : "projects"} locally`}
-      </div>
     </aside>
   );
 }
