@@ -4,6 +4,7 @@ pub mod calls;
 pub mod codeindex;
 pub mod digest;
 pub mod extract;
+pub mod infra;
 pub mod link;
 pub mod llm;
 pub mod notes;

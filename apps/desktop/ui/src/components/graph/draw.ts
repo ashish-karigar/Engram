@@ -45,7 +45,7 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
     ctx.lineWidth = (hot ? 1.6 : 1) * s.linkWidth / cam.k;
     // Lines to the first neighbours are full strength; each step further along the trace is dimmer.
     ctx.globalAlpha = Math.min(l.source.fade!, l.target.fade!) * (hot ? Math.max(0.12, 0.6 ** at) : 1);
-    ctx.setLineDash(l.type === "supersedes" || l.type === "derives" ? [4 / cam.k, 3 / cam.k] : []);
+    ctx.setLineDash(l.type === "supersedes" || l.type === "derives" || l.type === "mentions" ? [4 / cam.k, 3 / cam.k] : []);
     ctx.beginPath();
     ctx.moveTo(l.source.sx!, l.source.sy!);
     ctx.lineTo(l.target.sx!, l.target.sy!);

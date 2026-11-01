@@ -67,6 +67,18 @@ pub fn run(root: &Path) -> Result<()> {
             by_file.insert(u.split("::").next().unwrap_or(&u).to_string(), ());
         }
         println!("  {name:<22} {}", by_file.keys().cloned().collect::<Vec<_>>().join(", "));
+        let docs = names(&conn, "SELECT DISTINCT x.qualified_name FROM edges e JOIN entities x ON x.id = e.src WHERE e.dst = ? AND e.type = 'mentions'", id)?;
+        if !docs.is_empty() {
+            println!("  {:<22} named in {}", "", docs.join(", "));
+        }
+    }
+    println!("SERVICE EVIDENCE (config and docs)");
+    let mut stmt = conn.prepare("SELECT service, file, via FROM net_services WHERE via LIKE 'config:%' OR via LIKE 'docs:%' ORDER BY service, file")?;
+    for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))? {
+        let (service, file, via) = row?;
+        let (how, rest) = via.split_once(':').unwrap_or((&via, ""));
+        let (line, why) = rest.split_once(':').unwrap_or(("", rest));
+        println!("  {service:<14} {how:<6} {file}:{line}  {why}");
     }
     println!("CALLS NOTHING HERE SERVES");
     for u in unserved {

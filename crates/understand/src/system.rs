@@ -6,7 +6,8 @@
 //! - `in_area`: file → area
 //! - `serves`: handler (function or file) → endpoint
 //! - `calls`: caller (function or file) → endpoint or service
-//! - `uses`: file → service (through an SDK import)
+//! - `uses`: file → service (through an SDK import, or config that sets it up)
+//! - `mentions`: doc or comment → service it only names
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -29,6 +30,19 @@ const SDKS: &[(&str, &str)] = &[
 ];
 /// Well-known local ports, for calls to `localhost:<port>` that no route in the project serves.
 const PORTS: &[(&str, &str)] = &[("11434", "Ollama"), ("5432", "PostgreSQL"), ("6379", "Redis"), ("27017", "MongoDB"), ("9200", "Elasticsearch")];
+
+/// Hosts of well-known APIs, matched as a suffix, so calls to them join the service's node.
+const HOSTS: &[(&str, &str)] = &[
+    ("gmail.googleapis.com", "Gmail"), ("oauth2.googleapis.com", "Google OAuth"), ("accounts.google.com", "Google OAuth"),
+    ("googleapis.com", "Google APIs"), ("auth0.com", "Auth0"), ("api.stripe.com", "Stripe"), ("api.openai.com", "OpenAI"),
+    ("api.anthropic.com", "Anthropic"), ("api.cloudflare.com", "Cloudflare"), ("supabase.co", "Supabase"), ("api.github.com", "GitHub"),
+    ("api.twilio.com", "Twilio"), ("api.sendgrid.com", "SendGrid"), ("api.resend.com", "Resend"), ("infisical.com", "Infisical"),
+];
+
+fn host_service(host: &str) -> Option<&'static str> {
+    let h = host.split(':').next().unwrap_or(host);
+    HOSTS.iter().find(|(suffix, _)| h == *suffix || h.ends_with(&format!(".{suffix}"))).map(|(_, s)| *s)
+}
 
 fn sdk_service(import: &Import) -> Option<&'static str> {
     let name = match import {
@@ -198,7 +212,7 @@ fn endpoint_name(method: &str, path: &str, prefix: bool) -> String {
 /// `files` are the repository's files (to find manifests); `read` returns a file's text.
 pub fn rebuild_map(conn: &Connection, repo_name: &str, files: &[String], read: impl Fn(&str) -> Option<String>) -> Result<MapStats> {
     let mut stats = MapStats { calls: crate::calls::link_calls(conn)?, ..Default::default() };
-    let areas: Vec<Area> = detect(files, repo_name, read);
+    let areas: Vec<Area> = detect(files, repo_name, &read);
 
     // Start from a clean slate for derived nodes and edges.
     conn.execute(
@@ -268,7 +282,12 @@ pub fn rebuild_map(conn: &Connection, repo_name: &str, files: &[String], read: i
             }
             (None, Some(h)) => {
                 let port = h.rsplit(':').next().unwrap_or("");
-                let name = PORTS.iter().find(|(p, _)| is_local(h) && *p == port).map_or(h.clone(), |(_, s)| s.to_string());
+                let name = PORTS
+                    .iter()
+                    .find(|(p, _)| is_local(h) && *p == port)
+                    .map(|(_, s)| *s)
+                    .or_else(|| host_service(h))
+                    .map_or(h.clone(), str::to_string);
                 upsert_entity(conn, "service", &name, None, None)?.id
             }
             (None, None) => match bases.get(file) {
@@ -284,12 +303,20 @@ pub fn rebuild_map(conn: &Connection, repo_name: &str, files: &[String], read: i
         let _ = add_edge(conn, &caller, &target, "calls", EdgeOpts { weight: Some(0.9), ..Default::default() });
     }
 
-    let mut stmt = conn.prepare("SELECT DISTINCT file, service FROM net_services")?;
-    let uses: Vec<(String, String)> = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<engram_core::rusqlite::Result<_>>()?;
-    for (file, service) in &uses {
+    // Services set up in config, scripts and env templates, or only named in docs (see infra.rs).
+    // Stored with their line as evidence: `config:12:image postgres:17`.
+    conn.execute("DELETE FROM net_services WHERE via LIKE 'config:%' OR via LIKE 'docs:%'", [])?;
+    for f in crate::infra::scan(files, &read) {
+        conn.execute("INSERT INTO net_services (file, service, via) VALUES (?, ?, ?)", params![f.file, f.service, format!("{}:{}:{}", f.how, f.line, f.why)])?;
+    }
+
+    let mut stmt = conn.prepare("SELECT DISTINCT file, service, via LIKE 'docs:%' FROM net_services")?;
+    let uses: Vec<(String, String, bool)> = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<engram_core::rusqlite::Result<_>>()?;
+    for (file, service, docs) in &uses {
         let file_id = upsert_entity(conn, "file", file, Some(file), None)?.id;
         let service_id = upsert_entity(conn, "service", service, None, None)?.id;
-        let _ = add_edge(conn, &file_id, &service_id, "uses", EdgeOpts { weight: Some(0.7), ..Default::default() });
+        let (kind, weight) = if *docs { ("mentions", 0.3) } else { ("uses", 0.7) };
+        let _ = add_edge(conn, &file_id, &service_id, kind, EdgeOpts { weight: Some(weight), ..Default::default() });
     }
     stats.services = conn.query_row("SELECT COUNT(*) FROM entities WHERE kind = 'service'", [], |r| r.get::<_, i64>(0))? as usize;
     Ok(stats)
