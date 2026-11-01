@@ -215,6 +215,11 @@ export interface ConnectResult {
   agent: string;
   preview: string;
   result: string | null;
+  /** The same setup as steps to do by hand, token included. */
+  manual: string;
+  /** Whether the agent's own config has the MCP server, and the session-start hook. */
+  server: boolean;
+  hook: boolean;
 }
 
 export interface AppSettings {

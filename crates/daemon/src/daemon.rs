@@ -8,7 +8,7 @@ use engram_serve::{ConnectOutcome, ProjectManager, ProjectRef, RunningServer, st
 use engram_understand::llm::LlmRequest;
 use serde_json::{Value, json};
 
-use crate::connectors::{Agent, Endpoint, plan_connect};
+use crate::connectors::{Agent, Endpoint, manual_steps, plan_connect, status};
 use crate::paths::{app_data_dir, project_paths};
 use crate::project::{RunningProject, RuntimeOptions};
 use crate::registry::Registry;
@@ -119,10 +119,12 @@ impl ProjectManager for Daemon {
         let agent = Agent::parse(agent).ok_or_else(|| Error::msg(format!("unknown agent: {agent}")))?;
         let token = ensure_agent_token(&self.base, agent.actor_name())?;
         let endpoint = Endpoint { base_url: self.url.read().unwrap().clone(), token };
+        let manual = manual_steps(agent, &endpoint);
         let plan = plan_connect(agent, endpoint);
         let preview = plan.preview.clone();
         let result = if apply { Some(plan.apply()?) } else { None };
-        Ok(ConnectOutcome { agent: agent.id().into(), preview, result })
+        let (server, hook) = status(agent);
+        Ok(ConnectOutcome { agent: agent.id().into(), preview, result, manual, server, hook })
     }
 
     fn agent_for_token(&self, token: &str) -> Option<String> {

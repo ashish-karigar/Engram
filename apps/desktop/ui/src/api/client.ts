@@ -22,6 +22,8 @@ export const projectsApi = (c: Connection) => ({
   settings: () => call<AppSettings>(c, "/api/settings"),
   saveSettings: (s: AppSettings) => call<AppSettings>(c, "/api/settings", post(s)),
   testSettings: (target: "llm" | "embeddings", settings?: AppSettings) => call<TestResult>(c, "/api/settings/test", post({ target, settings })),
+  /** Agents connect once, to every project. Without `apply` this only reads their status. */
+  connect: (agent: string, apply: boolean) => call<ConnectResult>(c, "/api/connect", post({ agent, apply })),
 });
 
 /** Everything the UI reads or does inside one project. */
@@ -51,7 +53,6 @@ export const projectApi = (c: Connection, id: string) => {
     decideLink: (id: string, action: "approve" | "decline" | "keep" | "undo", keep?: string) => call<{ ok: boolean }>(c, `${base}/links`, post({ id, action, keep })),
     archive: (ids: string[], restore = false) => call<{ changed: number }>(c, `${base}/memories/archive`, post({ ids, restore })),
     decide: (id: string, action: "approve" | "decline" | "undo") => call<MemoryView>(c, `${base}/review`, post({ id, action })),
-    connect: (agent: string, apply: boolean) => call<ConnectResult>(c, `${base}/connect`, post({ agent, apply })),
   };
 };
 

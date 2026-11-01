@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { projectApi, projectsApi } from "./api/client.ts";
 import type { Connection, Graph, Project } from "./api/types.ts";
-import { AgentsPanel } from "./components/AgentsPanel.tsx";
+import { AgentsPage, useAgents } from "./components/AgentsPanel.tsx";
 import { AskBar } from "./components/AskBar.tsx";
 import { DocumentsPanel } from "./components/DocumentsPanel.tsx";
 import { ReviewPanel } from "./components/ReviewPanel.tsx";
@@ -19,9 +19,9 @@ import { Timeline } from "./components/timeline/Timeline.tsx";
 import { pickFolder, useDaemon } from "./hooks/useDaemon.ts";
 import { usePolling } from "./hooks/usePolling.ts";
 
-type Tab = "graph" | "documents" | "review" | "timeline" | "requests" | "agents";
+type Tab = "graph" | "documents" | "review" | "timeline" | "requests";
 const TABS: [Tab, string][] = [
-  ["graph", "Graph"], ["documents", "Documents"], ["review", "Review"], ["timeline", "Timeline"], ["requests", "Requests"], ["agents", "Agents"],
+  ["graph", "Graph"], ["documents", "Documents"], ["review", "Review"], ["timeline", "Timeline"], ["requests", "Requests"],
 ];
 const LAST_PROJECT = "engram.lastProject";
 
@@ -78,7 +78,6 @@ function Workspace({ connection, project }: { connection: Connection; project: P
         {tab === "review" && <ReviewPanel api={api} />}
         {tab === "timeline" && <Timeline api={api} />}
         {tab === "requests" && <RequestLog api={api} />}
-        {tab === "agents" && <AgentsPanel api={api} />}
       </div>
     </section>
   );
@@ -91,6 +90,7 @@ export function App() {
   const [page, setPage] = useState<Page>("project");
   const api = useMemo(() => (connection ? projectsApi(connection) : null), [connection]);
   const { data: projects = [], reload } = usePolling<Project[]>(() => (api ? api.list() : Promise.resolve([])), 3000, [api]);
+  const agents = useAgents(api);
 
   const current = projects.find((p) => p.id === selectedId) ?? projects[0] ?? null;
   useEffect(() => { if (current) localStorage.setItem(LAST_PROJECT, current.id); }, [current]);
@@ -121,15 +121,17 @@ export function App() {
         projects={projects}
         selectedId={current?.id ?? null}
         page={page}
+        agentsConnected={!agents.loaded || agents.anyConnected}
         onSelect={(id) => { setSelectedId(id); setPage("project"); }}
         onAdd={add}
         onRemove={remove}
         onPage={setPage}
       />
       {page === "settings" && api ? <SettingsPage api={api} />
+        : page === "agents" && api ? <AgentsPage api={api} agents={agents.agents} onChange={agents.reload} />
         : page === "about" ? <AboutPage connection={connection} projects={projects.length} />
         : current ? <Workspace key={current.id} connection={connection} project={current} />
-        : <EmptyState onAdd={add} error={addError} />}
+        : api && <EmptyState api={api} agents={agents} onAdd={add} error={addError} />}
     </div>
   );
 }

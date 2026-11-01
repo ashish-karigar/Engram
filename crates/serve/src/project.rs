@@ -31,6 +31,11 @@ pub struct ConnectOutcome {
     pub agent: String,
     pub preview: String,
     pub result: Option<String>,
+    /// The same setup as steps to do by hand, token included (for the user only).
+    pub manual: String,
+    /// Whether the agent's config has the MCP server, and the SessionStart hook.
+    pub server: bool,
+    pub hook: bool,
 }
 
 /// What the server needs from whoever owns the running projects (the daemon).

@@ -1,20 +1,22 @@
 import type { Project } from "../api/types.ts";
 import { Credit } from "./Credit.tsx";
-import { CloseIcon, FolderIcon, InfoIcon, Mark, PlusIcon, SettingsIcon } from "./icons.tsx";
+import { CloseIcon, FolderIcon, InfoIcon, Mark, PlugIcon, PlusIcon, SettingsIcon } from "./icons.tsx";
 
-export type Page = "project" | "settings" | "about";
+export type Page = "project" | "agents" | "settings" | "about";
 
 interface Props {
   projects: Project[];
   selectedId: string | null;
   page: Page;
+  /** False once the status is known and no agent is connected. */
+  agentsConnected: boolean;
   onSelect(id: string): void;
   onAdd(): void;
   onRemove(project: Project): void;
   onPage(page: Page): void;
 }
 
-export function Sidebar({ projects, selectedId, page, onSelect, onAdd, onRemove, onPage }: Props) {
+export function Sidebar({ projects, selectedId, page, agentsConnected, onSelect, onAdd, onRemove, onPage }: Props) {
   return (
     <aside className="sidebar">
       {/* Room for the window's traffic lights, and a handle to move the window. */}
@@ -51,6 +53,9 @@ export function Sidebar({ projects, selectedId, page, onSelect, onAdd, onRemove,
       </div>
 
       <nav className="side-nav">
+        <button className={`side-item ${page === "agents" ? "active" : ""}`} onClick={() => onPage("agents")} title={agentsConnected ? "Connected agents" : "No agent is connected yet"}>
+          <PlugIcon size={14} />Agents{!agentsConnected && <span className="side-dot" aria-label="No agent connected" />}
+        </button>
         <button className={`side-item ${page === "settings" ? "active" : ""}`} onClick={() => onPage("settings")}><SettingsIcon size={14} />Settings</button>
         <button className={`side-item ${page === "about" ? "active" : ""}`} onClick={() => onPage("about")}><InfoIcon size={14} />About</button>
       </nav>

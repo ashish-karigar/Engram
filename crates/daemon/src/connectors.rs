@@ -188,6 +188,63 @@ pub fn muse_plan(e: Endpoint, file: PathBuf) -> ConnectPlan {
     }
 }
 
+/// Where each agent keeps its MCP servers and its hooks.
+fn config_files(agent: Agent) -> (PathBuf, PathBuf) {
+    match agent {
+        Agent::Claude => (home().join(".claude.json"), home().join(".claude/settings.json")),
+        Agent::Codex => (home().join(".codex/config.toml"), home().join(".codex/hooks.json")),
+        Agent::Muse => (home().join(".config/muse/settings.json"), home().join(".config/muse/settings.json")),
+    }
+}
+
+fn has_hook(json_text: &str, agent: Agent) -> bool {
+    let data: Value = serde_json::from_str(json_text).unwrap_or(Value::Null);
+    let ours = format!(" hook {}", agent.id());
+    data["hooks"]["SessionStart"].as_array().into_iter().flatten().any(|group| {
+        group["hooks"].as_array().into_iter().flatten().any(|h| h["command"].as_str().is_some_and(|c| c.ends_with(&ours)))
+    })
+}
+
+/// Whether the agent's own config has our MCP server and our SessionStart hook. Read-only.
+pub fn status(agent: Agent) -> (bool, bool) {
+    let (servers, hooks) = config_files(agent);
+    let servers = std::fs::read_to_string(servers).unwrap_or_default();
+    let server = match agent {
+        Agent::Codex => [SERVER, OLD_SERVER].iter().any(|s| servers.contains(&format!("[mcp_servers.{s}]"))),
+        _ => {
+            let data: Value = serde_json::from_str(&servers).unwrap_or(Value::Null);
+            [SERVER, OLD_SERVER].iter().any(|s| data["mcpServers"].get(*s).is_some())
+        }
+    };
+    (server, has_hook(&std::fs::read_to_string(hooks).unwrap_or_default(), agent))
+}
+
+/// The same setup as `plan_connect`, as steps the user carries out in the agent themselves.
+/// Holds the real token: it is shown only to the user, in the app.
+pub fn manual_steps(agent: Agent, e: &Endpoint) -> String {
+    let url = e.mcp_url();
+    let command = hook_command(agent.id());
+    let hook = serde_json::to_string_pretty(&json!({"hooks": {"SessionStart": [
+        {"matcher": "startup|resume|compact", "hooks": [{"type": "command", "command": command, "timeout": 10}]}
+    ]}}))
+    .unwrap_or_default();
+    match agent {
+        Agent::Claude => format!(
+            "1. In a terminal, add the server:\n\nclaude mcp add --transport http --scope user {SERVER} {url} --header \"Authorization: Bearer {}\"\n\n\
+             2. In Claude Code, run /hooks, choose SessionStart, and add this command:\n\n{command}",
+            e.token
+        ),
+        Agent::Codex => format!(
+            "1. Add to ~/.codex/config.toml:\n\n{}\n\n2. Add to ~/.codex/hooks.json:\n\n{hook}\n\n3. Restart Codex, run /hooks and trust the MemoryOS hook.",
+            codex_block(&url, &e.token)
+        ),
+        Agent::Muse => format!(
+            "1. Add to mcpServers in ~/.config/muse/settings.json:\n\n\"{SERVER}\": {}\n\n2. Add to the same file:\n\n{hook}\n\n3. Restart Muse and check with /mcp.",
+            serde_json::to_string_pretty(&mcp_entry(&url, &e.token)).unwrap_or_default()
+        ),
+    }
+}
+
 /// The command an agent hook runs: this same binary with `hook <agent>`.
 pub fn hook_command(agent: &str) -> String {
     let exe = std::env::current_exe().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| "memoryos".into());
