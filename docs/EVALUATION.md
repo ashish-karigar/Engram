@@ -78,8 +78,31 @@ cargo run --release -p engram-eval -- longmemeval --data longmemeval_s_cleaned.j
 cargo run --release -p engram-eval -- longmemeval-qa --data longmemeval_s_cleaned.json --split test --out results/test-qa.jsonl
 ```
 
-First check, 2026-11-01: 12 dev questions (6 single-session-user, 6 temporal), 12/12 correct, about
-5k tokens of history per question. Too few to report as a score.
+**Dev split, all 93 questions, 2026-11-01** (20 chunks, about 4.7k tokens of history per question):
+
+| Type | n | Accuracy |
+|---|---|---|
+| single-session-user | 9 | 100 |
+| single-session-assistant | 13 | 100 |
+| knowledge-update | 13 | 100 |
+| multi-session | 23 | 87.0 |
+| single-session-preference | 8 | 87.5 |
+| temporal-reasoning | 22 | 86.4 |
+| abstention | 5 | 80.0 |
+| **all** | 93 | **91.4** (mean over types 91.5) |
+
+All 8 wrong verdicts were checked by hand, and the judge was right each time. What went wrong:
+
+- **Counting across sessions (4):** charity total, delivery services, rare items, events before a
+  date. The model found most items and missed one. In two of these the missing session was not in
+  the top 20 chunks.
+- **Retrieval (2):** the smoker ("kitchen appliance", see above), and one of the three sports events
+  missing from the context.
+- **Preference (1):** the model refused to suggest a Miami hotel because Miami was never discussed,
+  instead of using the user's stated taste in hotels.
+- **Abstention (1):** the model answered from a bus fare the history did not contain for that route.
+
+Tuning set; the test split has not been run.
 
 **Dev split (88 questions, abstention excluded), 2026-10-31.** Tuning set; the test split has not been run.
 
