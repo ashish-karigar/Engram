@@ -160,7 +160,8 @@ impl ProjectManager for Daemon {
         let detail = match target {
             "llm" => {
                 let client = settings.llm_client().ok_or_else(|| Error::msg("No model is configured (provider is none or the API key is missing)."))?;
-                let reply = client.complete(&LlmRequest { system: "Reply with the single word OK.".into(), prompt: "ping".into(), max_tokens: 5 })?;
+                // Reasoning models spend part of max_tokens thinking, so a tiny budget can come back empty.
+                let reply = client.complete(&LlmRequest { system: "Reply with the single word OK.".into(), prompt: "ping".into(), max_tokens: 1000 })?;
                 format!("{} replied: {}", client.name(), reply.trim().chars().take(40).collect::<String>())
             }
             "embeddings" => {

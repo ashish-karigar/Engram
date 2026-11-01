@@ -6,7 +6,7 @@ use std::time::Duration;
 use engram_capture::git::git;
 use engram_capture::snapshot::snapshot_changes;
 use engram_core::events::list_events;
-use engram_daemon::connectors::{Agent, Endpoint, codex_plan, merge_claude_hook, merge_mcp_server, muse_plan, upsert_block};
+use engram_daemon::connectors::{Agent, Endpoint, codex_plan, merge_mcp_server, merge_session_hook, muse_plan, upsert_block};
 use engram_daemon::project::RuntimeOptions;
 use engram_daemon::secrets::ensure_agent_token;
 use engram_daemon::{DaemonOptions, start_daemon};
@@ -67,6 +67,11 @@ fn connecting_codex_and_muse_writes_only_the_target_file() {
     muse_plan(ep(), json_file.clone()).apply().unwrap();
     let settings: Value = serde_json::from_str(&std::fs::read_to_string(&json_file).unwrap()).unwrap();
     assert_eq!(settings["mcpServers"]["memoryos"]["url"], "http://127.0.0.1:1/p/abc/mcp");
+    let hook = settings["hooks"]["SessionStart"][0]["hooks"][0]["command"].as_str().unwrap();
+    assert!(hook.ends_with(" hook muse"), "{hook}");
+    muse_plan(ep(), json_file.clone()).apply().unwrap();
+    let again: Value = serde_json::from_str(&std::fs::read_to_string(&json_file).unwrap()).unwrap();
+    assert_eq!(again["hooks"]["SessionStart"].as_array().unwrap().len(), 1, "reconnecting must not add a second hook");
     assert_eq!(Agent::parse("muse").unwrap().actor_name(), "muse-code");
 }
 
@@ -217,8 +222,8 @@ async fn settings_are_saved_masked_validated_and_applied() {
 #[test]
 fn claude_hook_merges_into_existing_settings_without_duplicates() {
     let existing = r#"{"model":"opus","hooks":{"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"echo hi"}]}],"Stop":[]}}"#;
-    let once = merge_claude_hook(existing, "\"/Apps/Engram\" hook claude").unwrap();
-    let twice = merge_claude_hook(&once, "\"/Apps/Engram2\" hook claude").unwrap();
+    let once = merge_session_hook(existing, Agent::Claude, "\"/Apps/Engram\" hook claude").unwrap();
+    let twice = merge_session_hook(&once, Agent::Claude, "\"/Apps/Engram2\" hook claude").unwrap();
     let v: Value = serde_json::from_str(&twice).unwrap();
     assert_eq!(v["model"], "opus");
     let starts = v["hooks"]["SessionStart"].as_array().unwrap();

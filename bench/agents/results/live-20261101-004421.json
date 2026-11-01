@@ -1,0 +1,138 @@
+{
+  "live": true,
+  "started": "20261101-004421",
+  "model": null,
+  "effort": null,
+  "work": "/private/tmp/claude-501/-Users-ashishkarigar-Projects-Hackathons/b800c3ae-ac2f-4246-b885-3063347a80d3/scratchpad/bench/20261101-004421",
+  "summary": {
+    "lt-setup / with": {
+      "kind": "trap",
+      "runs": 1,
+      "passed": 1,
+      "median_tokens": 175350,
+      "median_input_tokens": 174138,
+      "median_tool_calls": 7,
+      "median_seconds": 29,
+      "contradicted": 0,
+      "errors": 0
+    },
+    "lt-setup / without": {
+      "kind": "trap",
+      "runs": 1,
+      "passed": 1,
+      "median_tokens": 221424,
+      "median_input_tokens": 220048,
+      "median_tool_calls": 8,
+      "median_seconds": 26,
+      "contradicted": 0,
+      "errors": 0
+    },
+    "ALL / with": {
+      "runs": 1,
+      "passed": 1,
+      "median_tokens": 175350,
+      "median_tool_calls": 7,
+      "contradicted": 0
+    },
+    "ALL / without": {
+      "runs": 1,
+      "passed": 1,
+      "median_tokens": 221424,
+      "median_tool_calls": 8,
+      "contradicted": 0
+    }
+  },
+  "trials": [
+    {
+      "task": "lt-setup",
+      "kind": "trap",
+      "project": "LiTheR",
+      "condition": "with",
+      "run": 1,
+      "dir": "/private/tmp/claude-501/-Users-ashishkarigar-Projects-Hackathons/b800c3ae-ac2f-4246-b885-3063347a80d3/scratchpad/bench/20261101-004421/lt-setup-with-1",
+      "hidden_docs": 0,
+      "brief_chars": 4067,
+      "sessions": [
+        {
+          "seconds": 28.9,
+          "exit": 0,
+          "terminal": "completed",
+          "final": "Added a short \"Quick start\" section at the top of [docs/development.md](/private/tmp/claude-501/-Users-ashishkarigar-Projects-Hackathons/b800c3ae-ac2f-4246-b885-3063347a80d3/scratchpad/bench/20261101-004421/lt-setup-with-1/LiTheR/docs/development.md:3), with the macOS conda setup and `parallax-viewer` launch commands.",
+          "usage": {
+            "input": 174138,
+            "cached": 142773,
+            "output": 1212,
+            "reasoning": 574,
+            "model_calls": 6,
+            "models": [
+              "muse-spark-1.3-contributor"
+            ]
+          },
+          "tool_calls": 7,
+          "memory_calls": 0,
+          "task_kinds": {
+            "reminder.agent.skill-reminder": 6,
+            "model.meta.response": 6,
+            "tool.read_file": 5,
+            "tool.read_skill": 1,
+            "tool.edit_file": 1,
+            "reminder.agent.goal-reminder": 1,
+            "reminder.agent.verify-reminder": 1
+          }
+        }
+      ],
+      "mcp": "ready",
+      "pass": true,
+      "contradicted": [],
+      "tokens": 175350,
+      "input_tokens": 174138,
+      "tool_calls": 7,
+      "seconds": 28.9
+    },
+    {
+      "task": "lt-setup",
+      "kind": "trap",
+      "project": "LiTheR",
+      "condition": "without",
+      "run": 1,
+      "dir": "/private/tmp/claude-501/-Users-ashishkarigar-Projects-Hackathons/b800c3ae-ac2f-4246-b885-3063347a80d3/scratchpad/bench/20261101-004421/lt-setup-without-1",
+      "sessions": [
+        {
+          "seconds": 25.8,
+          "exit": 0,
+          "terminal": "completed",
+          "final": "Added a short \"Quick start\" section to [docs/development.md](/private/tmp/claude-501/-Users-ashishkarigar-Projects-Hackathons/b800c3ae-ac2f-4246-b885-3063347a80d3/scratchpad/bench/20261101-004421/lt-setup-without-1/LiTheR/docs/development.md:3), right after the title. It covers the macOS conda setup (`conda env create`, `conda activate parallax`) and running `parallax-viewer`, matching the existing `environment.yml` / README flow.",
+          "usage": {
+            "input": 220048,
+            "cached": 164774,
+            "output": 1376,
+            "reasoning": 641,
+            "model_calls": 8,
+            "models": [
+              "muse-spark-1.3-contributor"
+            ]
+          },
+          "tool_calls": 8,
+          "memory_calls": 0,
+          "task_kinds": {
+            "reminder.agent.skill-reminder": 8,
+            "model.meta.response": 8,
+            "tool.read_file": 5,
+            "tool.search": 1,
+            "tool.read_skill": 1,
+            "tool.edit_file": 1,
+            "reminder.agent.goal-reminder": 1,
+            "reminder.agent.verify-reminder": 1
+          }
+        }
+      ],
+      "mcp": "absent",
+      "pass": true,
+      "contradicted": [],
+      "tokens": 221424,
+      "input_tokens": 220048,
+      "tool_calls": 8,
+      "seconds": 25.8
+    }
+  ]
+}

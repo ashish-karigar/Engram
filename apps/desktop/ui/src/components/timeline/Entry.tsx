@@ -1,7 +1,15 @@
 import type { ActivityItem, SessionMessage } from "../../api/types.ts";
 import { agentColor } from "./Gutter.tsx";
 
-const AGENTS: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", "muse-code": "Muse Code" };
+// The app's own actors keep their stored names from before the rename; only the label changed.
+const AGENTS: Record<string, string> = {
+  "claude-code": "Claude Code",
+  codex: "Codex",
+  "muse-code": "Muse Code",
+  "engram-ui": "MemoryOS app",
+  "engram-extractor": "MemoryOS extractor",
+  "engram-watcher": "MemoryOS watcher",
+};
 export const agentName = (id: string) => AGENTS[id] ?? id;
 
 export const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -78,7 +86,7 @@ export function Entry({ item, open }: { item: ActivityItem; open: boolean }) {
             <span className="tl-time">{span(item)}</span>
           </div>
           <div className="tl-sub">
-            Remembered{item.author ? ` by ${item.author}` : ""}
+            Remembered{item.author ? ` by ${agentName(item.author)}` : ""}
             {item.replaces.length > 0 && <> · replaces <i>{item.replaces.join(", ")}</i></>}
             {item.status !== "current" && <> · now {item.status}</>}
           </div>

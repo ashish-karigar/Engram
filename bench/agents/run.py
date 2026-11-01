@@ -256,6 +256,12 @@ def mcp_status(home):
     return seen
 
 
+def hook_brief(home):
+    """Sessions whose log carries the brief the connector's SessionStart hook injected."""
+    logs = (home / ".local/share/muse/sessions").glob("**/session.jsonl")
+    return sum("Shared project memory from MemoryOS" in log.read_text(errors="replace") for log in logs)
+
+
 # ---------- grading ----------
 
 def matches(groups, text):
@@ -285,7 +291,9 @@ def trial(task, projects, condition, n, root, args, key):
     try:
         if condition == "with":
             handoff = task["kind"] == "handoff"
-            daemon = Daemon(project, repo, home, work / "memoryos-data", with_model=handoff and args.live)
+            # The default data folder under the trial HOME: Muse runs hooks with HOME but not ENGRAM_HOME,
+            # so this is how the connector's SessionStart hook finds the trial daemon.
+            daemon = Daemon(project, repo, home, home / "Library/Application Support/Engram", with_model=handoff and args.live)
             daemon.settle()
             row["hidden_docs"] = daemon.hide(project.get("hide", []))
             row["brief_chars"] = daemon.brief_size(repo)
@@ -299,6 +307,7 @@ def trial(task, projects, condition, n, root, args, key):
             before_memories = daemon.stats().get("memories", 0) if daemon else 0
             row["sessions"].append(muse(prompt, repo, home, work / f"session{i + 1}.jsonl", args, key))
         row["mcp"] = mcp_status(home)
+        row["hook_brief"] = hook_brief(home)
         diff = changes(repo, base)
         (work / "changes.diff").write_text(diff)
         row.update(grade(task, row["sessions"][-1]["final"], diff))
@@ -315,6 +324,8 @@ def trial(task, projects, condition, n, root, args, key):
     s = row.get("sessions", [])
     row["tokens"] = sum(total(x) for x in s)
     row["input_tokens"] = sum(x["usage"]["input"] for x in s)
+    # What drives the bill: input the provider could not serve from its cache.
+    row["uncached_tokens"] = sum(x["usage"]["input"] - x["usage"]["cached"] for x in s)
     row["tool_calls"] = sum(x["tool_calls"] for x in s)
     row["seconds"] = round(sum(x["seconds"] for x in s), 1)
     return row
@@ -328,6 +339,7 @@ def summarize(rows):
         out[f"{key[0]} / {key[1]}"] = {
             "kind": rs[0]["kind"], "runs": len(rs), "passed": sum(r["pass"] for r in rs),
             "median_tokens": med([r["tokens"] for r in rs]), "median_input_tokens": med([r["input_tokens"] for r in rs]),
+            "median_uncached_tokens": med([r["uncached_tokens"] for r in rs]),
             "median_tool_calls": med([r["tool_calls"] for r in rs]), "median_seconds": med([r["seconds"] for r in rs]),
             "contradicted": sum(bool(r.get("contradicted")) for r in rs), "errors": sum("error" in r for r in rs),
         }
@@ -336,6 +348,7 @@ def summarize(rows):
         if rs:
             out[f"ALL / {cond}"] = {"runs": len(rs), "passed": sum(r["pass"] for r in rs),
                                     "median_tokens": med([r["tokens"] for r in rs]),
+                                    "median_uncached_tokens": med([r["uncached_tokens"] for r in rs]),
                                     "median_tool_calls": med([r["tool_calls"] for r in rs]),
                                     "contradicted": sum(bool(r.get("contradicted")) for r in rs)}
     return out
@@ -389,8 +402,9 @@ def main():
                 row = trial(task, projects, cond, n, root, args, key)
                 rows.append(row)
                 status = "error: " + row["error"] if "error" in row else ("pass" if row["pass"] else "fail")
-                print(f"{task['id']:<20} {cond:<8} run {n}  {status:<6} tokens {row['tokens']:>7}  tools {row['tool_calls']:>3}"
-                      f"  {row['seconds']:>6}s  mcp {row.get('mcp', '-')}")
+                print(f"{task['id']:<20} {cond:<8} run {n}  {status:<6} tokens {row['tokens']:>7} (uncached {row['uncached_tokens']:>6})  tools {row['tool_calls']:>3}"
+                      f"  {row['seconds']:>6}s  mcp {row.get('mcp', '-')}  brief {row.get('hook_brief', '-')}"
+                      f"  memory calls {sum(x['memory_calls'] for x in row.get('sessions', []))}")
 
     results = {"live": args.live, "started": stamp, "model": args.model, "effort": args.effort, "work": str(root),
                "summary": summarize(rows), "trials": rows}

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ProjectApi } from "../api/client.ts";
 import { usePolling } from "../hooks/usePolling.ts";
 import type { RequestEntry } from "../api/types.ts";
+import { agentName } from "./timeline/Entry.tsx";
 
 /** Who asked for what, and why each memory came back. Click a row for the reasons. */
 export function RequestLog({ api }: { api: ProjectApi }) {
@@ -14,7 +15,7 @@ export function RequestLog({ api }: { api: ProjectApi }) {
           <li key={r.id} className="row click" onClick={() => setOpen(open === r.id ? null : r.id)}>
             <div className="head">
               <code>{r.ts.slice(11, 19)}</code>
-              <b>{r.actor ?? "?"}</b>
+              <b>{r.actor ? agentName(r.actor) : "?"}</b>
               <span>called <b>{r.tool}</b></span>
               <span className="faint">{r.returned.length} returned · {r.tokensOut ?? 0} tok · {r.latencyMs ?? 0} ms</span>
               {r.error && <span className="err">{r.error}</span>}

@@ -146,9 +146,12 @@ fn mcp_entry(url: &str, token: &str) -> Value {
     json!({"type": "http", "url": url, "headers": {"Authorization": format!("Bearer {token}")}})
 }
 
+/// The MCP server alone is not enough: in the suite E trials Muse listed the tools and never
+/// called them. The SessionStart hook puts the brief in front of the model, as for Claude Code.
 pub fn muse_plan(e: Endpoint, file: PathBuf) -> ConnectPlan {
+    let command = hook_command("muse");
     let preview = format!(
-        "Add mcpServers.{SERVER} to {}:\n{}",
+        "In {}:\n1. Add mcpServers.{SERVER}:\n{}\n2. Add a SessionStart hook (startup, resume and after compaction):\n   {command}\n   It injects the project brief at the start of every session.",
         file.display(),
         serde_json::to_string_pretty(&mcp_entry(&e.mcp_url(), "<token>")).unwrap_or_default()
     );
@@ -158,7 +161,8 @@ pub fn muse_plan(e: Endpoint, file: PathBuf) -> ConnectPlan {
         apply: Box::new(move || {
             backup(&file)?;
             let current = std::fs::read_to_string(&file).unwrap_or_default();
-            std::fs::write(&file, merge_mcp_server(&current, mcp_entry(&e.mcp_url(), &e.token))?)?;
+            let with_server = merge_mcp_server(&current, mcp_entry(&e.mcp_url(), &e.token))?;
+            std::fs::write(&file, merge_session_hook(&with_server, Agent::Muse, &command)?)?;
             Ok(format!(
                 "Updated {} (backup: {}.memoryos.bak). Restart Muse. The entry format follows Meta's streamable-HTTP convention; verify with /mcp inside Muse.",
                 file.display(),
@@ -174,14 +178,16 @@ pub fn hook_command(agent: &str) -> String {
     format!("\"{exe}\" hook {agent}")
 }
 
-/// Add the SessionStart hook to Claude Code settings (runs on startup, resume and after
-/// compaction). Existing hooks are kept; an older one is replaced, never duplicated.
-pub fn merge_claude_hook(json_text: &str, command: &str) -> Result<String> {
+/// Add the SessionStart hook to an agent's JSON settings (Claude Code and Muse share the format;
+/// it runs on startup, resume and after compaction). Existing hooks are kept; an older one of
+/// ours is replaced, never duplicated.
+pub fn merge_session_hook(json_text: &str, agent: Agent, command: &str) -> Result<String> {
     let mut data: Value = if json_text.trim().is_empty() { json!({}) } else { serde_json::from_str(json_text)? };
-    let root = data.as_object_mut().ok_or_else(|| Error::msg("Claude settings is not a JSON object"))?;
+    let root = data.as_object_mut().ok_or_else(|| Error::msg("settings file is not a JSON object"))?;
     let hooks = root.entry("hooks").or_insert_with(|| json!({})).as_object_mut().ok_or_else(|| Error::msg("hooks is not an object"))?;
     let starts = hooks.entry("SessionStart").or_insert_with(|| json!([])).as_array_mut().ok_or_else(|| Error::msg("SessionStart is not a list"))?;
-    starts.retain(|group| !group["hooks"].as_array().into_iter().flatten().any(|h| h["command"].as_str().is_some_and(|c| c.ends_with(" hook claude"))));
+    let ours = format!(" hook {}", agent.id());
+    starts.retain(|group| !group["hooks"].as_array().into_iter().flatten().any(|h| h["command"].as_str().is_some_and(|c| c.ends_with(&ours))));
     starts.push(json!({"matcher": "startup|resume|compact", "hooks": [{"type": "command", "command": command, "timeout": 10}]}));
     Ok(serde_json::to_string_pretty(&data)? + "\n")
 }
@@ -204,7 +210,7 @@ fn claude_plan(e: Endpoint) -> ConnectPlan {
         apply: Box::new(move || {
             backup(&settings)?;
             let current = std::fs::read_to_string(&settings).unwrap_or_default();
-            std::fs::write(&settings, merge_claude_hook(&current, &command)?)?;
+            std::fs::write(&settings, merge_session_hook(&current, Agent::Claude, &command)?)?;
             let hook_note = format!("Hook added to {} (backup: {}.memoryos.bak).", settings.display(), settings.display());
 
             let run = |args: &[&str]| Command::new("claude").args(args).output();

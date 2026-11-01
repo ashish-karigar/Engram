@@ -217,20 +217,42 @@ copied. Handoff tasks are the exception: for them MemoryOS has to capture sessio
   memory adds when it holds the answer. It is not a random sample of work.
 - Grading by pattern can miss a right answer worded differently. Every trial keeps its JSONL, prompt
   and diff for a manual check.
-- The tool-call count comes from Muse's task events. The event names were seen only in dry runs, so
-  check them against the first live run.
+- Tool calls are counted from Muse's `tool.*` task events, which the live runs confirmed.
+
+**Muse needs the hook.** In the first live trial Muse listed MemoryOS's 9 tools and never called
+one. The MCP server alone does not make it use memory. The connector now also adds a SessionStart
+hook, as for Claude Code, so the brief is in the context from the first turn. Muse runs hooks with
+`HOME` but not `ENGRAM_HOME`, so each trial keeps its daemon's data in the default folder under the
+trial's HOME.
+
+**Two levels of score:**
+
+- **Memory score** (`coverage.py`): free, a few seconds, run after any change to memory or ranking.
+  It asks the running app what an agent would get (the brief, then one search with the task's
+  prompt) and counts the answer parts found. It says whether memory *could* help, not whether an
+  agent uses it.
+- **Agent score** (`run.py --live`): costs money and takes hours, run before a release or a demo.
+  The "without" side only changes when Muse does, so later runs can use `--conditions with` and
+  compare with the saved baseline.
 
 ```bash
+python3 bench/agents/coverage.py                     # memory score, free
 python3 bench/agents/run.py                          # dry run: every trial set up, echo provider, free
-python3 bench/agents/run.py --live --runs 1 --tasks lt-setup   # one real trial first
+python3 bench/agents/run.py --live --runs 1 --tasks lt-storage-format --conditions with   # handoff check
 python3 bench/agents/run.py --live                   # 14 tasks x 2 x 3 = 96 Muse sessions
 ```
 
-Results go to `bench/agents/results/`. The dry run on 2026-11-01 completed all 28 trials:
+Results go to `bench/agents/results/`.
 
-- the MCP handshake was `ready` in every "with" trial and absent in every "without" trial;
-- the brief from the trial daemon was 2.4–4.7k characters;
-- all diffs were empty.
+**Checks on 2026-11-01, before the full run:**
+
+- dry run, all 28 trials: every "with" session got the brief and a `ready` MCP handshake; no
+  "without" session got either; all diffs were empty;
+- memory score: all 7 history answers are complete in the brief, and 23 of 26 answer parts are
+  found with brief plus search;
+- one live `lt-setup` pair: both conditions passed. The "with" agent saw the venv/Conda conflict in
+  the brief, checked `environment.yml`, and wrote Conda. Tokens were 213k with and 192k without.
+  A pair run before the hook existed came out the other way round, so single runs are noise.
 
 ### F. Smoke benchmark *(done)*
 
