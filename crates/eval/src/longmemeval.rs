@@ -14,7 +14,7 @@ use engram_core::{Connection, Error, Result};
 use engram_embed::Embedder;
 use engram_serve::budget::estimate_tokens;
 use engram_embed::Reranker;
-use engram_serve::ops::{Ctx, Rerank, SearchReq, op_search, rank};
+use engram_serve::ops::{Ctx, Rerank, SearchReq, op_search, rank_as_of};
 use engram_sessions::sync::record_turn;
 use engram_sessions::transcript::rebuild_transcript;
 use engram_sessions::{Agent, Role, Turn};
@@ -35,6 +35,8 @@ struct Question {
     question_id: String,
     question_type: String,
     question: String,
+    /// When the question is asked: "today" for "10 days ago".
+    question_date: String,
     answer: Value,
     answer_session_ids: Vec<String>,
     haystack_session_ids: Vec<String>,
@@ -130,8 +132,9 @@ fn evaluate(q: &Question, embedder: &dyn Embedder, rerank_setup: Option<&RerankS
     let rerank = rerank_setup.map(|r| Rerank { model: r.model.as_ref(), weight: r.weight, top: r.top });
     let ctx = Ctx { conn: &conn, actor: &actor, embedder, rerank };
 
+    let asked = Some(timestamp(&q.question_date, 0));
     let started = Instant::now();
-    let ranked = rank(&ctx, &q.question, "hybrid", CANDIDATES)?;
+    let ranked = rank_as_of(&ctx, &q.question, "hybrid", CANDIDATES, asked.clone())?;
     let rank_ms = started.elapsed().as_secs_f64() * 1000.0;
     let mut order: Vec<&str> = vec![];
     for r in &ranked {
@@ -152,7 +155,7 @@ fn evaluate(q: &Question, embedder: &dyn Embedder, rerank_setup: Option<&RerankS
     let random = KS.iter().map(|&k| random_any(n, e, k)).collect();
 
     // What an agent is actually shown: the default search answer.
-    let answer = op_search(&ctx, SearchReq { query: q.question.clone(), budget: None, as_of: None, mode: None })?;
+    let answer = op_search(&ctx, SearchReq { query: q.question.clone(), budget: None, as_of: asked, mode: None })?;
     let chunk_docs: HashMap<String, String> = {
         let mut stmt = conn.prepare("SELECT id, document_id FROM chunks")?;
         let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
@@ -178,11 +181,14 @@ fn evaluate(q: &Question, embedder: &dyn Embedder, rerank_setup: Option<&RerankS
     })
 }
 
-pub fn run(data: &Path, split: Split, embedder: Arc<dyn Embedder>, rerank: Option<RerankSetup>, limit: Option<usize>, out: Option<&Path>) -> Result<()> {
+pub fn run(data: &Path, split: Split, kind: Option<&str>, embedder: Arc<dyn Embedder>, rerank: Option<RerankSetup>, limit: Option<usize>, out: Option<&Path>) -> Result<()> {
     let text = std::fs::read_to_string(data).map_err(|e| Error::msg(format!("{}: {e}", data.display())))?;
     let all: Vec<Question> = serde_json::from_str(&text)?;
     // Abstention questions have no evidence to retrieve; LongMemEval excludes them from retrieval scoring.
-    let mut questions: Vec<&Question> = all.iter().filter(|q| !q.question_id.ends_with("_abs") && includes(split, &q.question_id)).collect();
+    let mut questions: Vec<&Question> = all
+        .iter()
+        .filter(|q| !q.question_id.ends_with("_abs") && includes(split, &q.question_id) && kind.is_none_or(|k| q.question_type == k))
+        .collect();
     if let Some(n) = limit {
         questions.truncate(n);
     }

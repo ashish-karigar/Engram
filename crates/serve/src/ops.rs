@@ -233,7 +233,7 @@ fn first_pass(ctx: &Ctx, query: &str, mode: &str, as_of: Option<String>, chunk_c
     let vocab = vocabulary(ctx.conn, query)?;
     let mut items: Vec<(Item, f64)> = vec![];
     if mode != "documents" {
-        let opts = RecallOpts { as_of, ..Default::default() };
+        let opts = RecallOpts { as_of: as_of.clone(), ..Default::default() };
         items.extend(recall(ctx.conn, Some(ctx.embedder), query, &opts)?.into_iter().map(|m| {
             let text = format!("{} {} {}", m.memory.title, m.memory.claim, m.memory.rationale.as_deref().unwrap_or(""));
             let v = blend(vocab.coverage(&text), m.score);
@@ -243,16 +243,43 @@ fn first_pass(ctx: &Ctx, query: &str, mode: &str, as_of: Option<String>, chunk_c
     if mode != "memories" {
         let hits = search_chunks(ctx.conn, Some(ctx.embedder), query, chunk_candidates)?;
         let top = hits.first().map(|h| h.score).unwrap_or(1.0);
+        let in_window = dated_documents(ctx.conn, query, as_of.as_deref(), &hits)?;
         items.extend(hits.into_iter().map(|mut h| {
             let prior = source_prior(&h);
             let text = format!("{} {} {}", h.title, h.heading.as_deref().unwrap_or(""), h.content);
-            let v = blend(vocab.coverage(&text), prior * h.score / top);
+            let when = if in_window.contains(&h.document_id) { WHEN_BONUS } else { 0.0 };
+            let v = blend(vocab.coverage(&text), prior * h.score / top) + when;
             // The answer is often deep in a chunk: show the part that matches (`expand` has it all).
             h.content = vocab.best_window(&h.content, SNIPPET_CHARS).to_string();
             (Item::Chunk(h), v)
         }));
     }
     Ok(items)
+}
+
+/// Added to a chunk whose session falls in the time the question names ("10 days ago").
+const WHEN_BONUS: f64 = 0.6;
+
+/// Documents among `hits` dated inside the time window the query names, if it names one.
+/// Dated documents are session transcripts (`metadata.started`); "today" is `as_of` or now.
+fn dated_documents(conn: &engram_core::Connection, query: &str, as_of: Option<&str>, hits: &[engram_rag::ChunkHit]) -> Result<std::collections::HashSet<String>> {
+    let today = as_of
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|t| t.date_naive())
+        .unwrap_or_else(|| chrono::Utc::now().date_naive());
+    let Some(window) = crate::when::window(query, today) else { return Ok(Default::default()) };
+    let ids: Vec<&str> = hits.iter().map(|h| h.document_id.as_str()).collect();
+    let mut stmt = conn.prepare("SELECT id, json_extract(metadata, '$.started') FROM documents WHERE id IN (SELECT value FROM json_each(?))")?;
+    let rows = stmt.query_map([serde_json::to_string(&ids)?], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?)))?;
+    let mut out = std::collections::HashSet::new();
+    for row in rows {
+        let (id, started) = row?;
+        let day = started.as_deref().and_then(|s| s.get(..10)).and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
+        if day.is_some_and(|d| window.contains(d)) {
+            out.insert(id);
+        }
+    }
+    Ok(out)
 }
 
 /// One entry of the full ranking behind `search`, before the cutoff and token budget.
@@ -267,7 +294,12 @@ pub struct Ranked {
 /// The ranking `search` draws from, best first, without the cutoff: for evaluation (recall@K needs
 /// a longer list than an agent is shown) and for callers that page through results.
 pub fn rank(ctx: &Ctx, query: &str, mode: &str, chunk_candidates: usize) -> Result<Vec<Ranked>> {
-    let mut items = gather(ctx, query, mode, None, chunk_candidates)?;
+    rank_as_of(ctx, query, mode, chunk_candidates, None)
+}
+
+/// `rank` as if asked at `as_of` (RFC 3339): what was current then, and "10 days ago" counted from it.
+pub fn rank_as_of(ctx: &Ctx, query: &str, mode: &str, chunk_candidates: usize, as_of: Option<String>) -> Result<Vec<Ranked>> {
+    let mut items = gather(ctx, query, mode, as_of, chunk_candidates)?;
     items.sort_by(|a, b| b.1.total_cmp(&a.1));
     Ok(items
         .into_iter()

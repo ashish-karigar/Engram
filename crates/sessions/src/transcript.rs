@@ -77,7 +77,7 @@ pub fn rebuild_transcript(conn: &Connection, embedder: &dyn Embedder, external: 
         path: None,
         file_name: "transcript.md".into(),
         bytes: md.into_bytes(),
-        metadata: json!({"agent": first["agent"], "session": external, "topic": topic}),
+        metadata: json!({"agent": first["agent"], "session": external, "topic": topic, "started": first_ts}),
     };
     ingest(conn, embedder, input)?;
     Ok(())

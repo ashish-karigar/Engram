@@ -63,6 +63,24 @@ Run: `cargo run --release -p engram-eval -- longmemeval --data longmemeval_s_cle
 By category with bge-small int8 (R@5 / all@5): knowledge update 100 / 100, multi-session 100 / 87.0,
 single-session assistant 100 / 100, preference 100 / 100, single-session user 100 / 100, temporal
 reasoning 90.9 / 77.3. Weakest: temporal reasoning, and gathering every session of a multi-session answer.
+
+**Dates in search, dev split, 2026-11-01.** Search now reads time words in the question ("10 days
+ago", "a week ago", "the past month", "in February") as a range of dates, counted from when the
+question is asked, and adds 0.6 to chunks of sessions dated in that range. Agents ask relative to
+now; in this suite "now" is LongMemEval's `question_date`, which the eval did not pass before. The
+boost was tuned on the 22 dev temporal questions (0.15, 0.3, 0.6 and 1.0 tried; 0.6 and 1.0 tie).
+
+| | R@5 | R@10 | R@20 | all@5 | In agent's answer |
+|---|---|---|---|---|---|
+| Before (bge-small int8) | 97.7 | 97.7 | 98.9 | 90.9 | 97.7 |
+| With dates | **98.9** | **100** | **100** | 90.9 | 97.7 |
+| Temporal only, before | 90.9 | 90.9 | 95.5 | 77.3 | 90.9 |
+| Temporal only, with dates | 95.5 | 100 | 100 | 77.3 | 90.9 |
+
+No other category changed. The remaining temporal miss at 5 ("What kitchen appliance did I buy 10
+days ago?") is a wording gap: the session says "I just got a smoker", and 15 of its 43 sessions fall
+in the date range. all@5 did not move: questions that need every session of a sequence ("the order
+of the three sports events") still lose one of them. Still dev only; the test split has not been run.
 Search latency with the model, one thread, no other load: 23 ms p50 (query embedding included).
 
 Not yet comparable to Supermemory's figure: theirs is reported on the full set with GPT-4o in the loop;

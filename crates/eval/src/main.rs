@@ -90,6 +90,9 @@ enum Suite {
         /// Only the first N questions of the split (for quick checks).
         #[arg(long)]
         limit: Option<usize>,
+        /// Only one question type, e.g. temporal-reasoning.
+        #[arg(long)]
+        kind: Option<String>,
         /// Per-question results as JSON.
         #[arg(long)]
         out: Option<PathBuf>,
@@ -124,7 +127,7 @@ enum Suite {
 fn main() {
     let cli = Cli::parse();
     let result = match cli.suite {
-        Suite::Longmemeval { data, split, embed, rerank, rerank_weight, rerank_top, limit, out } => {
+        Suite::Longmemeval { data, split, embed, rerank, rerank_weight, rerank_top, limit, kind, out } => {
             let rerank = rerank.map(|name| {
                 let model = RerankModel::parse(&name).unwrap_or_else(|| panic!("unknown reranker: {name}"));
                 let loaded = LocalReranker::load(model, models_dir()).unwrap_or_else(|e| panic!("{e}"));
@@ -136,7 +139,7 @@ fn main() {
             let file = data.with_file_name(format!("embed-cache-{safe}.bin"));
             let cached = Arc::new(cache::CachedEmbedder::open(inner, file));
             eprintln!("embedding cache: {} vectors", cached.cached());
-            let result = longmemeval::run(&data, split, cached.clone(), rerank, limit, out.as_deref());
+            let result = longmemeval::run(&data, split, kind.as_deref(), cached.clone(), rerank, limit, out.as_deref());
             if let Err(e) = cached.save() {
                 eprintln!("could not save the embedding cache: {e}");
             }
