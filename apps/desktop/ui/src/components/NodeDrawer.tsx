@@ -3,6 +3,7 @@ import { usePolling } from "../hooks/usePolling.ts";
 import { useEffect, useState } from "react";
 import type { GraphNode, ImpactResult, NodeDetail, Provenance } from "../api/types.ts";
 import { authorColor } from "./authorColor.ts";
+import { CloseIcon } from "./icons.tsx";
 
 const day = (iso: string) => iso.slice(0, 10);
 
@@ -31,7 +32,7 @@ export function NodeDrawer({ api, id, onClose, onOpen, expandable, onExpand, par
   );
   return (
     <div className="drawer">
-      <button className="btn ghost close" onClick={onClose}>✕</button>
+      <button className="icon-btn close" onClick={onClose} title="Close panel (Esc). The node stays selected." aria-label="Close panel"><CloseIcon size={15} /></button>
       {folder && (
         <>
           <Type kind="dir" />
