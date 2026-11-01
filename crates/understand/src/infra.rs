@@ -19,6 +19,8 @@ pub struct Finding {
     pub how: &'static str,
     /// What gave it away: `image postgres:17-alpine`, `env AUTH0_DOMAIN`, `mentions "Cloudflare"`.
     pub why: String,
+    /// The sentence (docs) or line (config) it was found in, to tell which part it is about.
+    pub context: String,
 }
 
 /// Container images, by their last path segment (`ollama/ollama` → `ollama`).
@@ -75,6 +77,21 @@ static ACTION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*-?\s*uses:\s*
 static NAME: LazyLock<Vec<(Regex, &'static str, &'static str)>> = LazyLock::new(|| {
     NAMES.iter().map(|(n, s)| (Regex::new(&format!(r"(?:^|[^\w.]){}(?:$|[^\w])", regex::escape(n))).unwrap(), *n, *s)).collect()
 });
+
+static NAME_ANY_CASE: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
+    NAMES.iter().map(|(n, s)| (Regex::new(&format!(r"(?i)(?:^|[^\w.]){}(?:$|[^\w])", regex::escape(n))).unwrap(), *s)).collect()
+});
+
+/// The services a piece of text names, in any case ("hosted on oracle"): for reading what people wrote.
+pub fn named_services(text: &str) -> Vec<&'static str> {
+    let mut out: Vec<&'static str> = vec![];
+    for (re, service) in NAME_ANY_CASE.iter() {
+        if re.is_match(text) && !out.contains(service) {
+            out.push(service);
+        }
+    }
+    out
+}
 
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
@@ -137,16 +154,20 @@ fn split_comment(line: &str) -> (&str, &str) {
 pub fn scan(files: &[String], read: impl Fn(&str) -> Option<String>) -> Vec<Finding> {
     let mut out = vec![];
     let mut seen = HashSet::new();
-    let mut push = |file: &str, service: &'static str, line: usize, how: &'static str, why: String| {
-        // One finding per file, service and strength: the first line that shows it.
-        if seen.insert((file.to_string(), service, how)) {
-            out.push(Finding { file: file.to_string(), service, line, how, why });
+    let mut push = |file: &str, service: &'static str, line: usize, how: &'static str, why: String, context: &str| {
+        // Config: the first line per file and service is enough. Docs: every sentence, since each
+        // may be about a different part ("Cloudflare Pages builds `frontend/`").
+        // An image line is kept too: it says the service runs next to what the file deploys.
+        let detail = if how == "docs" { context.to_string() } else if why.starts_with("image ") { "image".into() } else { String::new() };
+        let key = (file.to_string(), service, how, detail);
+        if seen.insert(key) {
+            out.push(Finding { file: file.to_string(), service, line, how, why, context: context.trim().to_string() });
         }
     };
     for file in files {
         let name = file.rsplit('/').next().unwrap_or(file);
         if let Some(service) = lookup(PLATFORM_FILES, name) {
-            push(file, service, 1, "config", format!("file {name}"));
+            push(file, service, 1, "config", format!("file {name}"), file);
         }
         let Some(kind) = kind_of(file) else { continue };
         let Some(text) = read(file) else { continue };
@@ -160,15 +181,17 @@ pub fn scan(files: &[String], read: impl Fn(&str) -> Option<String>) -> Vec<Find
             if kind == Kind::Code {
                 for c in SCHEME.captures_iter(active) {
                     if let Some(s) = lookup(SCHEMES, &c[1]) {
-                        push(file, s, line, "config", format!("{}:// URL", &c[1]));
+                        push(file, s, line, "config", format!("{}:// URL", &c[1]), raw);
                     }
                 }
             } else if kind != Kind::Docs {
-                scan_config(active, kind, |s, why| push(file, s, line, "config", why));
+                scan_config(active, kind, |s, why| push(file, s, line, "config", why, raw));
             }
-            for (re, word, service) in NAME.iter() {
-                if re.is_match(comment) {
-                    push(file, service, line, "docs", format!("mentions \"{word}\""));
+            for sentence in sentences(comment) {
+                for (re, word, service) in NAME.iter() {
+                    if re.is_match(sentence) {
+                        push(file, service, line, "docs", format!("mentions \"{word}\""), sentence);
+                    }
                 }
             }
         }
@@ -177,6 +200,24 @@ pub fn scan(files: &[String], read: impl Fn(&str) -> Option<String>) -> Vec<Find
     let configured: HashSet<(String, &str)> = out.iter().filter(|f| f.how == "config").map(|f| (f.file.clone(), f.service)).collect();
     out.retain(|f| f.how == "config" || !configured.contains(&(f.file.clone(), f.service)));
     out
+}
+
+/// A line's sentences: split after `.`, `!` or `?` followed by a space.
+fn sentences(line: &str) -> impl Iterator<Item = &str> {
+    let mut start = 0;
+    let bytes = line.as_bytes();
+    let mut cuts = vec![];
+    for i in 0..bytes.len().saturating_sub(1) {
+        if matches!(bytes[i], b'.' | b'!' | b'?') && bytes[i + 1] == b' ' {
+            cuts.push(i + 1);
+        }
+    }
+    cuts.push(line.len());
+    cuts.into_iter().map(move |end| {
+        let s = &line[start..end];
+        start = end;
+        s
+    }).filter(|s| !s.trim().is_empty())
 }
 
 fn scan_config(active: &str, kind: Kind, mut found: impl FnMut(&'static str, String)) {
@@ -226,6 +267,7 @@ mod tests {
             .map(|f| (f.file, f.service, f.how))
             .collect();
         got.sort();
+        got.dedup();
         got
     }
 

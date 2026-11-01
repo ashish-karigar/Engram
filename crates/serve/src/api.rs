@@ -249,6 +249,19 @@ pub fn graph_data(conn: &Connection, include_archived: bool, limit: i64) -> Resu
         edges.entry((file.clone(), service.clone(), kind.clone())).or_insert_with(|| format!("{kind}:{file}:{service}"));
     }
 
+    // What each part relies on (architecture.rs): `backend → Oracle` as `host`, `→ PostgreSQL` as
+    // `data`, so clicking a part shows where it runs, where its data and secrets live.
+    let parts: Vec<(String, String, String)> = conn
+        .prepare("SELECT l.area, l.role, s.id FROM system_links l JOIN entities s ON s.kind = 'service' AND s.qualified_name = l.service")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<SqlResult<_>>()?;
+    for (area, role, service) in parts {
+        let folder = folders.get(&area).cloned().unwrap_or_else(|| format!("dir:{area}"));
+        if nodes.contains_key(&folder) && nodes.contains_key(&service) {
+            edges.entry((folder.clone(), service.clone(), role.clone())).or_insert_with(|| format!("{role}:{folder}:{service}"));
+        }
+    }
+
     let edges: Vec<Value> = edges
         .into_iter()
         .filter(|((s, d, _), _)| nodes.contains_key(s) && nodes.contains_key(d))

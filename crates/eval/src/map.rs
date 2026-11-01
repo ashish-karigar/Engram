@@ -72,6 +72,16 @@ pub fn run(root: &Path) -> Result<()> {
             println!("  {:<22} named in {}", "", docs.join(", "));
         }
     }
+    println!("ARCHITECTURE");
+    let mut stmt = conn.prepare("SELECT area, role, service, how, evidence FROM system_links ORDER BY area, role, service")?;
+    for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, String>(4)?)))? {
+        let (area, role, service, how, evidence) = row?;
+        println!("  {area:<10} {role:<8} {service:<14} {how:<8} {evidence}");
+    }
+    let mut stmt = conn.prepare("SELECT claim FROM memories WHERE scope LIKE 'system:%' AND status = 'current' ORDER BY scope")?;
+    for claim in stmt.query_map([], |r| r.get::<_, String>(0))? {
+        println!("  memory: {}", claim?);
+    }
     println!("SERVICE EVIDENCE (config and docs)");
     let mut stmt = conn.prepare("SELECT service, file, via FROM net_services WHERE via LIKE 'config:%' OR via LIKE 'docs:%' ORDER BY service, file")?;
     for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))? {

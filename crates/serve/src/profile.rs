@@ -17,17 +17,19 @@ fn ids(conn: &Connection, sql: &str, params: impl engram_core::rusqlite::Params)
     Ok(rows.collect::<engram_core::rusqlite::Result<_>>()?)
 }
 
+/// The architecture facts the system keeps itself (scope `system:`) are left out: `brief` shows
+/// them as the system map, and here they would crowd out what people decided.
 pub fn build_profile(conn: &Connection, limit: i64) -> Result<Profile> {
     let static_ids = ids(
         conn,
-        "SELECT id FROM memories WHERE status = 'current' AND is_inference = 0
+        "SELECT id FROM memories WHERE status = 'current' AND COALESCE(scope, '') NOT LIKE 'system:%' AND is_inference = 0
            AND type IN ('preference','decision','fact')
          ORDER BY is_hub DESC, reinforcement DESC, (type = 'preference') DESC, salience DESC, observed_at DESC LIMIT ?1",
         params![limit],
     )?;
     let dynamic_ids = ids(
         conn,
-        "SELECT id FROM memories WHERE status = 'current'
+        "SELECT id FROM memories WHERE status = 'current' AND COALESCE(scope, '') NOT LIKE 'system:%'
            AND observed_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?2)
          ORDER BY observed_at DESC LIMIT ?1",
         params![limit * 2, format!("-{RECENT_DAYS} days")],

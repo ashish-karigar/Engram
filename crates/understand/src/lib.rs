@@ -1,5 +1,6 @@
 //! Turn raw events into verified, linked memories: code index, task grouping, extraction, grounding.
 
+pub mod architecture;
 pub mod calls;
 pub mod codeindex;
 pub mod digest;

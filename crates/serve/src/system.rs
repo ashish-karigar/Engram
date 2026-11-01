@@ -261,6 +261,12 @@ pub struct SystemMap {
     pub services: Vec<(String, Vec<String>)>,
     /// "frontend → backend" -> endpoint names
     pub links: BTreeMap<String, Vec<String>>,
+    /// Area path -> what it relies on: "hosted on Oracle (per docs) · data PostgreSQL (same host) · auth Auth0".
+    pub architecture: BTreeMap<String, String>,
+    /// Memories the code contradicts: (id, title, reason).
+    pub flags: Vec<(String, String, String)>,
+    /// Architecture changes in the last 30 days, newest first.
+    pub changes: Vec<String>,
 }
 
 pub fn system_map(conn: &Connection) -> Result<SystemMap> {
@@ -317,7 +323,24 @@ pub fn system_map(conn: &Connection) -> Result<SystemMap> {
         users.dedup();
         services.push((name, users));
     }
-    Ok(SystemMap { areas, endpoints, services, links })
+    let architecture = engram_understand::architecture::summary(conn)?;
+    let flags = engram_understand::architecture::flags(conn)?;
+    let changes = engram_understand::architecture::changes(conn, 30)?;
+    Ok(SystemMap { areas, endpoints, services, links, architecture, flags, changes })
+}
+
+/// Recent architecture changes and memories the code contradicts, for `map` and `brief`.
+pub fn architecture_notes(m: &SystemMap) -> Vec<String> {
+    let mut lines = vec![];
+    if !m.changes.is_empty() {
+        lines.push("Architecture changes (last 30 days):".into());
+        lines.extend(m.changes.iter().take(5).map(|c| format!("  • {c}")));
+    }
+    if !m.flags.is_empty() {
+        lines.push("Memories the code now contradicts (check before relying on them):".into());
+        lines.extend(m.flags.iter().map(|(id, title, reason)| format!("  • {title} ({id}) {reason}")));
+    }
+    lines
 }
 
 fn is_test(path: &str) -> bool {
@@ -328,11 +351,15 @@ fn is_test(path: &str) -> bool {
 /// non-test callers, and external services.
 pub fn map_text(m: &SystemMap, area_filter: Option<&str>) -> String {
     let mut lines = vec!["Parts:".to_string()];
-    lines.extend(m.areas.iter().map(|(name, kind, path, files)| format!("  • {name} — {kind} ({}, {files} files)", if path.is_empty() { "." } else { path })));
+    lines.extend(m.areas.iter().map(|(name, kind, path, files)| {
+        let relies = m.architecture.get(path).map_or(String::new(), |a| format!(": {a}"));
+        format!("  • {name} — {kind} ({}, {files} files){relies}", if path.is_empty() { "." } else { path })
+    }));
     if !m.links.is_empty() {
         lines.push("How they connect:".into());
         lines.extend(m.links.iter().map(|(pair, eps)| format!("  • {pair} over HTTP: {} endpoint(s)", eps.len())));
     }
+    lines.extend(architecture_notes(m));
     let short = |q: &str| -> String {
         let (file, sym) = q.split_once("::").map_or((q, None), |(f, s)| (f, Some(s)));
         let file = file.rsplit('/').next().unwrap_or(file);

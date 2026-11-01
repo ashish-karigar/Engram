@@ -302,8 +302,12 @@ pub fn op_brief(ctx: &Ctx, req: BriefReq) -> Result<OpResult> {
         if !system.areas.is_empty() {
             // The parts and how they connect; the full endpoint list is one `map` call away.
             lines.push("System map:".into());
-            lines.extend(system.areas.iter().map(|(name, kind, _, files)| format!("- {name}: {kind}, {files} files")));
+            lines.extend(system.areas.iter().map(|(name, kind, path, files)| {
+                let relies = system.architecture.get(path).map_or(String::new(), |a| format!(" · {a}"));
+                format!("- {name}: {kind}, {files} files{relies}")
+            }));
             lines.extend(system.links.iter().map(|(pair, eps)| format!("- {pair} over HTTP ({} endpoints)", eps.len())));
+            lines.extend(crate::system::architecture_notes(&system));
             if !system.services.is_empty() {
                 lines.push(format!("- external services: {}", system.services.iter().map(|(s, _)| s.as_str()).collect::<Vec<_>>().join(", ")));
             }

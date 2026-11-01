@@ -132,6 +132,8 @@ pub struct MapStats {
     pub calls_linked: usize,
     pub calls_unmatched: usize,
     pub services: usize,
+    pub links: usize,
+    pub architecture: crate::architecture::SyncStats,
 }
 
 struct RouteRow {
@@ -260,6 +262,8 @@ pub fn rebuild_map(conn: &Connection, repo_name: &str, files: &[String], read: i
     let mut stmt = conn.prepare("SELECT file, symbol, method, path, host FROM net_calls")?;
     let calls: Vec<(String, Option<String>, String, String, Option<String>)> =
         stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?.collect::<engram_core::rusqlite::Result<_>>()?;
+    // (file, service, why) for the architecture: what code reaches each service.
+    let mut code_uses: Vec<(String, String, String)> = vec![];
     for (file, symbol, method, path, host) in &calls {
         let caller = actor_node(conn, file, symbol.as_deref())?;
         let local_route = match host {
@@ -288,6 +292,7 @@ pub fn rebuild_map(conn: &Connection, repo_name: &str, files: &[String], read: i
                     .map(|(_, s)| *s)
                     .or_else(|| host_service(h))
                     .map_or(h.clone(), str::to_string);
+                code_uses.push((file.clone(), name.clone(), format!("calls {h}")));
                 upsert_entity(conn, "service", &name, None, None)?.id
             }
             (None, None) => match bases.get(file) {
@@ -306,8 +311,13 @@ pub fn rebuild_map(conn: &Connection, repo_name: &str, files: &[String], read: i
     // Services set up in config, scripts and env templates, or only named in docs (see infra.rs).
     // Stored with their line as evidence: `config:12:image postgres:17`.
     conn.execute("DELETE FROM net_services WHERE via LIKE 'config:%' OR via LIKE 'docs:%'", [])?;
-    for f in crate::infra::scan(files, &read) {
-        conn.execute("INSERT INTO net_services (file, service, via) VALUES (?, ?, ?)", params![f.file, f.service, format!("{}:{}:{}", f.how, f.line, f.why)])?;
+    let findings = crate::infra::scan(files, &read);
+    let mut stored = HashSet::new();
+    for f in &findings {
+        // Docs keep every sentence for the architecture; one row per file and service is enough here.
+        if stored.insert((f.file.as_str(), f.service, f.how)) {
+            conn.execute("INSERT INTO net_services (file, service, via) VALUES (?, ?, ?)", params![f.file, f.service, format!("{}:{}:{}", f.how, f.line, f.why)])?;
+        }
     }
 
     let mut stmt = conn.prepare("SELECT DISTINCT file, service, via LIKE 'docs:%' FROM net_services")?;
@@ -319,5 +329,15 @@ pub fn rebuild_map(conn: &Connection, repo_name: &str, files: &[String], read: i
         let _ = add_edge(conn, &file_id, &service_id, kind, EdgeOpts { weight: Some(weight), ..Default::default() });
     }
     stats.services = conn.query_row("SELECT COUNT(*) FROM entities WHERE kind = 'service'", [], |r| r.get::<_, i64>(0))? as usize;
+
+    // What each part relies on, kept as memories with history (see architecture.rs).
+    let mut stmt = conn.prepare("SELECT file, service, via FROM net_services WHERE via = 'sdk' OR via LIKE 'client:%'")?;
+    let imported: Vec<(String, String, String)> = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<engram_core::rusqlite::Result<_>>()?;
+    code_uses.extend(imported);
+    let links = crate::architecture::derive(&areas, &findings, &code_uses, files, &read);
+    crate::architecture::store(conn, &links)?;
+    stats.architecture = crate::architecture::sync_memories(conn, &links, &areas)?;
+    stats.architecture.flagged = crate::architecture::flag_contradictions(conn, &links, &areas)?;
+    stats.links = links.len();
     Ok(stats)
 }
