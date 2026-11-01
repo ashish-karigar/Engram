@@ -175,11 +175,73 @@ On live projects the rules mattered more than the score. A memory from chat ("us
 retired a commit-backed decision; since then, a chat-only memory can't retire one a commit backs, a
 memory in conflict with the code retires nothing, and every applied link can be undone.
 
-### E. Live agents, with and without MemoryOS *(built, not yet run)*
+### E. Live agents, with and without MemoryOS *(done, 1 full run)*
 
 Muse Code (`muse exec`, headless) does the same tasks twice, from the same commit: once connected to
 MemoryOS and once without it. Same model, same settings, same prompt. The prompt never mentions
-MemoryOS; in the "with" runs the agent learns about it only from the MCP server's own instructions.
+MemoryOS; in the "with" runs the agent learns about it only from the connector (MCP server and
+SessionStart hook).
+
+**Result (2026-11-01, commit c363c56, Muse's default model `muse-spark-1.3`, 3 runs per task and
+condition, 84 trials, `bench/agents/results/live-20261101-012109.json`):**
+
+| | With MemoryOS | Without |
+|---|---|---|
+| Trials passed | **39 / 42** | 26 / 42 |
+| Median tokens per trial | 145k | 216k |
+| Median uncached tokens per trial | 31k | 58k |
+| Median tool calls per trial | 6 | 10 |
+| Decisions contradicted (`never` patterns) | 0 | 0 |
+
+Per task (passed of 3, median tokens):
+
+| Task | Kind | With | Without |
+|---|---|---|---|
+| lt-first-feature | history | 3 · 90k | 0 · 497k |
+| lt-baseline-claims | history | 3 · 175k | 0 · 212k |
+| lt-mount | history | 3 · 145k | 0 · 262k |
+| lt-recording | history | 3 · 88k | 0 · 539k |
+| cb-extraction-rules | history | 3 · 234k | 3 · 182k |
+| en-token-budget | history | 3 · 90k | 3 · 92k |
+| en-retire-rule | history | 3 · 58k | 3 · 143k |
+| lt-storage-format | handoff | 3 · 465k | 1 · 622k |
+| cb-error-format | handoff | 0 · 2.3M | 1 · 1.5M |
+| lt-setup | trap | 3 · 209k | 3 · 200k |
+| cb-impact | impact | 3 · 335k | 3 · 339k |
+| cb-deploy | in-repo | 3 · 118k | 3 · 116k |
+| cb-stack | control | 3 · 83k | 3 · 79k |
+| en-port | control | 3 · 145k | 3 · 167k |
+
+What it says:
+
+- **Memory decides the result when the answer exists only in past sessions.** The four LiTheR
+  history tasks went 12/12 with memory and 0/12 without; without it the agent searched longer and
+  answered wrong. The careerbricks and engram history answers are also written in their repos'
+  docs, so both conditions passed those.
+- **Where both pass, memory mostly lowers cost.** Uncached tokens, which drive price, were lower
+  with memory on every one of the 14 tasks. Total tokens were lower on 9 of 14. Total tokens
+  differ by about ±20% between single runs, so small gaps are noise.
+- **The trap held.** With a pending venv/Conda conflict in memory, every "with" run still wrote
+  Conda.
+- **"Without" is not memoryless.** Muse keeps its own per-project `MEMORY.md` under its data folder.
+  In one `cb-error-format` and one `lt-storage-format` "without" run, session 1 wrote the decision
+  there and session 2 followed it. So the baseline is Muse with its built-in memory.
+
+**The failure: `cb-error-format`, 0/3 with memory.** In all three runs, MemoryOS did its part:
+
+1. session 1 saved the decision with `note`;
+2. session 2 got it in the brief, then found it with `search` and `expand`.
+
+The agent then chose the code over it. Every endpoint returns `{"detail": ...}`, the frontend reads
+`detail`, and the repo has no mobile client. The agent said the memory was unsupported, wrote
+`{"detail": ...}`, and saved a new memory to follow the code convention. That memory would mislead
+later sessions. The memory showed the decision but not that the user stated it, while Muse's own
+`MEMORY.md` reads as the user's instruction. Two things to fix:
+
+- the brief and search results should show where a memory came from, for example "stated by the user";
+- a memory that contradicts a user-stated decision should go to Review, not replace it.
+
+The task is also a hard case: it asks for a convention that nothing in the code supports yet.
 
 The 14 tasks are in `bench/agents/tasks.json`. They and their pass checks were committed before any
 run.
@@ -252,7 +314,9 @@ Results go to `bench/agents/results/`.
   found with brief plus search;
 - one live `lt-setup` pair: both conditions passed. The "with" agent saw the venv/Conda conflict in
   the brief, checked `environment.yml`, and wrote Conda. Tokens were 213k with and 192k without.
-  A pair run before the hook existed came out the other way round, so single runs are noise.
+  A pair run before the hook existed came out the other way round, so single runs are noise;
+- one live handoff (`lt-storage-format`, "with"): session 1 saved the decision with `note`, and
+  session 2 found it and wrote MCAP storage.
 
 ### F. Smoke benchmark *(done)*
 
@@ -294,3 +358,5 @@ Suite E commands are in its section above.
 - **2026-10-31:** the smoke benchmark's question file was being indexed as part of the Engram project,
   so search found the answer key. Fixed by excluding `bench/` from indexing and from grading; results
   above are after the fix.
+- **2026-11-01:** suite E's first live trial showed Muse ignoring MemoryOS's MCP tools. The Muse
+  connector now also installs a SessionStart hook. The full run above is after that change.
