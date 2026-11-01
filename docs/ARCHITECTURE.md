@@ -66,7 +66,7 @@ user's index, branches and working tree are never touched.
 
 ## Two layers of context
 
-Like Supermemory, Engram keeps **documents** (raw sources, chunked for grounding) separate from
+Engram keeps **documents** (raw sources, chunked for grounding) separate from
 **memories** (distilled facts in the graph). Documents come from the project folder automatically
 (docs, configs and source files that git would track), from agents via `add_document`, or from the UI.
 Pipeline: queued → extracting → chunking → embedding → indexing → done (or failed, with the error).
@@ -74,7 +74,7 @@ Unchanged files are skipped by content hash; changed ones are re-chunked and bum
 Each chunk carries a contextual header (`title > section`) that is indexed and embedded with it.
 Documents link into the graph: `describes` its own code file, `mentions` other files it names.
 
-Memory relationships follow Supermemory's model: `supersedes` (updates), `extends` (adds detail),
+Memory relationships: `supersedes` (updates), `extends` (adds detail),
 `derives` (inferred, flagged `is_inference` until approved or declined). Repeating a known fact
 reinforces it; facts can carry `expires_at`; a project profile splits standing facts from current focus.
 

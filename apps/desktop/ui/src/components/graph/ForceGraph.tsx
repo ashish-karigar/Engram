@@ -276,7 +276,7 @@ export function ForceGraph({ graph, settings, selectedId, onSelect, onZoom, comm
   // Display-only changes (selection, sizes, labels, arrows) just redraw.
   useEffect(render, [selectedId, settings.linkWidth, settings.textFade, settings.arrows]);
 
-  // Keyboard: Z fits, C centers on the selection, like Supermemory's graph.
+  // Keyboard: Z fits, C centers on the selection.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;

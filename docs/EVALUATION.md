@@ -4,10 +4,6 @@ This document says what we measure, on which data, how, and the rules that keep 
 Each suite is marked **done**, **in progress** or **planned**; results are only reported for suites
 that have run, with the commit and configuration that produced them.
 
-**Why Supermemory.** We compare against Supermemory because it is the closest direct competitor we
-found: a memory layer for AI agents that publishes its benchmark results. Its numbers are its own
-(vendor-reported), and we say so wherever we put ours next to them.
-
 ## Rules
 
 1. **Public data first.** Accuracy claims rest on public benchmarks other systems also report on, not
@@ -37,12 +33,12 @@ abstention.
 407 questions, 382 without abstention for retrieval. Run once, after tuning on dev ended; the numbers
 are as measured.
 
-| | MemoryOS (test, 407 questions) | Supermemory (vendor-reported, 500) |
-|---|---|---|
-| Evidence session in top 20 (R@20) | **100%** | 97% (with GPT-4o) |
-| Evidence session in top 10 / top 5 | 99.7% / 99.0% | — |
-| Every evidence session in top 5 (all@5) | 88.0% | — |
-| Answer accuracy | **86.7%** (mean over types 85.6%), Muse Spark | 85.2% (Gemini 3 Pro), 84.6% (GPT-5) |
+| Test split, 407 questions | MemoryOS |
+|---|---|
+| Evidence session in top 20 (R@20) | **100%** |
+| Evidence session in top 10 / top 5 | 99.7% / 99.0% |
+| Every evidence session in top 5 (all@5) | 88.0% |
+| Answer accuracy, Muse Spark | **86.7%** (mean over types 85.6%) |
 
 Answer accuracy by type (n): single-session-assistant 100 (43), single-session-user 98.2 (55),
 temporal 91.4 (105), knowledge update 88.1 (59), preference 81.8 (22), multi-session 75.5 (98),
@@ -51,17 +47,19 @@ abstention 64.0 (25). Retrieval R@5 by type: 100 for all except multi-session 99
 
 How to read it:
 
-- **Retrieval is ahead:** the evidence was in the top 20 for every test question, and in the top 5
-  for 99%.
-- **Answer accuracy is on par, slightly ahead:** 1.5 points over Supermemory's best published figure,
-  which is within run-to-run noise. Dev scored 92.5%, so dev was optimistic; only test is reported.
+- **Retrieval:** the evidence was in the top 20 for every test question, and in the top 5 for 99%.
+  With about 48 sessions per question, chance alone gives 61% at 20 and 19% at 5.
+- **Answer accuracy:** 86.7%, mostly the answering model reasoning over the right context. Dev scored
+  92.5%, so dev was optimistic; only test is reported.
 - **Weakest:** multi-session counting ("how many … in total"), where the model misses an item, and
   abstention, where it answers from related but wrong details.
 
 Differences in setup, stated with the numbers:
 
-- Muse Spark answers and judges; the official judge, and Supermemory's, is GPT-4o.
-- Our test split is 407 of the 500 questions (a fixed hash split); Supermemory reports on all 500.
+- Muse Spark answers and judges; the official judge is GPT-4o. A model judging its own answers may
+  be lenient; a hand check of verdicts marked correct is still to do.
+- Our test split is 407 of the 500 questions (a fixed hash split); published results usually use
+  all 500.
 - Our accuracy includes the 25 abstention questions.
 - 7 model replies hit their token limit (4 answers at 6000, 3 verdicts at 2000) and count as scored.
   A cut-off verdict without "yes" counts as wrong. Raising the limits after seeing test results
@@ -72,12 +70,10 @@ Result files: `bench/longmemeval/test-retrieval.json`, `bench/longmemeval/test-q
 - **Ingest:** each question's sessions become a fresh Engram project, through the same transcript
   path real agent sessions use.
 - **Retrieval metric (no model needed):** recall_any@K, whether any evidence session appears in the
-  top K results, for K = 5, 10, 20, per category; abstention questions excluded. This is directly
-  comparable to Supermemory's published LongMemEval-S retrieval figure (vendor-reported 97% Recall@20,
-  judged with GPT-4o; we state any differences in setup next to our number).
+  top K results, for K = 5, 10, 20, per category; abstention questions excluded. This is the
+  retrieval figure memory systems publish for LongMemEval-S.
 - **Answer accuracy (needs a model):** retrieve, answer with an LLM, judge with an LLM, following the
-  official protocol. The official judge is GPT-4o, and Supermemory reports about 85% with GPT-5 and
-  Gemini 3 Pro answering. We use Meta's Muse Spark to answer and to judge, with the official judge
+  official protocol. The official judge is GPT-4o. We use Meta's Muse Spark to answer and to judge, with the official judge
   prompt unchanged, and hand-check a sample of verdicts to report how often we agree with the
   judge. The saved answers can be re-judged with GPT-4o later without re-running anything else.
 - **Also recorded:** tokens returned per question, latency p50/p95.
@@ -186,7 +182,7 @@ Tuning ended here; the test split result is at the top of this section.
 ### B. Code awareness: file localization on SWE-bench Lite *(planned)*
 
 Given a real GitHub issue, can Engram point at the files that the accepted fix changed? This tests
-what Supermemory does not claim: understanding a codebase.
+what conversational memory benchmarks do not: understanding a codebase.
 
 - **Data:** a fixed subset of [SWE-bench Lite](https://www.swebench.com/) instances (repositories at the
   issue's base commit), chosen by hash, not by hand.

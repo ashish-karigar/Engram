@@ -1,16 +1,16 @@
-# Engram roadmap: a local Supermemory with code-aware memory at its core
+# Engram roadmap: local shared memory with code-aware memory at its core
 
-Goal: everything Supermemory does for context (memories, documents/RAG, profiles, forgetting,
-review, MCP), running locally and free, plus what it cannot do: watch the project folder and git,
+Goal: a full memory layer for agents (memories, documents/RAG, profiles, forgetting, review, MCP),
+running locally and free, plus what hosted memory layers do not do: watch the project folder and git,
 understand code, recover uncommitted work, and attribute every memory and request to an agent.
 
 Deadline: Nov 4, 9 PM ET. Phases are ordered so each one leaves a working, demoable product.
 
-## Parity map
+## Capability map
 
-| Supermemory feature | Engram equivalent | Phase |
+| Capability | Engram | Phase |
 |---|---|---|
-| Documents → chunks (SuperRAG) | `documents` + `chunks`, type-aware chunking, contextual headers | B |
+| Documents → chunks | `documents` + `chunks`, type-aware chunking, contextual headers | B |
 | Extractors (text, HTML, PDF, code AST) | text/markdown, HTML, PDF (pure Rust), code via tree-sitter | B |
 | Pipeline statuses | queued → extracting → chunking → embedding → indexing → done/failed | B |
 | Embeddings + vector search | `Embedder` trait: built-in hashing (no download), Ollama, OpenAI-compatible | A |
@@ -24,9 +24,9 @@ Deadline: Nov 4, 9 PM ET. Phases are ordered so each one leaves a working, demoa
 | Connectors | project folder is the connector: docs and code auto-ingested on change | B |
 | Console graph + memory browser | desktop app: Obsidian-style graph, documents, review, settings | E |
 
-## Not yet at parity (honest list)
+## Not done yet (honest list)
 
-| Supermemory has | Engram today | Plan |
+| Missing | Engram today | Plan |
 |---|---|---|
 | Conversation auto-capture via plugin hooks | Done by reading each agent's session log; injection via Claude Code hook | Hooks for Codex and Muse |
 | Dreaming / derived facts by its own model | Extraction from commits only; no `derives` generator | Phase F with Muse Spark |

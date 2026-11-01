@@ -50,7 +50,7 @@ CREATE TABLE embeddings (
 );
 CREATE INDEX embeddings_kind ON embeddings(model, kind);
 
--- Memory parity with Supermemory: inferred facts, review, reinforcement, expiry.
+-- Memory model: inferred facts, review, reinforcement, expiry.
 ALTER TABLE memories ADD COLUMN is_inference INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE memories ADD COLUMN reviewed_at TEXT;
 ALTER TABLE memories ADD COLUMN reinforcement INTEGER NOT NULL DEFAULT 0;

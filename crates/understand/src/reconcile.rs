@@ -52,7 +52,7 @@ const SAME_TOPIC: f64 = 0.6;
 const RELATED_TOPIC: f64 = 0.25;
 const SAME_CLAIM: f64 = 0.9;
 
-/// Store a memory while keeping the graph consistent, following Supermemory's relationships:
+/// Store a memory while keeping the graph consistent:
 /// - same topic, same claim → reinforce the existing memory;
 /// - same topic, new claim → **updates** (supersede, history kept);
 /// - related topic → create and link with **extends**;

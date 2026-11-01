@@ -10,7 +10,7 @@ It observes the project (files, git, agent session logs), keeps an immutable eve
 that into a **temporal memory graph** (decisions, reasons, rejected options, tasks, code symbols),
 and serves a small token-budgeted slice back to any agent via MCP and hooks.
 
-Closest reference: supermemory.ai. Differences: Engram *watches* instead of waiting to be told,
+What sets it apart: Engram *watches* instead of waiting to be told,
 it is grounded in raw evidence, it understands code symbols, and it can block contradicting edits.
 
 ### Brain-like properties (the real differentiators)
@@ -112,8 +112,8 @@ See the questions asked in chat; answers get recorded here.
 - Purpose: agent-agnostic memory so context survives compaction and agent switches (Claude -> Codex -> Muse) with no re-briefing.
 - Must remember: code changes, decisions + reasons, what connects where and why, all with time.
 - Primary use: an agent or user asks "I'm changing X, what's affected / what are the complications / why was it built this way?" and gets a grounded answer from memory.
-- Decay/forgetting modeled on supermemory: typed memories (facts persist until superseded; preferences strengthen with repetition; episodes decay unless significant; temporary items expire after their date), versions kept, newest marked current.
-- Two timestamps per memory like supermemory: document date (when observed) and event date (when it applies), plus validity range.
+- Decay/forgetting: typed memories (facts persist until superseded; preferences strengthen with repetition; episodes decay unless significant; temporary items expire after their date), versions kept, newest marked current.
+- Two timestamps per memory: document date (when observed) and event date (when it applies), plus validity range.
 - Platform: run several agents at once (e.g. Claude on backend auth, Codex on billing page) sharing one memory.
 - Demo project: owner has one in mind (TBD).
 - Credits: Meta API key available, credits pending; develop against local Ollama until they arrive.
