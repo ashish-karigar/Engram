@@ -12,6 +12,7 @@ import { loadSettings, saveSettings, type GraphSettings } from "./components/gra
 import { NodeDrawer } from "./components/NodeDrawer.tsx";
 import { AboutPage } from "./components/AboutPage.tsx";
 import { RequestLog } from "./components/RequestLog.tsx";
+import { Credit } from "./components/Credit.tsx";
 import { SettingsPage } from "./components/SettingsPage.tsx";
 import { Sidebar, type Page } from "./components/Sidebar.tsx";
 import { Timeline } from "./components/timeline/Timeline.tsx";
@@ -69,6 +70,7 @@ function Workspace({ connection, project }: { connection: Connection; project: P
             {graph && <ForceGraph graph={graph} settings={graphSettings} selectedId={selected} onSelect={select} onZoom={setZoom} commands={commands} />}
             <GraphControls graph={graph} settings={graphSettings} onChange={updateGraphSettings} selectedId={selected} zoom={zoom} commands={commands} />
             {graph && graph.nodes.length === 0 && <div className="graph-empty">No memories yet. Connect an agent, or add documents.</div>}
+            <Credit className="graph-credit" />
             {selected && drawer && <NodeDrawer api={api} id={selected} onClose={() => setDrawer(false)} onOpen={select} />}
           </div>
         )}

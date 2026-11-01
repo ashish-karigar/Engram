@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Connection } from "../api/types.ts";
+import { Credit } from "./Credit.tsx";
 import { Mark } from "./icons.tsx";
 
 type TauriWindow = Window & { __TAURI_INTERNALS__?: unknown };
@@ -22,7 +23,7 @@ export function AboutPage({ connection, projects }: { connection: Connection; pr
           <Mark size={22} />
           <div>
             <h1>MemoryOS</h1>
-            <p className="faint">Version {version ?? "0.1.0"}</p>
+            <p className="faint">Version {version ?? "0.1.0"} · <Credit /></p>
           </div>
         </div>
         <p className="lead">Local-first shared memory for coding agents.</p>
@@ -38,7 +39,8 @@ export function AboutPage({ connection, projects }: { connection: Connection; pr
           <div><dt>Memory service</dt><dd className="mono">{connection.url}</dd></div>
           <div><dt>Projects</dt><dd>{projects}</dd></div>
           <div><dt>Protocol</dt><dd>MCP</dd></div>
-          <div><dt>License</dt><dd>MIT</dd></div>
+          <div><dt>Created by</dt><dd><Credit className="bare" /></dd></div>
+          <div><dt>License</dt><dd>All rights reserved</dd></div>
         </dl>
       </div></div>
     </section>

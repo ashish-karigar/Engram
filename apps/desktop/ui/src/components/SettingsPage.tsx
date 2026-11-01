@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { projectsApi } from "../api/client.ts";
 import type { AppSettings, TestResult } from "../api/types.ts";
+import { Credit } from "./Credit.tsx";
 
 type Api = ReturnType<typeof projectsApi>;
 
@@ -147,6 +148,7 @@ export function SettingsPage({ api }: { api: Api }) {
             <button type="button" className="btn" onClick={() => { localStorage.clear(); setStatus("Graph view preferences reset."); }}>Reset graph view preferences</button>
           </div>
         </div>
+        <p className="settings-credit">MemoryOS · <Credit /></p>
       </div></div>
       <div className="s-footer">
         <span className={status?.startsWith("Saved") || status?.startsWith("Graph") ? "ok" : "err"}>{status}</span>
