@@ -5,7 +5,7 @@ members = ["apps/desktop/src-tauri", "crates/core", "crates/code", "crates/embed
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-license = "MIT"
+license = "LicenseRef-AllRightsReserved"
 
 [workspace.dependencies]
 engram-core = { path = "crates/core" }

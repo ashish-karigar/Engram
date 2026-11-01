@@ -86,3 +86,9 @@ Not done: adapters that read Codex/Muse session logs (agents use `note` instead)
 cloud sync and billing. The desktop app launches and runs its daemon, but the native folder picker and
 the Codex/Muse/Claude connectors have not been exercised on a real machine. The Muse API base URL and
 model id defaults are unverified and configurable.
+
+## License
+
+Copyright (c) 2026 Ashish Karigar. All rights reserved. This is not open source: the code is public
+for viewing and for evaluating the project, including hackathon judging. Any other use needs written
+permission. See [LICENSE](LICENSE).

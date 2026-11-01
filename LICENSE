@@ -1,0 +1,36 @@
+MemoryOS (Engram)
+Copyright (c) 2026 Ashish Karigar. All rights reserved.
+
+This repository, including its source code, documentation, designs, benchmarks and other
+materials (the "Software"), is the proprietary work of Ashish Karigar (the "Author"). It is not
+open source. Making it publicly visible does not grant any license except as stated below.
+
+1. Permitted use. You may view the Software and run it on your own computer only to evaluate it,
+   including judging it in the Meta Global AI Developer Hackathon (October 26 to November 4, 2026).
+   As GitHub's Terms of Service require for public repositories, you may also view it and fork it
+   on GitHub. A fork carries no further rights.
+
+2. Not permitted without the Author's prior written permission:
+   a. copying, modifying, translating or creating derivative works of the Software, in whole or in
+      part, except as needed for the evaluation in section 1;
+   b. distributing, publishing, sublicensing, selling, renting or otherwise making the Software, or
+      any part of it, available to others;
+   c. using the Software, or any part of it, in a product or service, hosted or not, commercial or
+      not;
+   d. using the Software, or its designs, data or outputs, to train machine learning models, or to
+      build a competing product.
+
+3. Third-party components. Libraries and data from others keep their own licenses, which this
+   license does not change. Examples are the Rust crates and npm packages in Cargo.lock and
+   package-lock.json, and the LongMemEval dataset (MIT) used in bench/longmemeval.
+
+4. Ownership. All rights not expressly granted are reserved. Your feedback, issues or suggestions
+   give you no rights in the Software.
+
+5. No warranty. The Software is provided "as is", without warranty of any kind. To the extent the
+   law allows, the Author is not liable for any claim, damage or other liability arising from the
+   Software or its use.
+
+6. Ending. Any use outside section 1 ends your permission to use the Software automatically.
+
+For permission or licensing inquiries, contact the Author through GitHub: github.com/ashish-karigar
