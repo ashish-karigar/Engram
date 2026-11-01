@@ -1,14 +1,16 @@
 import type { ProjectApi } from "../api/client.ts";
 import type { InferredMemory } from "../api/types.ts";
 import { usePolling } from "../hooks/usePolling.ts";
+import { LinkReview } from "./LinkReview.tsx";
 import { WeakMemories } from "./WeakMemories.tsx";
 
-/** Inferred memories wait here until a person approves or declines them; weak ones can be archived. */
+/** Model-proposed links and conflicts, then inferred memories, wait here until a person approves or declines them; weak ones can be archived. */
 export function ReviewPanel({ api }: { api: ProjectApi }) {
   const { data = [], reload } = usePolling<InferredMemory[]>(() => api.review(), 4000, [api]);
   const decide = (id: string, action: "approve" | "decline") => api.decide(id, action).then(reload);
   return (
     <div className="scroll">
+      <LinkReview api={api} />
       <p className="muted" style={{ marginBottom: 12 }}>MemoryOS flags facts it inferred rather than read. Approve the right ones; declined guesses leave search.</p>
       <ul className="rows">
         {data.map(({ memory: m, parentCount }) => (

@@ -6,6 +6,7 @@ pub mod codeindex;
 pub mod digest;
 pub mod extract;
 pub mod infra;
+pub mod judge;
 pub mod link;
 pub mod llm;
 pub mod notes;

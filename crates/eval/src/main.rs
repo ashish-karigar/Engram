@@ -3,6 +3,7 @@
 
 mod cache;
 mod history;
+mod links;
 mod longmemeval;
 mod map;
 mod report;
@@ -101,6 +102,8 @@ enum Suite {
         #[arg(long, default_value_t = 3)]
         depth: usize,
     },
+    /// Suite F: how accurately the model links memories, on labelled pairs (uses the configured model).
+    Links,
     /// Print a repository's system map (areas, endpoints, callers, services).
     Map {
         /// Repository root.
@@ -141,6 +144,7 @@ fn main() {
         }
         Suite::Scale { dir, sizes, queries } => scale::run(&dir, &sizes, queries),
         Suite::Map { root } => map::run(&root),
+        Suite::Links => links::run(),
         Suite::History { root, commits, depth } => history::run(&root, commits, depth),
     };
     if let Err(err) = result {

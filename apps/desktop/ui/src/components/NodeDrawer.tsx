@@ -160,7 +160,14 @@ function ImpactBody({ api, target }: { api: ProjectApi; target: string }) {
   return (
     <>
       <h4>Impact of changing it</h4>
-      <p className="muted">{result.affected.length === 0 ? "Nothing else in the project depends on it." : `${result.affected.length} file(s) depend on it.`}</p>
+      {result.parts.length > 0 && (
+        <ul className="impact-list">
+          {result.parts.map((p) => <li key={p.relation}>{p.relation}<span className="faint">{p.how === "docs" ? "per docs" : `from ${p.how}`}</span></li>)}
+        </ul>
+      )}
+      {result.affected.length > 0
+        ? <p className="muted">{result.affected.length} file(s) depend on it in code.</p>
+        : result.parts.length === 0 && result.namedIn.length === 0 && <p className="muted">Nothing else in the project depends on it.</p>}
       {[...byArea.entries()].map(([area, items]) => (
         <div key={area} className="impact-area">
           <b>{area}</b>
@@ -169,10 +176,18 @@ function ImpactBody({ api, target }: { api: ProjectApi; target: string }) {
           </ul>
         </div>
       ))}
+      {result.namedIn.length > 0 && (
+        <>
+          <h4>Named in docs and config</h4>
+          <ul className="impact-list">
+            {result.namedIn.map((m) => <li key={`${m.file}:${m.line}`}><code>{m.line ? `${m.file}:${m.line}` : m.file}</code><span className="faint">{m.why}</span></li>)}
+          </ul>
+        </>
+      )}
       {result.endpoints.length > 0 && (<><h4>Endpoints involved</h4><p className="muted">{result.endpoints.slice(0, 12).join(" · ")}{result.endpoints.length > 12 ? ` · +${result.endpoints.length - 12}` : ""}</p></>)}
       {result.decisions.length > 0 && (
         <>
-          <h4>Recorded decisions on these files</h4>
+          <h4>{result.target.kind === "service" ? "What memory says about it" : "Recorded decisions on these files"}</h4>
           <ul className="impact-list">{result.decisions.map(([kind, title, claim]) => <li key={title}><Type kind={kind} /> <b>{title}</b>: {claim}</li>)}</ul>
         </>
       )}

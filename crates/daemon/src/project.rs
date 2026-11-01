@@ -12,6 +12,7 @@ use engram_core::db::{SharedDb, open, shared};
 use engram_core::decay::archive_stale;
 use engram_core::{Connection, Result};
 use engram_embed::{Embedder, embedder_from_env};
+use engram_embed::ann::top_k;
 use engram_embed::store::{chunks_missing, embed_and_store, memories_missing};
 use engram_rag::project::{ingest_file, should_index};
 use engram_sessions::{Sources, sync_sessions};
@@ -20,7 +21,9 @@ use engram_code::{Lang, NetLang, Resolver};
 use engram_understand::codeindex::index_code;
 use engram_understand::system::rebuild_map;
 use engram_understand::llm::LlmClient;
+use engram_understand::judge::{keyword_neighbours, relink};
 use engram_understand::pipeline::{PipelineOptions, run_pipeline};
+use engram_core::memory::Memory;
 
 use crate::paths::{ProjectPaths, project_paths};
 use crate::settings::{IndexSettings, ignored};
@@ -36,6 +39,9 @@ const PROVENANCE_EVERY: Duration = Duration::from_secs(60);
 /// bursts: at most `LOCAL_BURST` tasks, then every project rests for `LOCAL_REST` while the model
 /// unloads. Hosted models have no such limit.
 const LOCAL_BURST: usize = 3;
+/// Memories the model links to their neighbours per pass (one call each); a local model does fewer.
+const RELINK_BATCH: usize = 12;
+const LOCAL_RELINK_BATCH: usize = 2;
 const LOCAL_REST: Duration = Duration::from_secs(5 * 60);
 
 /// Whose turn it is with the local model: one project at a time, and nobody while it rests.
@@ -202,6 +208,28 @@ impl RunningProject {
     }
 }
 
+/// A memory's nearest memories by meaning (vectors) and by words (keyword search), interleaved
+/// so the model sees the best of both.
+fn memory_neighbours(conn: &Connection, embedder: &dyn Embedder, m: &Memory) -> Vec<String> {
+    let by_meaning: Vec<String> = embedder
+        .embed(&[format!("{}. {}", m.title, m.claim)])
+        .ok()
+        .and_then(|v| v.into_iter().next())
+        .and_then(|v| top_k(conn, &embedder.model_id(), "memory", &v, 16).ok())
+        .map(|hits| hits.into_iter().map(|h| h.id).collect())
+        .unwrap_or_default();
+    let by_words = keyword_neighbours(conn, m);
+    let mut ids: Vec<String> = vec![];
+    for i in 0..by_meaning.len().max(by_words.len()) {
+        for id in [by_meaning.get(i), by_words.get(i)].into_iter().flatten() {
+            if !ids.contains(id) {
+                ids.push(id.clone());
+            }
+        }
+    }
+    ids
+}
+
 /// Background thread: extract memories from new events and archive stale ones.
 /// It uses its own connection, so a slow model call never blocks agent requests.
 fn spawn_upkeep(paths: &ProjectPaths, opts: RuntimeOptions, stop: Arc<AtomicBool>) -> JoinHandle<()> {
@@ -231,6 +259,13 @@ fn spawn_upkeep(paths: &ProjectPaths, opts: RuntimeOptions, stop: Arc<AtomicBool
                     pipeline.max_tasks = Some(LOCAL_BURST);
                 }
                 let report = run_pipeline(&conn, &pipeline);
+                let neighbours = |m: &Memory| memory_neighbours(&conn, opts.embedder.as_ref(), m);
+                let batch = if llm.is_local() { LOCAL_RELINK_BATCH } else { RELINK_BATCH };
+                match relink(&conn, llm, &neighbours, batch) {
+                    Ok(r) if r.error.is_some() => eprintln!("engram: linking memories stopped: {}", r.error.unwrap_or_default()),
+                    Err(err) => eprintln!("engram: linking memories failed: {err}"),
+                    Ok(_) => {}
+                }
                 if llm.is_local() {
                     release_local_turn(report.is_ok_and(|r| r.tasks > 0 || r.error.is_some()));
                 }

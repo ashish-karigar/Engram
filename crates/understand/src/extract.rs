@@ -47,7 +47,8 @@ pub fn extract_candidates(llm: &dyn LlmClient, digest: &str) -> Result<Vec<Candi
     let raw = llm.complete(&LlmRequest {
         system: SYSTEM_PROMPT.into(),
         prompt: format!("Activity log:\n\n{digest}"),
-        max_tokens: 2500,
+        // Muse Spark's thinking counts against this; too little returns an empty or cut-off list.
+        max_tokens: 8000,
     })?;
     Ok(parse_candidates(&raw))
 }

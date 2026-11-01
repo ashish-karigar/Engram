@@ -153,8 +153,9 @@ impl ProjectManager for Daemon {
         self.settings()
     }
 
-    fn test_settings(&self, target: &str) -> Result<Value> {
-        let settings = self.settings.read().unwrap().clone();
+    fn test_settings(&self, target: &str, draft: Value) -> Result<Value> {
+        let saved = self.settings.read().unwrap().clone();
+        let settings = if draft.is_null() { saved } else { saved.merged(draft)? };
         let started = Instant::now();
         let detail = match target {
             "llm" => {

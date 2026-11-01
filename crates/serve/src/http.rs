@@ -16,7 +16,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use crate::activity::{ActivityQuery, activity};
-use crate::api::{architecture_data, documents, graph_data, node_detail, request_log, review_queue, stats, timeline};
+use crate::api::{architecture_data, documents, graph_data, link_queue, node_detail, retired_links, request_log, review_queue, stats, timeline};
 use crate::mcp::{call_tool, handle_body, handle_body_with, shared_tool_definitions};
 use crate::ops::{Ctx, MapReq, OpResult, op_add_document, op_brief, op_expand, op_feature, op_impact, op_map, op_note, op_profile, op_search};
 use crate::project::{ProjectManager, ProjectRef};
@@ -131,7 +131,7 @@ async fn dispatch(State(state): State<Arc<AppState>>, req: Request) -> Response 
             tokio::task::spawn_blocking(move || match (method, test) {
                 (Method::GET, false) => manager.settings(),
                 (Method::POST, false) => manager.update_settings(json_body),
-                (Method::POST, true) => manager.test_settings(json_body["target"].as_str().unwrap_or("")),
+                (Method::POST, true) => manager.test_settings(json_body["target"].as_str().unwrap_or(""), json_body["settings"].clone()),
                 _ => Err(Error::msg("not found")),
             })
             .await
@@ -299,6 +299,12 @@ fn project_route(
         (&Method::POST, ["api", "review"]) => {
             let memory = engram_core::memory::review(&conn, body["id"].as_str().unwrap_or(""), body["action"].as_str().unwrap_or(""))?;
             Ok(reply(StatusCode::OK, &serde_json::to_value(memory)?))
+        }
+        (&Method::GET, ["api", "links"]) => json_ok(link_queue(&conn)),
+        (&Method::GET, ["api", "links", "retired"]) => json_ok(retired_links(&conn)),
+        (&Method::POST, ["api", "links"]) if is_admin => {
+            engram_understand::judge::decide(&conn, body["id"].as_str().unwrap_or(""), body["action"].as_str().unwrap_or(""), body["keep"].as_str())?;
+            Ok(reply(StatusCode::OK, &serde_json::json!({"ok": true})))
         }
         (&Method::POST, ["api", "connect"]) if is_admin => connect(state.manager.as_ref(), &body),
         (&Method::GET, ["api", "weak"]) => json_ok(weak_memories(conn).and_then(|w| Ok(serde_json::to_value(w)?))),

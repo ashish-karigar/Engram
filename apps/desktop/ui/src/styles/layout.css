@@ -92,6 +92,8 @@
 .row.click { cursor: pointer; }
 .row.click:hover { background: var(--surface); }
 .row .head { display: flex; gap: 10px; align-items: baseline; }
+.link-side { margin: 8px 0 4px; padding: 8px 12px; background: var(--surface); border-radius: 8px; display: flex; flex-direction: column; gap: 2px; }
+.link-side .faint { font-size: 11px; }
 .why { margin: 8px 0 2px 14px; padding: 8px 12px; background: var(--surface); border-radius: 8px; list-style: none; }
 
 /* ---- agents ---- */

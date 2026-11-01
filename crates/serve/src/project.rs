@@ -55,8 +55,9 @@ pub trait ProjectManager: Send + Sync {
     fn update_settings(&self, _incoming: serde_json::Value) -> Result<serde_json::Value> {
         Err(Error::msg("settings are not available"))
     }
-    /// Try the configured model (`llm`) or embedder (`embeddings`) with a tiny request.
-    fn test_settings(&self, _target: &str) -> Result<serde_json::Value> {
+    /// Try the model (`llm`) or embedder (`embeddings`) with a tiny request. `draft` holds unsaved
+    /// settings from the form, applied over the saved ones; null tests what is saved.
+    fn test_settings(&self, _target: &str, _draft: serde_json::Value) -> Result<serde_json::Value> {
         Err(Error::msg("settings are not available"))
     }
 }

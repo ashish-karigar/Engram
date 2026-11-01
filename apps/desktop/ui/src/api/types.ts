@@ -42,6 +42,22 @@ export interface InferredMemory {
   parentCount: number;
 }
 
+/** A link between two memories that the model proposed and a person has to confirm. */
+export interface PendingLink {
+  id: string;
+  status: "pending" | "applied";
+  relation: "same" | "replaces" | "extends" | "depends_on" | "contradicts";
+  reason: string;
+  confidence: number;
+  judgedBy: string;
+  createdAt: string;
+  src: MemoryView;
+  dst: MemoryView;
+  /** That side was derived from the code, so it can't be the one replaced. */
+  srcFromCode: boolean;
+  dstFromCode: boolean;
+}
+
 export interface WeakMemory {
   memory: MemoryView;
   reason: "changelog" | "duplicate" | "identifier" | "low_confidence";
@@ -93,6 +109,10 @@ export interface ImpactResult {
   affected: { file: string; area: string | null; depth: number; why: string }[];
   endpoints: string[];
   decisions: [string, string, string][];
+  /** For a service: parts that rely on it without calling it from code (hosting, data, auth). */
+  parts: { part: string; relation: string; how: string }[];
+  /** For a service: docs and config lines that name it. */
+  namedIn: { file: string; line: number | null; why: string }[];
 }
 
 export interface GraphEdge {

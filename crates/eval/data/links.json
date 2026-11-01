@@ -1,0 +1,37 @@
+[
+  {"m": ["Login uses Auth0 for both the web app and the API.", "2026-10-02"], "c": ["Auth0 handles sign-in for the frontend and the backend.", "2026-09-10"], "accept": ["same"]},
+  {"m": ["Store dates as UTC ISO-8601 strings.", "2026-10-02"], "c": ["All timestamps are saved in UTC as ISO 8601 text.", "2026-09-10"], "accept": ["same"]},
+  {"m": ["Never add co-author lines to commits.", "2026-10-02"], "c": ["Commits must not carry Co-Authored-By trailers.", "2026-09-10"], "accept": ["same"]},
+  {"m": ["Use one SQLite file per project.", "2026-10-02"], "c": ["Each project gets its own SQLite database file.", "2026-09-10"], "accept": ["same"]},
+
+  {"m": ["Moved the API servers from Oracle Cloud to AWS.", "2026-10-20"], "c": ["The backend is hosted on Oracle Cloud.", "2026-09-01"], "accept": ["replaces"]},
+  {"m": ["Switched the job queue from Redis to Postgres SKIP LOCKED to drop a dependency.", "2026-10-20"], "c": ["Background jobs run on a Redis queue (BullMQ).", "2026-09-01"], "accept": ["replaces"]},
+  {"m": ["Search now ranks results by combined keyword and vector scores.", "2026-10-20"], "c": ["Search ranks results by keyword BM25 only.", "2026-09-01"], "accept": ["replaces"]},
+  {"m": ["The default extraction model is muse-spark-1.3 on Meta's API.", "2026-10-20"], "c": ["The default extraction model is llama3.1 through Ollama.", "2026-09-01"], "accept": ["replaces"]},
+  {"m": ["Session tokens now expire after 7 days.", "2026-10-20"], "c": ["Session tokens expire after 30 days.", "2026-09-01"], "accept": ["replaces"]},
+
+  {"m": ["The search cache holds at most 500 entries.", "2026-10-02"], "c": ["Search results are cached for 60 seconds.", "2026-09-10"], "accept": ["extends"]},
+  {"m": ["Auth0 tokens are verified against the tenant's JWKS, cached for 10 minutes.", "2026-10-02"], "c": ["Both apps use Auth0 for authentication.", "2026-09-10"], "accept": ["extends", "depends_on"]},
+  {"m": ["Snapshot commits use the identity MemoryOS <memoryos@localhost>.", "2026-10-02"], "c": ["Uncommitted work is saved as snapshot commits on refs/engram/snapshots.", "2026-09-10"], "accept": ["extends"]},
+  {"m": ["PostgreSQL backups run nightly at 02:00 UTC to object storage.", "2026-10-02"], "c": ["The backend stores its data in PostgreSQL on the same host.", "2026-09-10"], "accept": ["extends", "depends_on"]},
+
+  {"m": ["Row-level security policies assume every request sets app.user_id from the Auth0 subject.", "2026-10-02"], "c": ["Both apps authenticate users with Auth0.", "2026-09-10"], "accept": ["depends_on", "extends"]},
+  {"m": ["The deploy script restarts the API with systemctl on the Oracle VM.", "2026-10-02"], "c": ["The backend is hosted on an Oracle Cloud VM.", "2026-09-10"], "accept": ["depends_on", "extends"]},
+  {"m": ["The frontend reads secrets at build time through the Infisical CLI.", "2026-10-02"], "c": ["Secrets are managed in Infisical.", "2026-09-10"], "accept": ["depends_on", "extends"]},
+
+  {"m": ["The mobile app keeps the session in a cookie.", "2026-10-02"], "c": ["The mobile app cannot hold cookies, so it sends bearer tokens.", "2026-10-01"], "accept": ["contradicts", "replaces"]},
+  {"m": ["The graph view renders in 3D with WebGL.", "2026-10-02"], "c": ["The graph is a 2D canvas like Obsidian's; 3D views were dropped.", "2026-10-01"], "accept": ["contradicts", "replaces"]},
+  {"m": ["Embeddings are computed through OpenAI's API.", "2026-10-02"], "c": ["embeddings run on the CPU inside the app with a built-in model.", "2026-10-01", "code"], "accept": ["contradicts", "replaces"]},
+  {"m": ["Frontend login now uses Clerk.", "2026-10-20"], "c": ["frontend authenticates users with Auth0.", "2026-10-01", "code"], "accept": ["contradicts", "replaces"]},
+
+  {"m": ["Auth0 rate-limits the /oauth/token endpoint to 30 requests per second.", "2026-10-02"], "c": ["Gmail sends the password reset emails.", "2026-09-10"], "accept": []},
+  {"m": ["The UI uses the system font stack.", "2026-10-02"], "c": ["The graph uses a force-directed layout.", "2026-09-10"], "accept": []},
+  {"m": ["Backend logs are written as JSON to stdout.", "2026-10-02"], "c": ["backend is hosted on Oracle.", "2026-09-10", "code"], "accept": []},
+  {"m": ["The PostgreSQL connection pool size is 20.", "2026-10-02"], "c": ["Redis is no longer used.", "2026-09-10"], "accept": []},
+  {"m": ["Codex connects over MCP with a bearer token in config.toml.", "2026-10-02"], "c": ["Claude Code gets a SessionStart hook that injects the brief.", "2026-09-10"], "accept": []},
+  {"m": ["Ollama's context window is raised to 16k tokens.", "2026-10-02"], "c": ["Muse Spark costs $1.25 per million input tokens.", "2026-09-10"], "accept": []},
+  {"m": ["Tests use an in-memory SQLite database.", "2026-10-02"], "c": ["Each project gets its own SQLite database file.", "2026-09-10"], "accept": []},
+  {"m": ["The Dock icon is a wireframe brain.", "2026-10-02"], "c": ["The app is named MemoryOS.", "2026-09-10"], "accept": []},
+  {"m": ["The settings page masks API keys.", "2026-10-02"], "c": ["Switching embedding models re-embeds everything on save.", "2026-09-10"], "accept": []},
+  {"m": ["The careerbricks frontend is deployed to Cloudflare Pages.", "2026-10-02"], "c": ["The careerbricks backend is hosted on Oracle.", "2026-09-10"], "accept": []}
+]

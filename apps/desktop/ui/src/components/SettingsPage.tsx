@@ -22,11 +22,12 @@ function Choice<T extends string>({ value, options, onChange }: { value: T; opti
   );
 }
 
-function TestButton({ api, target }: { api: Api; target: "llm" | "embeddings" }) {
+/** Tests what the form holds now, so a new key or provider can be tried before saving. */
+function TestButton({ api, target, draft }: { api: Api; target: "llm" | "embeddings"; draft: AppSettings }) {
   const [state, setState] = useState<TestResult | { ok: false; detail: string } | "running" | null>(null);
   const run = () => {
     setState("running");
-    api.testSettings(target).then(setState, (e: Error) => setState({ ok: false, detail: e.message }));
+    api.testSettings(target, draft).then(setState, (e: Error) => setState({ ok: false, detail: e.message }));
   };
   return (
     <div className="s-test">
@@ -85,8 +86,7 @@ export function SettingsPage({ api }: { api: Api }) {
               <Field label="Model"><input className="field" value={llm.ollamaModel} onChange={(e) => set("llm", { ollamaModel: e.target.value })} /></Field>
             </div>
           )}
-          {llm.provider !== "none" && <TestButton api={api} target="llm" />}
-          {dirty && llm.provider !== saved.llm.provider && <p className="faint">Save before testing a new provider.</p>}
+          {llm.provider !== "none" && <TestButton api={api} target="llm" draft={draft} />}
         </div>
 
         <div className="s-card">
@@ -113,7 +113,7 @@ export function SettingsPage({ api }: { api: Api }) {
               <Field label="Base URL"><input className="field" value={emb.openaiBaseUrl} onChange={(e) => set("embeddings", { openaiBaseUrl: e.target.value })} /></Field>
             </div>
           )}
-          <TestButton api={api} target="embeddings" />
+          <TestButton api={api} target="embeddings" draft={draft} />
         </div>
 
         <div className="s-card">

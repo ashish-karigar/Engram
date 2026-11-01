@@ -362,3 +362,25 @@ fn reranking_reorders_the_top_results_by_the_cross_encoder() {
     let off = Ctx { rerank: Some(Rerank { model: &CookieReranker, weight: 0.0, top: 10 }), ..reranked };
     assert_eq!(title_of(doc_of(&rank(&off, "auth", "documents", 12).unwrap()[0])), "Auth tokens", "weight 0 changes nothing");
 }
+
+#[test]
+fn a_service_nothing_calls_still_shows_the_parts_that_rely_on_it() {
+    let conn = open_memory().unwrap();
+    upsert_entity(&conn, "service", "Cloudflare", None, None).unwrap();
+    conn.execute_batch(
+        r#"INSERT INTO areas (path, name, kind, manifest) VALUES ('frontend', 'frontend', 'Angular app', 'frontend/package.json');
+           INSERT INTO system_links (area, service, role, how, evidence) VALUES ('frontend', 'Cloudflare', 'host', 'docs', '[]');
+           INSERT INTO net_services (file, service, via) VALUES ('README.md', 'Cloudflare', 'docs:50:mentions "Cloudflare"');"#,
+    )
+    .unwrap();
+    create_memory(&conn, NewMemory::new("fact", "Deployment", "The frontend is on Cloudflare Pages.")).unwrap();
+
+    let target = engram_serve::system::resolve_target(&conn, "Cloudflare").unwrap();
+    let i = engram_serve::system::impact(&conn, &target, 3).unwrap();
+    assert!(i.affected.is_empty(), "no code calls it");
+    assert_eq!(i.parts[0].relation, "frontend (Angular app) is hosted on Cloudflare");
+    assert_eq!((i.named_in[0].file.as_str(), i.named_in[0].line), ("README.md", Some(50)));
+    assert!(i.decisions.iter().any(|(_, title, _)| title == "Deployment"));
+    let text = engram_serve::system::impact_text(&i, 10);
+    assert!(text.contains("Parts that rely on Cloudflare") && text.contains("README.md:50"));
+}

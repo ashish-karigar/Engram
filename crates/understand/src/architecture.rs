@@ -51,7 +51,7 @@ pub fn role_of(service: &str) -> &'static str {
 }
 
 /// How a role reads in a sentence: "backend is hosted on Oracle".
-fn phrase(role: &str) -> &'static str {
+pub fn phrase(role: &str) -> &'static str {
     match role {
         "host" => "is hosted on",
         "data" => "stores data in",

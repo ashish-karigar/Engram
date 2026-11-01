@@ -320,6 +320,9 @@ pub fn stats(conn: &Connection) -> Result<Value> {
         "documents": count("SELECT COUNT(*) FROM documents WHERE status = 'done'")?,
         "chunks": count("SELECT COUNT(*) FROM chunks")?,
         "inferred": count("SELECT COUNT(*) FROM memories WHERE is_inference = 1 AND reviewed_at IS NULL AND status = 'current'")?,
+        "pendingLinks": count("SELECT COUNT(*) FROM link_judgments WHERE status = 'pending'")?,
+        "judged": count("SELECT COUNT(*) FROM memories_judged")?,
+        "modelLinks": count("SELECT COUNT(*) FROM link_judgments WHERE status = 'applied'")?,
     }))
 }
 
@@ -333,6 +336,16 @@ pub fn request_log(conn: &Connection, limit: i64) -> Result<Value> {
 
 pub fn documents(conn: &Connection, limit: i64) -> Result<Value> {
     Ok(serde_json::to_value(engram_rag::document::list_documents(conn, None, limit)?)?)
+}
+
+/// Links the model proposed that wait for a person, contradictions first.
+pub fn link_queue(conn: &Connection) -> Result<Value> {
+    Ok(serde_json::to_value(engram_understand::judge::pending(conn, 50)?)?)
+}
+
+/// Memories the model retired on its own, recent first, for undo.
+pub fn retired_links(conn: &Connection) -> Result<Value> {
+    Ok(serde_json::to_value(engram_understand::judge::retired(conn, 20)?)?)
 }
 
 pub fn review_queue(conn: &Connection) -> Result<Value> {

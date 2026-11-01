@@ -89,6 +89,25 @@ pub struct Affected {
     pub why: String,
 }
 
+/// A part of the system that relies on a service without calling it from code, e.g. "frontend
+/// is hosted on Cloudflare (per docs)".
+#[derive(Debug, Serialize)]
+pub struct PartUse {
+    pub part: String,
+    /// "frontend (Angular app) is hosted on Cloudflare"
+    pub relation: String,
+    /// code, config, compose or docs: the strongest evidence for it.
+    pub how: String,
+}
+
+/// A doc or config line that names a service, to update if the service changes.
+#[derive(Debug, Serialize)]
+pub struct Mention {
+    pub file: String,
+    pub line: Option<i64>,
+    pub why: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct Impact {
     pub target: Node,
@@ -97,6 +116,53 @@ pub struct Impact {
     pub affected: Vec<Affected>,
     pub endpoints: Vec<String>,
     pub decisions: Vec<(String, String, String)>,
+    /// For a service: the parts that rely on it (hosting, data, auth, ...), from the architecture.
+    pub parts: Vec<PartUse>,
+    /// For a service: docs and config that name it.
+    #[serde(rename = "namedIn")]
+    pub named_in: Vec<Mention>,
+}
+
+/// What a service means to the rest of the system beyond code that calls it: the parts that rely
+/// on it, the docs and config that name it, and memories that mention it.
+fn service_reach(conn: &Connection, service: &str, skip: &BTreeMap<String, Affected>) -> Result<(Vec<PartUse>, Vec<Mention>, Vec<(String, String, String)>)> {
+    let mut stmt = conn.prepare(
+        "SELECT COALESCE(a.name, l.area), a.kind, l.role, l.how FROM system_links l LEFT JOIN areas a ON a.path = l.area
+          WHERE lower(l.service) = lower(?) ORDER BY l.area, l.role",
+    )?;
+    let parts = stmt
+        .query_map([service], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?)))?
+        .collect::<engram_core::rusqlite::Result<Vec<_>>>()?
+        .into_iter()
+        .map(|(name, kind, role, how)| {
+            let part = kind.map_or(name.clone(), |k| format!("{name} ({k})"));
+            let relation = format!("{part} {} {service}", engram_understand::architecture::phrase(&role));
+            PartUse { part: name, relation, how }
+        })
+        .collect();
+
+    let mut stmt = conn.prepare(
+        "SELECT file, via FROM net_services WHERE lower(service) = lower(?) AND (via LIKE 'docs:%' OR via LIKE 'config:%') ORDER BY file, via",
+    )?;
+    let named_in = stmt
+        .query_map([service], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+        .collect::<engram_core::rusqlite::Result<Vec<_>>>()?
+        .into_iter()
+        .filter(|(file, _)| !skip.contains_key(file))
+        .map(|(file, via)| {
+            // via: "docs:50:mentions \"Cloudflare\"" or "config:12:image postgres"
+            let mut bits = via.splitn(3, ':').skip(1);
+            let line = bits.next().and_then(|l| l.parse().ok());
+            Mention { file, line, why: bits.next().unwrap_or("").to_string() }
+        })
+        .collect();
+
+    let mut stmt = conn.prepare(
+        "SELECT type, title, claim FROM memories WHERE status = 'current' AND COALESCE(scope, '') NOT LIKE 'system:%'
+           AND instr(lower(title || ' ' || claim), lower(?)) > 0 ORDER BY salience DESC LIMIT 6",
+    )?;
+    let memories = stmt.query_map([service], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<engram_core::rusqlite::Result<_>>()?;
+    Ok((parts, named_in, memories))
 }
 
 /// Everything that depends on `target`, up to `depth` steps away, closest first.
@@ -207,14 +273,26 @@ pub fn impact(conn: &Connection, target: &Node, depth: usize) -> Result<Impact> 
          JOIN entities x ON x.id = e.dst
          WHERE m.status = 'current' AND x.qualified_name IN (SELECT value FROM json_each(?)) LIMIT 12",
     )?;
-    let decisions = stmt
+    let mut decisions: Vec<(String, String, String)> = stmt
         .query_map(params![serde_json::to_string(&all_files)?], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
         .collect::<engram_core::rusqlite::Result<_>>()?;
+    // A service is rarely called from code alone (hosting, DNS, auth): also what the architecture and docs say.
+    let (parts, named_in) = if target.kind == "service" {
+        let (parts, named_in, memories) = service_reach(conn, &target.name, &files)?;
+        for m in memories {
+            if !decisions.contains(&m) {
+                decisions.push(m);
+            }
+        }
+        (parts, named_in)
+    } else {
+        (vec![], vec![])
+    };
 
     let mut affected: Vec<Affected> = files.into_values().collect();
     affected.sort_by(|a, b| a.depth.cmp(&b.depth).then(a.area.cmp(&b.area)).then(a.file.cmp(&b.file)));
     let written_by = engram_understand::provenance::provenance_line(&engram_understand::provenance::provenance(conn, &target.id)?);
-    Ok(Impact { target: target.clone(), written_by, affected, endpoints, decisions })
+    Ok(Impact { target: target.clone(), written_by, affected, endpoints, decisions, parts, named_in })
 }
 
 /// Agent-facing text for an impact result.
@@ -223,7 +301,15 @@ pub fn impact_text(i: &Impact, limit: usize) -> String {
     if let Some(who) = &i.written_by {
         lines.push(format!("{}: {who}", i.target.name));
     }
-    lines.push(format!("Changing {} ({}) affects {} file(s):", i.target.name, i.target.kind, i.affected.len()));
+    if !i.parts.is_empty() {
+        lines.push(format!("Parts that rely on {}:", i.target.name));
+        lines.extend(i.parts.iter().map(|p| format!("  • {} ({})", p.relation, p.how)));
+    }
+    if i.affected.is_empty() && !i.parts.is_empty() {
+        lines.push(format!("No code calls {} directly.", i.target.name));
+    } else {
+        lines.push(format!("Changing {} ({}) affects {} file(s) through code:", i.target.name, i.target.kind, i.affected.len()));
+    }
     let mut by_area: BTreeMap<String, Vec<&Affected>> = BTreeMap::new();
     for a in i.affected.iter().take(limit) {
         by_area.entry(a.area.clone().unwrap_or_else(|| "(no area)".into())).or_default().push(a);
@@ -238,8 +324,16 @@ pub fn impact_text(i: &Impact, limit: usize) -> String {
     if !i.endpoints.is_empty() {
         lines.push(format!("Endpoints involved: {}", i.endpoints.join(", ")));
     }
+    if !i.named_in.is_empty() {
+        lines.push("Docs and config that name it (update them if it changes):".into());
+        lines.extend(i.named_in.iter().take(limit).map(|m| {
+            let at = m.line.map(|l| format!("{}:{l}", m.file)).unwrap_or_else(|| m.file.clone());
+            format!("  • {at} — {}", m.why)
+        }));
+    }
     if !i.decisions.is_empty() {
-        lines.push("Recorded decisions on these files (check before changing):".into());
+        let heading = if i.target.kind == "service" { "What memory says about it" } else { "Recorded decisions on these files" };
+        lines.push(format!("{heading} (check before changing):"));
         lines.extend(i.decisions.iter().map(|(kind, title, claim)| format!("  • [{kind}] {title}: {claim}")));
     }
     lines.join("\n")
@@ -267,6 +361,8 @@ pub struct SystemMap {
     pub flags: Vec<(String, String, String)>,
     /// Architecture changes in the last 30 days, newest first.
     pub changes: Vec<String>,
+    /// Unresolved contradictions the model found between memories, or with the code: (id, title, reason).
+    pub conflicts: Vec<(String, String, String)>,
 }
 
 pub fn system_map(conn: &Connection) -> Result<SystemMap> {
@@ -326,10 +422,11 @@ pub fn system_map(conn: &Connection) -> Result<SystemMap> {
     let architecture = engram_understand::architecture::summary(conn)?;
     let flags = engram_understand::architecture::flags(conn)?;
     let changes = engram_understand::architecture::changes(conn, 30)?;
-    Ok(SystemMap { areas, endpoints, services, links, architecture, flags, changes })
+    let conflicts = engram_understand::judge::conflicts(conn)?;
+    Ok(SystemMap { areas, endpoints, services, links, architecture, flags, changes, conflicts })
 }
 
-/// Recent architecture changes and memories the code contradicts, for `map` and `brief`.
+/// Recent architecture changes, memories the code contradicts and unresolved conflicts, for `map` and `brief`.
 pub fn architecture_notes(m: &SystemMap) -> Vec<String> {
     let mut lines = vec![];
     if !m.changes.is_empty() {
@@ -339,6 +436,10 @@ pub fn architecture_notes(m: &SystemMap) -> Vec<String> {
     if !m.flags.is_empty() {
         lines.push("Memories the code now contradicts (check before relying on them):".into());
         lines.extend(m.flags.iter().map(|(id, title, reason)| format!("  • {title} ({id}) {reason}")));
+    }
+    if !m.conflicts.is_empty() {
+        lines.push("Unresolved conflicts between memories (ask the user which holds):".into());
+        lines.extend(m.conflicts.iter().take(5).map(|(id, title, reason)| format!("  • {title} ({id}) {reason}")));
     }
     lines
 }

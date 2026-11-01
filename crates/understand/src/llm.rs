@@ -58,6 +58,10 @@ impl LlmClient for MetaClient {
         let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
         let body = json!({"model": self.model, "max_tokens": req.max_tokens, "messages": messages(req)});
         let data = post_json(&url, body, Some(&self.api_key))?;
+        // Reasoning counts against max_tokens; a reply cut off there is empty or partial JSON.
+        if data["choices"][0]["finish_reason"] == "length" {
+            eprintln!("engram: {} reply hit max_tokens ({}); raise it for this call", self.model, req.max_tokens);
+        }
         Ok(data["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string())
     }
 }

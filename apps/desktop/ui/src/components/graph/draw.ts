@@ -41,7 +41,7 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cam: C
   for (const l of ordered) {
     const at = step(l);
     const hot = at !== undefined;
-    ctx.strokeStyle = hot ? (focus.path ? stepColor(at) : ACCENT) : focus.id ? "rgba(255,255,255,0.04)" : l.type === "supersedes" ? "rgba(177,132,255,0.35)" : "rgba(200,210,235,0.16)";
+    ctx.strokeStyle = hot ? (focus.path ? stepColor(at) : ACCENT) : focus.id ? "rgba(255,255,255,0.04)" : l.type === "supersedes" ? "rgba(177,132,255,0.35)" : l.type === "contradicts" ? "rgba(235,110,100,0.55)" : "rgba(200,210,235,0.16)";
     ctx.lineWidth = (hot ? 1.6 : 1) * s.linkWidth / cam.k;
     // Lines to the first neighbours are full strength; each step further along the trace is dimmer.
     ctx.globalAlpha = Math.min(l.source.fade!, l.target.fade!) * (hot ? Math.max(0.12, 0.6 ** at) : 1);

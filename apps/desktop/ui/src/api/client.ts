@@ -1,5 +1,5 @@
 import type {
-  ActivityPage, AppSettings, ImpactResult, ConnectResult, Connection, TestResult, DocumentView, EventEntry, Graph, InferredMemory, MemoryView, WeakMemory, NodeDetail, OpResult, Project,
+  ActivityPage, AppSettings, PendingLink, ImpactResult, ConnectResult, Connection, TestResult, DocumentView, EventEntry, Graph, InferredMemory, MemoryView, WeakMemory, NodeDetail, OpResult, Project,
   RequestEntry, SearchMode, Stats,
 } from "./types.ts";
 
@@ -21,7 +21,7 @@ export const projectsApi = (c: Connection) => ({
   remove: (id: string) => call<{ ok: boolean }>(c, `/api/projects/${id}`, { method: "DELETE" }),
   settings: () => call<AppSettings>(c, "/api/settings"),
   saveSettings: (s: AppSettings) => call<AppSettings>(c, "/api/settings", post(s)),
-  testSettings: (target: "llm" | "embeddings") => call<TestResult>(c, "/api/settings/test", post({ target })),
+  testSettings: (target: "llm" | "embeddings", settings?: AppSettings) => call<TestResult>(c, "/api/settings/test", post({ target, settings })),
 });
 
 /** Everything the UI reads or does inside one project. */
@@ -46,6 +46,9 @@ export const projectApi = (c: Connection, id: string) => {
     deleteDocument: (id: string) => call<{ ok: boolean }>(c, `${base}/documents/delete`, post({ id })),
     review: () => call<InferredMemory[]>(c, `${base}/review`),
     weak: () => call<WeakMemory[]>(c, `${base}/weak`),
+    links: () => call<PendingLink[]>(c, `${base}/links`),
+    retiredLinks: () => call<PendingLink[]>(c, `${base}/links/retired`),
+    decideLink: (id: string, action: "approve" | "decline" | "keep" | "undo", keep?: string) => call<{ ok: boolean }>(c, `${base}/links`, post({ id, action, keep })),
     archive: (ids: string[], restore = false) => call<{ changed: number }>(c, `${base}/memories/archive`, post({ ids, restore })),
     decide: (id: string, action: "approve" | "decline" | "undo") => call<MemoryView>(c, `${base}/review`, post({ id, action })),
     connect: (agent: string, apply: boolean) => call<ConnectResult>(c, `${base}/connect`, post({ agent, apply })),
