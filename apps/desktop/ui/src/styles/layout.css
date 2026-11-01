@@ -308,7 +308,9 @@ kbd { font: 10px var(--mono); color: var(--faint); border: 1px solid var(--line-
 .credit a:hover { color: var(--text); text-decoration: underline; }
 .credit.bare .credit-by { display: none; }
 .credit.bare { font-size: inherit; }
-.side-credit { display: block; padding: 0 8px; margin: -14px 0 14px; font-size: 10px; }
+/* The name starts under the "M" of MemoryOS (8px padding + 15px mark + 8px gap); the "~" hangs to its left. */
+.side-credit { display: block; position: relative; margin: -14px 0 14px 31px; font-size: 10px; }
+.side-credit .credit-by { position: absolute; right: 100%; }
 .graph-credit { position: absolute; right: 16px; bottom: 16px; z-index: 3; }
 .graph.with-drawer .graph-credit { display: none; }
 .settings-credit { margin: 22px 0 8px; text-align: center; color: var(--faint); font-size: 11px; }
