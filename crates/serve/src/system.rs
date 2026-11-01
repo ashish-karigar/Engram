@@ -72,7 +72,7 @@ pub fn resolve_target(conn: &Connection, target: &str) -> Result<Node> {
     }
     match candidates.as_slice() {
         [id] => node(conn, id)?.ok_or_else(|| Error::msg("target vanished")),
-        [] => Err(Error::msg(format!("Nothing in the system map matches `{target}`. Give a file path, `file::function`, an endpoint like `GET /jobs/{{id}}`, or a service name."))),
+        [] => Err(Error::msg(format!("Nothing in the system map matches `{target}`. Give a file path, `file::function`, an endpoint like `GET /jobs/{{id}}`, or a service name; for a concept like `auth`, use `feature`."))),
         many => {
             let names: Vec<String> = many.iter().take(8).filter_map(|id| node(conn, id).ok().flatten()).map(|n| n.name).collect();
             Err(Error::msg(format!("`{target}` matches several things; be more specific: {}", names.join(", "))))

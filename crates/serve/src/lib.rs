@@ -4,6 +4,7 @@ pub mod activity;
 pub mod api;
 pub mod brief;
 pub mod budget;
+pub mod feature;
 pub mod format;
 pub mod http;
 pub mod mcp;

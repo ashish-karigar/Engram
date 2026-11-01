@@ -18,7 +18,7 @@ use tokio::task::JoinHandle;
 use crate::activity::{ActivityQuery, activity};
 use crate::api::{architecture_data, documents, graph_data, node_detail, request_log, review_queue, stats, timeline};
 use crate::mcp::{call_tool, handle_body, handle_body_with, shared_tool_definitions};
-use crate::ops::{Ctx, MapReq, OpResult, op_add_document, op_brief, op_expand, op_impact, op_map, op_note, op_profile, op_search};
+use crate::ops::{Ctx, MapReq, OpResult, op_add_document, op_brief, op_expand, op_feature, op_impact, op_map, op_note, op_profile, op_search};
 use crate::project::{ProjectManager, ProjectRef};
 use crate::route::{pick_project, with_conn};
 use engram_understand::quality::{set_archived, weak_memories};
@@ -294,6 +294,7 @@ fn project_route(
         (&Method::GET, ["api", "profile"]) => op(op_profile(&ctx)),
         (&Method::GET, ["api", "map"]) => op(op_map(&ctx, MapReq { area: query_param(query, "area") })),
         (&Method::POST, ["api", "impact"]) => op(op_impact(&ctx, parse(body)?)),
+        (&Method::POST, ["api", "feature"]) => op(op_feature(&ctx, parse(body)?)),
         (&Method::GET, ["api", "review"]) => json_ok(review_queue(&conn)),
         (&Method::POST, ["api", "review"]) => {
             let memory = engram_core::memory::review(&conn, body["id"].as_str().unwrap_or(""), body["action"].as_str().unwrap_or(""))?;

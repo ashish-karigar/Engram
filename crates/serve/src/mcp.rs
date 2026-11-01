@@ -5,7 +5,7 @@ use engram_core::Result;
 use engram_understand::notes::NoteInput;
 use serde_json::{Value, json};
 
-use crate::ops::{Ctx, OpResult, op_add_document, op_brief, op_expand, op_impact, op_map, op_note, op_profile, op_search};
+use crate::ops::{Ctx, OpResult, op_add_document, op_brief, op_expand, op_feature, op_impact, op_map, op_note, op_profile, op_search};
 
 const DEFAULT_PROTOCOL: &str = "2025-03-26";
 
@@ -65,6 +65,11 @@ pub fn tool_definitions() -> Value {
             "inputSchema": {"type": "object", "properties": {"area": {"type": "string", "description": "Only endpoints touching this part or path"}}}
         },
         {
+            "name": "feature",
+            "description": "How a concept works in this codebase, in one call: for `auth`, `email`, `payments` or any feature name, the files on each side (frontend, backend) and why each belongs, the endpoints between them, the services it relies on and their config, its tests, and the memories about it. Use it before searching the code for where something lives.",
+            "inputSchema": {"type": "object", "properties": {"query": {"type": "string", "description": "The concept, e.g. `auth` or `email sync`"}, "limit": {"type": "integer", "minimum": 1, "description": "Files listed per part (default 10)"}}, "required": ["query"]}
+        },
+        {
             "name": "impact",
             "description": "Before changing shared code: everything that depends on a file, function, endpoint (e.g. `PATCH /jobs/{id}`) or service, across languages and the frontend/backend boundary, grouped by part, with why, plus recorded decisions on those files.",
             "inputSchema": {"type": "object", "properties": {"target": {"type": "string"}, "depth": {"type": "integer", "minimum": 1, "maximum": 6}, "limit": {"type": "integer", "minimum": 1}}, "required": ["target"]}
@@ -92,6 +97,7 @@ pub fn call_tool(ctx: &Ctx, name: &str, args: Value) -> Result<OpResult> {
         "profile" => op_profile(ctx),
         "map" => op_map(ctx, serde_json::from_value(args).map_err(bad)?),
         "impact" => op_impact(ctx, serde_json::from_value(args).map_err(bad)?),
+        "feature" => op_feature(ctx, serde_json::from_value(args).map_err(bad)?),
         "add_document" => op_add_document(ctx, serde_json::from_value(args).map_err(bad)?),
         other => Err(engram_core::Error::msg(format!("unknown tool: {other}"))),
     }

@@ -80,6 +80,14 @@ pub struct ImpactReq {
 }
 
 #[derive(Deserialize)]
+pub struct FeatureReq {
+    /// A concept: `auth`, `email sync`, `payments`.
+    pub query: String,
+    /// Files listed per part (default 10).
+    pub limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
 pub struct ExpandReq {
     pub id: String,
     pub depth: Option<i64>,
@@ -311,7 +319,7 @@ pub fn op_brief(ctx: &Ctx, req: BriefReq) -> Result<OpResult> {
             if !system.services.is_empty() {
                 lines.push(format!("- external services: {}", system.services.iter().map(|(s, _)| s.as_str()).collect::<Vec<_>>().join(", ")));
             }
-            lines.push("Use `map` for every endpoint with its handler and callers, and `impact` before changing shared code.".into());
+            lines.push("Use `feature` to see how a concept works (`auth`, `email`) across the parts, `map` for every endpoint, and `impact` before changing shared code.".into());
             lines.push(String::new());
         } else if !o.modules.is_empty() {
             lines.push("Project map:".into());
@@ -347,6 +355,33 @@ pub fn op_impact(ctx: &Ctx, req: ImpactReq) -> Result<OpResult> {
         let i = crate::system::impact(ctx.conn, &target, req.depth.unwrap_or(3).clamp(1, 6))?;
         let returned = i.affected.iter().map(|a| json!({"id": a.file, "reason": a.why})).collect();
         Ok((OpResult { text: crate::system::impact_text(&i, req.limit.unwrap_or(40)), data: serde_json::to_value(&i)? }, returned))
+    })
+}
+
+/// A concept across the code: the files on each side, endpoints, services, config and tests,
+/// plus the few memories about it.
+pub fn op_feature(ctx: &Ctx, req: FeatureReq) -> Result<OpResult> {
+    logged(ctx, "feature", json!({"query": req.query, "limit": req.limit}), || {
+        let f = crate::feature::feature(ctx.conn, &req.query)?;
+        let mut text = crate::feature::feature_text(&f, req.limit.unwrap_or(10));
+        // Only memories that are about the concept, not ones that merely rank near it.
+        let memories: Vec<Item> = cut(gather(ctx, &req.query, "memories", None, 0)?)
+            .into_iter()
+            .map(|(i, _)| i)
+            .filter(|i| match i {
+                Item::Memory(m) => crate::feature::mentions(&req.query, &format!("{} {}", m.memory.title, m.memory.claim)),
+                Item::Chunk(_) => false,
+            })
+            .take(3)
+            .collect();
+        let (body, returned) = render(&memories);
+        if !body.is_empty() {
+            text.push_str(&format!("\nMemories:\n{body}"));
+        }
+        text.push_str("\nUse `impact` on a file before changing it, and `expand` on a memory for its story.");
+        let mut returned = returned;
+        returned.extend(f.files.iter().map(|h| json!({"id": h.file, "reason": h.why.join("; ")})));
+        Ok((OpResult { text, data: serde_json::to_value(&f)? }, returned))
     })
 }
 
