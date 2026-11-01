@@ -4,6 +4,10 @@ This document says what we measure, on which data, how, and the rules that keep 
 Each suite is marked **done**, **in progress** or **planned**; results are only reported for suites
 that have run, with the commit and configuration that produced them.
 
+**Why Supermemory.** We compare against Supermemory because it is the closest direct competitor we
+found: a memory layer for AI agents that publishes its benchmark results. Its numbers are its own
+(vendor-reported), and we say so wherever we put ours next to them.
+
 ## Rules
 
 1. **Public data first.** Accuracy claims rest on public benchmarks other systems also report on, not
@@ -36,7 +40,10 @@ abstention.
   comparable to Supermemory's published LongMemEval-S retrieval figure (vendor-reported 97% Recall@20,
   judged with GPT-4o; we state any differences in setup next to our number).
 - **Answer accuracy (needs a model):** retrieve, answer with an LLM, judge with an LLM, following the
-  official protocol. The official judge is GPT-4o; if we use a different judge we say which.
+  official protocol. The official judge is GPT-4o, and Supermemory reports about 85% with GPT-5 and
+  Gemini 3 Pro answering. We use Meta's Muse Spark to answer and to judge, with the official judge
+  prompt unchanged, and hand-check a sample of verdicts to report how often we agree with the
+  judge. The saved answers can be re-judged with GPT-4o later without re-running anything else.
 - **Also recorded:** tokens returned per question, latency p50/p95.
 - **Stricter scores reported next to it:** all@5 (every evidence session in the top 5, which multi-session
   questions need), the random-guess baseline (with ~48 sessions per question, R@20 by chance is about 60%,
