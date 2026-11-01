@@ -55,7 +55,8 @@ Run: `cargo run --release -p engram-eval -- longmemeval --data longmemeval_s_cle
 **Answer accuracy (`longmemeval-qa`).** LongMemEval's own protocol, with MemoryOS as the retriever:
 
 1. Replay the question's history into a fresh project.
-2. Take the top 20 chunks from the ranking `search` uses, counted from the question's date.
+2. Take the top 40 chunks from the ranking `search` uses, counted from the question's date (40
+   was chosen over 20 on dev; see below).
 3. Group them by session, oldest first, in LongMemEval's layout (`### Session n`, `Session Date`).
 4. The model answers with the official reader prompt (`run_generation.py`, retrieval, step by step).
 5. The model judges the answer with the official per-type judge prompt (`evaluate_qa.py`), parsed as
@@ -101,6 +102,17 @@ All 8 wrong verdicts were checked by hand, and the judge was right each time. Wh
 - **Preference (1):** the model refused to suggest a Miami hotel because Miami was never discussed,
   instead of using the user's stated taste in hotels.
 - **Abstention (1):** the model answered from a bus fare the history did not contain for that route.
+
+**40 chunks instead of 20** (about 9.3k tokens of history per question): **92.5%** (86/93); temporal
+95.5, abstention 60.0, the rest unchanged; mean over types 90.0.
+
+- Fixed (4): the charity total, the delivery services, the sports-events order and the smoker.
+  These are the misses whose evidence fell outside the top 20.
+- Broken (3): a tank count, the plants acquired "in the last month", and the Shinjuku abstention.
+  The model reasoned wrongly over context that held the answer.
+
+A net gain of one question is within run-to-run noise. We use 40 for the test run because its fixes
+address a known limit (evidence ranked 21–40), and its losses are reasoning slips.
 
 Tuning set; the test split has not been run.
 

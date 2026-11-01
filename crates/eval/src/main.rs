@@ -114,8 +114,8 @@ enum Suite {
         /// Only the first N questions of the split.
         #[arg(long)]
         limit: Option<usize>,
-        /// Chunks of retrieved history the model reads per question.
-        #[arg(long, default_value_t = 20)]
+        /// Chunks of retrieved history the model reads per question (40 chosen on dev over 20).
+        #[arg(long, default_value_t = 40)]
         context: usize,
         /// Questions in flight at once.
         #[arg(long, default_value_t = 6)]
