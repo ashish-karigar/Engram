@@ -6,6 +6,7 @@ mod history;
 mod links;
 mod longmemeval;
 mod map;
+mod qa;
 mod report;
 mod scale;
 mod split;
@@ -97,6 +98,32 @@ enum Suite {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Suite A answer accuracy: the configured model answers from MemoryOS's retrieval and judges
+    /// with LongMemEval's own prompts. Costs model calls; results are saved and resumable.
+    LongmemevalQa {
+        /// Path to longmemeval_s_cleaned.json.
+        #[arg(long)]
+        data: PathBuf,
+        #[arg(long, value_enum, default_value = "dev")]
+        split: Split,
+        #[arg(long, value_enum, default_value = "bge-small-q")]
+        embed: EmbedModel,
+        /// Only one question type, e.g. temporal-reasoning.
+        #[arg(long)]
+        kind: Option<String>,
+        /// Only the first N questions of the split.
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Chunks of retrieved history the model reads per question.
+        #[arg(long, default_value_t = 20)]
+        context: usize,
+        /// Questions in flight at once.
+        #[arg(long, default_value_t = 6)]
+        parallel: usize,
+        /// JSONL of answers and verdicts; existing lines are kept and skipped.
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Impact against git history: did impact point at the files really changed together?
     History {
         root: PathBuf,
@@ -140,6 +167,20 @@ fn main() {
             let cached = Arc::new(cache::CachedEmbedder::open(inner, file));
             eprintln!("embedding cache: {} vectors", cached.cached());
             let result = longmemeval::run(&data, split, kind.as_deref(), cached.clone(), rerank, limit, out.as_deref());
+            if let Err(e) = cached.save() {
+                eprintln!("could not save the embedding cache: {e}");
+            }
+            result
+        }
+        Suite::LongmemevalQa { data, split, embed, kind, limit, context, parallel, out } => {
+            let inner = embed.load();
+            let safe: String = inner.model_id().chars().map(|c| if c.is_alphanumeric() { c } else { '_' }).collect();
+            let cached = Arc::new(cache::CachedEmbedder::open(inner, data.with_file_name(format!("embed-cache-{safe}.bin"))));
+            let result = match links::client() {
+                // One model answers and judges; LongMemEval's official judge is GPT-4o, reported next to the score.
+                Some(model) => qa::run(&data, split, kind.as_deref(), cached.clone(), qa::QaSetup { reader: model.as_ref(), judge: model.as_ref(), context, parallel }, limit, &out),
+                None => Err(engram_core::Error::msg("no model configured: set META_API_KEY, or choose a model in the app's Settings")),
+            };
             if let Err(e) = cached.save() {
                 eprintln!("could not save the embedding cache: {e}");
             }

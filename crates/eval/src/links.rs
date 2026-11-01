@@ -25,7 +25,7 @@ struct Case {
 }
 
 /// The model from the environment, else the one configured in the app. The key is used, never shown.
-fn client() -> Option<Box<dyn LlmClient>> {
+pub(crate) fn client() -> Option<Box<dyn LlmClient>> {
     if let Some(c) = client_from_env() {
         return Some(c);
     }

@@ -52,6 +52,35 @@ abstention.
 
 Run: `cargo run --release -p engram-eval -- longmemeval --data longmemeval_s_cleaned.json --split dev --embed bge-small-q`
 
+**Answer accuracy (`longmemeval-qa`).** LongMemEval's own protocol, with MemoryOS as the retriever:
+
+1. Replay the question's history into a fresh project.
+2. Take the top 20 chunks from the ranking `search` uses, counted from the question's date.
+3. Group them by session, oldest first, in LongMemEval's layout (`### Session n`, `Session Date`).
+4. The model answers with the official reader prompt (`run_generation.py`, retrieval, step by step).
+5. The model judges the answer with the official per-type judge prompt (`evaluate_qa.py`), parsed as
+   officially: any "yes" counts. Abstention questions are included, as in LongMemEval.
+
+Differences from the official setup, stated with every score:
+
+- Muse Spark answers and judges; the official judge is GPT-4o.
+- Token limits are 6000 for answers and 2000 for verdicts, instead of 800 and 10, because a
+  reasoning model's thinking counts against them.
+- No temperature is set; Meta's API default is used.
+
+Every answer and verdict is saved to a JSONL file as it finishes. A stopped run resumes where it
+left off, and the saved answers can be judged again by another model.
+
+```bash
+# retrieval on test first: embeds the test histories once (about 2.5 hours, free)
+cargo run --release -p engram-eval -- longmemeval --data longmemeval_s_cleaned.json --split test --embed bge-small-q --out results/test-retrieval.json
+# then answers on test, with the embeddings cached (model calls; resumable)
+cargo run --release -p engram-eval -- longmemeval-qa --data longmemeval_s_cleaned.json --split test --out results/test-qa.jsonl
+```
+
+First check, 2026-11-01: 12 dev questions (6 single-session-user, 6 temporal), 12/12 correct, about
+5k tokens of history per question. Too few to report as a score.
+
 **Dev split (88 questions, abstention excluded), 2026-10-31.** Tuning set; the test split has not been run.
 
 | Embeddings | R@5 | R@10 | R@20 | all@5 | In agent's answer | Answer tokens |

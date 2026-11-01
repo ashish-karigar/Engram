@@ -31,21 +31,21 @@ const KS: [usize; 3] = [5, 10, 20];
 const CANDIDATES: usize = 80;
 
 #[derive(Deserialize)]
-struct Question {
-    question_id: String,
-    question_type: String,
-    question: String,
+pub(crate) struct Question {
+    pub(crate) question_id: String,
+    pub(crate) question_type: String,
+    pub(crate) question: String,
     /// When the question is asked: "today" for "10 days ago".
-    question_date: String,
-    answer: Value,
-    answer_session_ids: Vec<String>,
-    haystack_session_ids: Vec<String>,
-    haystack_dates: Vec<String>,
-    haystack_sessions: Vec<Vec<Message>>,
+    pub(crate) question_date: String,
+    pub(crate) answer: Value,
+    pub(crate) answer_session_ids: Vec<String>,
+    pub(crate) haystack_session_ids: Vec<String>,
+    pub(crate) haystack_dates: Vec<String>,
+    pub(crate) haystack_sessions: Vec<Vec<Message>>,
 }
 
 #[derive(Deserialize)]
-struct Message {
+pub(crate) struct Message {
     role: String,
     content: String,
 }
@@ -72,12 +72,12 @@ struct Outcome {
 }
 
 /// "2023/05/20 (Sat) 02:21" -> RFC 3339. Turns in a session are a second apart so they keep order.
-fn timestamp(date: &str, offset_secs: i64) -> String {
+pub(crate) fn timestamp(date: &str, offset_secs: i64) -> String {
     let base = NaiveDateTime::parse_from_str(date, "%Y/%m/%d (%a) %H:%M").unwrap_or_default();
     (base + chrono::Duration::seconds(offset_secs)).and_utc().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
-fn ingest(conn: &Connection, embedder: &dyn Embedder, q: &Question) -> Result<()> {
+pub(crate) fn ingest(conn: &Connection, embedder: &dyn Embedder, q: &Question) -> Result<()> {
     let actor = ensure_actor(conn, "agent", Agent::Claude.actor_name())?.id;
     for ((sid, date), messages) in q.haystack_session_ids.iter().zip(&q.haystack_dates).zip(&q.haystack_sessions) {
         let mut external = None;
@@ -103,7 +103,7 @@ fn random_any(n: usize, e: usize, k: usize) -> f64 {
 }
 
 /// Document id -> LongMemEval session id, via the transcript's metadata (`claude:<session>`).
-fn sessions_by_document(conn: &Connection) -> Result<HashMap<String, String>> {
+pub(crate) fn sessions_by_document(conn: &Connection) -> Result<HashMap<String, String>> {
     let mut stmt = conn.prepare("SELECT id, json_extract(metadata, '$.session') FROM documents")?;
     let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?)))?;
     let mut out = HashMap::new();
