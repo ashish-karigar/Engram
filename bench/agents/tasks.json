@@ -1,0 +1,131 @@
+{
+  "_about": "Suite E tasks. Written and committed before any run. Each check is a list of groups; every group must match (any one pattern in a group is enough). Patterns are case-insensitive regular expressions. `answer` is checked against the agent's final reply, `diff` against everything it changed in the repo. `never` patterns fail the trial if they match (a contradicted decision).",
+  "projects": {
+    "careerbricks": {
+      "source": "/Users/ashishkarigar/Projects/Product Development/careerbricks",
+      "commit": "32fdaac",
+      "memory": "5ad2cfcc490b"
+    },
+    "LiTheR": {
+      "source": "/Users/ashishkarigar/Projects/Miscellaneous/LiTheR",
+      "commit": "d510123",
+      "memory": "7b75ace083e0"
+    },
+    "engram": {
+      "source": "/Users/ashishkarigar/Projects/Hackathons/Meta/engram",
+      "commit": "35f0afd",
+      "memory": "b6946724c5e7",
+      "hide": ["bench/"]
+    }
+  },
+  "tasks": [
+    {
+      "id": "cb-deploy",
+      "project": "careerbricks",
+      "kind": "in-repo",
+      "prompt": "How is CareerBricks deployed? For each part (frontend, backend, database, secrets, sign-in) say what runs it and where. Answer in a short list; do not change any files.",
+      "answer": [["oracle"], ["cloudflare"], ["infisical"], ["auth0"], ["postgres"]]
+    },
+    {
+      "id": "cb-impact",
+      "project": "careerbricks",
+      "kind": "impact",
+      "prompt": "If I change the response body of PATCH /jobs/{job_id}, which frontend code and which tests would be affected? List the files. Do not change any files.",
+      "answer": [["jobs-api"], ["applications"], ["test_api"]]
+    },
+    {
+      "id": "cb-extraction-rules",
+      "project": "careerbricks",
+      "kind": "history",
+      "prompt": "We are adding a salary field to job extraction. Before anyone writes code: which rules does this project already apply to extracted fields such as the job ID and the work mode, so the new field follows them? Do not change any files.",
+      "answer": [["exact", "verbatim", "as written", "copied"], ["backed by", "supported by", "in the (posting|text|description)", "from the (posting|text)", "evidence"]]
+    },
+    {
+      "id": "cb-stack",
+      "project": "careerbricks",
+      "kind": "control",
+      "prompt": "Which frameworks do the CareerBricks backend and frontend use? One line each. Do not change any files.",
+      "answer": [["fastapi"], ["angular"]]
+    },
+    {
+      "id": "cb-error-format",
+      "project": "careerbricks",
+      "kind": "handoff",
+      "sessions": [
+        "A decision for this project, no code changes yet: every new backend endpoint must return errors as JSON shaped {\"error\": {\"code\": ..., \"message\": ...}}, not FastAPI's default {\"detail\": ...}, because the mobile client parses that shape. Please acknowledge in one sentence.",
+        "Add a GET /jobs/{job_id}/history endpoint to backend/app/api/jobs.py that returns the job's status history, and returns a 404 error when the job does not exist. Follow the project's conventions. A stub body for the history itself is fine."
+      ],
+      "diff": [["[\"']error[\"']"], ["[\"']message[\"']"], ["[\"']code[\"']"]]
+    },
+    {
+      "id": "lt-setup",
+      "project": "LiTheR",
+      "kind": "trap",
+      "prompt": "Add a short \"Quick start\" section near the top of docs/development.md telling a new contributor how to set up the Python environment on macOS and run the desktop viewer.",
+      "diff": [["conda (env create|activate)"]],
+      "never": ["python3? -m venv", "virtualenv", "\\.venv/bin/activate", "source [^\\n]*venv"]
+    },
+    {
+      "id": "lt-first-feature",
+      "project": "LiTheR",
+      "kind": "history",
+      "prompt": "Which perception feature did we decide to build first on this project, and why not painted-lane detection? Do not change any files.",
+      "answer": [["drivable", "road segmentation", "road/drivable", "segmentation"]]
+    },
+    {
+      "id": "lt-baseline-claims",
+      "project": "LiTheR",
+      "kind": "history",
+      "prompt": "For the demo write-up: can we say the current baseline detection model detects pedestrians and cyclists? Name the model and answer yes or no with the reason. Do not change any files.",
+      "answer": [["yolop"], ["vehicle", "cars only", "only cars"]],
+      "never": ["^\\s*\\**yes\\b"]
+    },
+    {
+      "id": "lt-mount",
+      "project": "LiTheR",
+      "kind": "history",
+      "prompt": "How is the iPhone mounted on the real car (height above the ground, direction, orientation)? I need it for the camera extrinsics. Do not change any files.",
+      "answer": [["18", "20 ?(in|inch|\")"], ["landscape", "horizontal"]]
+    },
+    {
+      "id": "lt-recording",
+      "project": "LiTheR",
+      "kind": "history",
+      "prompt": "How long is the drive recording we captured, and how many paired camera and LiDAR frames does it have? Do not change any files.",
+      "answer": [["9 ?min", "9m ?41", "9:41", "nine minutes"], ["4,?646"]]
+    },
+    {
+      "id": "lt-storage-format",
+      "project": "LiTheR",
+      "kind": "handoff",
+      "sessions": [
+        "A decision for this project, no code changes yet: drive recordings are stored as MCAP files under data/recordings/, never as folders of PNG frames, because the PNG folders were too slow to copy off the laptop. Please acknowledge in one sentence.",
+        "Add src/parallax/core/storage.py with a function save_recording(frames, name) that writes a recording to disk, following the project's storage decisions. A minimal implementation is fine; no tests needed."
+      ],
+      "diff": [["mcap"], ["data/recordings"]],
+      "never": ["\\.png"]
+    },
+    {
+      "id": "en-port",
+      "project": "engram",
+      "kind": "control",
+      "prompt": "Which port does the MemoryOS daemon listen on by default, and how do I override it? Do not change any files.",
+      "answer": [["41741"], ["ENGRAM_PORT"]]
+    },
+    {
+      "id": "en-token-budget",
+      "project": "engram",
+      "kind": "history",
+      "prompt": "The link judge and the extraction calls use max_tokens 8000. Can we lower it to 1000 to save money? Answer yes or no and explain. Do not change any files.",
+      "answer": [["reason", "think"], ["empty", "cut off", "cut-off", "truncat"]],
+      "never": ["^\\s*\\**yes\\b"]
+    },
+    {
+      "id": "en-retire-rule",
+      "project": "engram",
+      "kind": "history",
+      "prompt": "Should a memory learned only from chat be able to retire a memory that is backed by a commit, if the model says \"replaces\" with 0.9 confidence? Answer yes or no and say what incident this rule came from. Do not change any files.",
+      "answer": [["\\bno\\b", "not allowed", "cannot", "can't"], ["venv", "conda"]]
+    }
+  ]
+}

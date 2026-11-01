@@ -175,16 +175,62 @@ On live projects the rules mattered more than the score. A memory from chat ("us
 retired a commit-backed decision; since then, a chat-only memory can't retire one a commit backs, a
 memory in conflict with the code retires nothing, and every applied link can be undone.
 
-### E. Live agents, with and without Engram *(planned)*
+### E. Live agents, with and without MemoryOS *(built, not yet run)*
 
-The test that matters most: real Claude Code and Codex sessions on a real repository.
+Muse Code (`muse exec`, headless) does the same tasks twice, from the same commit: once connected to
+MemoryOS and once without it. Same model, same settings, same prompt. The prompt never mentions
+MemoryOS; in the "with" runs the agent learns about it only from the MCP server's own instructions.
 
-- A fixed list of tasks, each run twice from the same commit: once with Engram connected, once without.
-- Some tasks are seeded with history (an earlier decision or a known dead end) to see whether the agent
-  repeats the mistake.
-- Measured: tokens used, turns, wall time, whether the task passed its tests, whether a recorded
-  decision was contradicted or a dead end repeated, and how often the agent called `search` and `note`.
-- Also: one agent records a decision, a second agent in a new session must act on it.
+The 14 tasks are in `bench/agents/tasks.json`. They and their pass checks were committed before any
+run.
+
+| Kind | Tasks | What it shows |
+|---|---|---|
+| history | 7 | Facts and reasons that exist only in past sessions (LiTheR's first feature, recording, mount; careerbricks' extraction rules; engram's token budget and retire rule) |
+| handoff | 2 | Session 1 states a decision; a new session 2 must follow it without being told |
+| trap | 1 | LiTheR setup docs. The code says Conda, but memory holds a pending conflict ("venv"). This shows whether memory can make things worse |
+| impact | 1 | Callers and tests of `PATCH /jobs/{id}` |
+| in-repo, control | 3 | Answers that are in the repo's docs or code. Here memory should not help much; any difference is cost, not correctness |
+
+**Isolation.** Each trial runs:
+
+- in a fresh clone at the commit pinned in `tasks.json`;
+- under a temporary HOME, so the user's Muse settings and MCP servers are never loaded;
+- in "with": against its own MemoryOS daemon, on a copy of the project's memory, connected through the
+  normal Muse connector.
+
+The real app's memory is never read by an agent or written to. The engram copy hides `bench/`, so the
+agent can't read the expected answers. The trial daemon's background model is off, so memory stays as
+copied. Handoff tasks are the exception: for them MemoryOS has to capture session 1.
+
+**Measures** (median of 3 runs per task and condition):
+
+- pass/fail, from regular expressions on the final answer and on the diff;
+- decisions contradicted (the `never` patterns);
+- input and output tokens, from Muse's `run.usage` event;
+- tool calls;
+- wall time.
+
+**Caveats:**
+
+- The tasks were written by MemoryOS's author, from facts known to be in memory, so this measures what
+  memory adds when it holds the answer. It is not a random sample of work.
+- Grading by pattern can miss a right answer worded differently. Every trial keeps its JSONL, prompt
+  and diff for a manual check.
+- The tool-call count comes from Muse's task events. The event names were seen only in dry runs, so
+  check them against the first live run.
+
+```bash
+python3 bench/agents/run.py                          # dry run: every trial set up, echo provider, free
+python3 bench/agents/run.py --live --runs 1 --tasks lt-setup   # one real trial first
+python3 bench/agents/run.py --live                   # 14 tasks x 2 x 3 = 96 Muse sessions
+```
+
+Results go to `bench/agents/results/`. The dry run on 2026-11-01 completed all 28 trials:
+
+- the MCP handshake was `ready` in every "with" trial and absent in every "without" trial;
+- the brief from the trial daemon was 2.4–4.7k characters;
+- all diffs were empty.
 
 ### F. Smoke benchmark *(done)*
 
@@ -219,7 +265,7 @@ doc section ↔ file it describes), evaluated on the same splits.
 python3 bench/bench.py                  # suite F, against the running app
 ```
 
-Commands for suites A–E are added here as each one lands.
+Suite E commands are in its section above.
 
 ## Log
 
