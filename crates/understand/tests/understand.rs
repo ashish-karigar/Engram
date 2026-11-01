@@ -107,6 +107,7 @@ fn record_note_logs_an_event_and_supersedes_on_a_changed_claim() {
         files,
         confidence: None,
         expires_at: None,
+        stated_by: None,
     };
     let (first, _) = record_note(&db, &note("Use session cookies", vec!["auth/login.py".into()]), &ctx).unwrap();
     assert_eq!(first.action.as_str(), "created");
@@ -118,6 +119,30 @@ fn record_note_logs_an_event_and_supersedes_on_a_changed_claim() {
     assert_eq!(get_memory(&db, &first.memory.id).unwrap().unwrap().status, "superseded");
     assert_eq!(search_memories(&db, "auth", &SearchOpts::default()).unwrap().len(), 1);
     assert_eq!(list_events(&db, 0, Some("agent.note"), 10).unwrap().len(), 3);
+}
+
+#[test]
+fn an_agent_note_waits_in_review_instead_of_replacing_what_the_user_said() {
+    let db = open_memory().unwrap();
+    let muse = ensure_actor(&db, "agent", "muse-code").unwrap();
+    let ctx = NoteContext { actor_id: muse.id.clone(), session_id: None, commit_sha: None };
+    let note = |claim: &str, by: Option<&str>| NoteInput {
+        kind: Some("decision".into()),
+        title: "Backend error response format".into(),
+        claim: claim.into(),
+        stated_by: by.map(String::from),
+        ..Default::default()
+    };
+    let (user, _) = record_note(&db, &note("Errors are {\"error\": {\"code\", \"message\"}}", Some("user")), &ctx).unwrap();
+    assert!(user.memory.stated_by_user());
+    let (agent, _) = record_note(&db, &note("Errors follow FastAPI's {\"detail\"} like the code", Some("agent")), &ctx).unwrap();
+    assert_eq!(agent.action, SaveAction::Disputed);
+    assert_eq!(get_memory(&db, &user.memory.id).unwrap().unwrap().status, "current");
+    let pending: i64 = db.query_row("SELECT COUNT(*) FROM link_judgments WHERE status = 'pending' AND dst = ?", [&user.memory.id], |r| r.get(0)).unwrap();
+    assert_eq!(pending, 1);
+    // The person may still change their own mind.
+    let (changed, _) = record_note(&db, &note("Errors use RFC 7807 problem details", Some("user")), &ctx).unwrap();
+    assert_eq!(changed.action, SaveAction::Superseded);
 }
 
 fn commit_event(db: &engram_core::Connection) {

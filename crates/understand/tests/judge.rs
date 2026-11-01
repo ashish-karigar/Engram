@@ -192,6 +192,23 @@ fn chat_alone_cannot_retire_what_a_commit_backs() {
     assert_eq!((status(&conn, &conda), status(&conn, &venv)), ("current".into(), "current".into()));
 }
 
+fn stated(conn: &Connection, title: &str, claim: &str, by: &str) -> Memory {
+    let m = NewMemory { stated_by: Some(by.into()), ..NewMemory::new("decision", title, claim) };
+    create_memory(conn, m).unwrap()
+}
+
+#[test]
+fn an_agent_cannot_retire_what_the_user_stated() {
+    let conn = open_memory().unwrap();
+    // The suite E cb-error-format case: the agent preferred the code's convention to the user's decision.
+    let user = stated(&conn, "Error format", "New endpoints return {\"error\": {\"code\", \"message\"}}.", "user");
+    let agent = stated(&conn, "Error convention", "Endpoints return FastAPI's {\"detail\": ...}.", "agent");
+    let llm = reply(r#"{"id":"C1","relation":"replaces","reason":"detail versus error envelope","confidence":0.95}"#);
+    let report = relink(&conn, &llm, &everyone(&conn), 10).unwrap();
+    assert_eq!((report.applied, report.pending), (0, 1));
+    assert_eq!((status(&conn, &user), status(&conn, &agent)), ("current".into(), "current".into()));
+}
+
 #[test]
 fn a_memory_in_conflict_with_the_code_retires_nothing() {
     let conn = open_memory().unwrap();

@@ -114,7 +114,7 @@ fn process_task(conn: &Connection, task: &Task, opts: &PipelineOptions, author: 
             ..NewMemory::new(&c.kind, &c.title, &c.claim)
         };
         match save_memory(conn, memory)?.action {
-            SaveAction::Created => report.created += 1,
+            SaveAction::Created | SaveAction::Disputed => report.created += 1,
             SaveAction::Superseded => report.superseded += 1,
             SaveAction::Reinforced => report.reinforced += 1,
         }

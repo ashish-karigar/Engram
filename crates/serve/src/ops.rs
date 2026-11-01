@@ -492,7 +492,11 @@ pub fn op_expand(ctx: &Ctx, req: ExpandReq) -> Result<OpResult> {
     })
 }
 
-pub fn op_note(ctx: &Ctx, note: NoteInput) -> Result<OpResult> {
+pub fn op_note(ctx: &Ctx, mut note: NoteInput) -> Result<OpResult> {
+    // Written in the app means written by the person.
+    if ctx.actor.name == "engram-ui" {
+        note.stated_by = Some("user".into());
+    }
     logged(ctx, "note", serde_json::to_value(&note)?, || {
         let nctx = NoteContext { actor_id: ctx.actor.id.clone(), session_id: None, commit_sha: None };
         let (saved, event_seq) = record_note(ctx.conn, &note, &nctx)?;

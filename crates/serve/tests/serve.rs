@@ -172,7 +172,13 @@ async fn two_agents_share_one_memory_over_mcp() {
     rpc(f.claude.clone(), 3, "tools/call", json!({"name": "note", "arguments": args})).await;
     let found = rpc(f.codex.clone(), 4, "tools/call", json!({"name": "search", "arguments": {"query": "token expiry"}})).await;
     let text = found["result"]["content"][0]["text"].as_str().unwrap().to_string();
-    assert!(text.contains("15 minutes"));
+    assert!(text.contains("15 minutes") && !text.contains("stated by the user"));
+
+    // Another agent sees who stated it.
+    let args = json!({"type": "decision", "title": "Error envelope", "claim": "Errors are {\"error\": {\"code\", \"message\"}}", "statedBy": "user"});
+    rpc(f.claude.clone(), 30, "tools/call", json!({"name": "note", "arguments": args})).await;
+    let found = rpc(f.codex.clone(), 31, "tools/call", json!({"name": "search", "arguments": {"query": "error envelope"}})).await;
+    assert!(found["result"]["content"][0]["text"].as_str().unwrap().contains("[decision, stated by the user] Error envelope"));
 
     let brief = rpc(f.codex.clone(), 5, "tools/call", json!({"name": "brief", "arguments": {"task": "change auth from session to token"}})).await;
     let brief_text = brief["result"]["content"][0]["text"].as_str().unwrap();

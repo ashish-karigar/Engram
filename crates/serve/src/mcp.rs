@@ -16,7 +16,9 @@ Call `brief` when you start a task and after your context is compacted. Call `se
 did not write, to find the decisions and reasons behind it. Call `note` as soon as you: decide between options \
 (record the reason), reject an approach (type rejected_option), hit a dead end (type dead_end, say what failed), \
 or learn a fact about the project others will need. One short note per decision, naming the files involved. \
-Do not note routine progress, requests or approvals.";
+Do not note routine progress, requests or approvals. A memory marked \"stated by the user\" is the user's \
+instruction: follow it even where the code does not yet, and if you think it is wrong, tell the user instead \
+of working around it.";
 
 /// Tools on the shared endpoint take the agent's working folder, which picks the project.
 pub fn shared_tool_definitions() -> Value {
@@ -56,7 +58,8 @@ pub fn tool_definitions() -> Value {
                 "title": {"type": "string"}, "claim": {"type": "string"},
                 "type": {"type": "string", "enum": ["decision", "fact", "preference", "rejected_option", "dead_end", "episode", "task"]},
                 "rationale": {"type": "string"}, "files": {"type": "array", "items": {"type": "string"}},
-                "expiresAt": {"type": "string", "description": "ISO 8601; for temporary facts"}
+                "expiresAt": {"type": "string", "description": "ISO 8601; for temporary facts"},
+                "statedBy": {"type": "string", "enum": ["user", "agent"], "description": "user if the user said or approved it, agent if you decided it"}
             }, "required": ["title", "claim"]}
         },
         {

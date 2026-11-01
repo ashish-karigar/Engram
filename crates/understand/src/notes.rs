@@ -21,6 +21,9 @@ pub struct NoteInput {
     /// For temporary facts ("deploy freeze until Friday"): ISO 8601 instant after which it expires.
     #[serde(rename = "expiresAt", alias = "expires_at")]
     pub expires_at: Option<String>,
+    /// "user" when the person said or approved it, "agent" when the agent decided it.
+    #[serde(rename = "statedBy", alias = "stated_by", skip_serializing_if = "Option::is_none")]
+    pub stated_by: Option<String>,
 }
 
 pub struct NoteContext {
@@ -52,6 +55,7 @@ pub fn record_note(conn: &Connection, note: &NoteInput, ctx: &NoteContext) -> Re
         evidence: vec![event.seq],
         touches: link_files(conn, &note.files, &known)?,
         expires_at: note.expires_at.clone(),
+        stated_by: note.stated_by.clone().filter(|s| s == "user" || s == "agent"),
         ..NewMemory::new(note.kind.as_deref().unwrap_or("fact"), &note.title, &note.claim)
     };
     Ok((save_memory(conn, memory)?, event.seq))

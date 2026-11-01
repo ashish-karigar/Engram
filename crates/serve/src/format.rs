@@ -21,7 +21,9 @@ pub fn format_memory(m: &Memory, reason: Option<&str>) -> String {
     };
     let sha = m.commit_sha.as_deref().map(|s| s.chars().take(7).collect::<String>());
     let tail = [Some(m.id.clone()), Some(when), sha, reason.map(String::from)].into_iter().flatten().collect::<Vec<_>>().join(" · ");
-    format!("• [{}] {}: {}.{why} ({tail})", m.kind, m.title, m.claim.trim().trim_end_matches('.'))
+    // Up front, not in the tail: an agent weighs a user's instruction differently from another agent's view.
+    let who = if m.stated_by_user() { ", stated by the user" } else { "" };
+    format!("• [{}{who}] {}: {}.{why} ({tail})", m.kind, m.title, m.claim.trim().trim_end_matches('.'))
 }
 
 /// One line per document chunk: where it lives and a short snippet. The id opens it with `expand`.

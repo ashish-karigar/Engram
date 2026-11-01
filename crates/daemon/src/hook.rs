@@ -52,7 +52,7 @@ pub fn hook_output(agent: &str, input: &Value) -> Option<String> {
     let event = input["hook_event_name"].as_str().unwrap_or("SessionStart");
     let why = if input["source"] == "compact" { "Context was just compacted; this is what the project remembers." } else { "Shared project memory from MemoryOS." };
     let context = format!(
-        "{why} Search it (MemoryOS `search`) before changing code you did not write. Record each decision, rejected option or dead end with MemoryOS `note` when it happens, with the reason.\n\n{text}"
+        "{why} Search it (MemoryOS `search`) before changing code you did not write. Record each decision, rejected option or dead end with MemoryOS `note` when it happens, with the reason. Follow memories marked \"stated by the user\" even where the code does not yet; if you think one is wrong, tell the user.\n\n{text}"
     );
     Some(json!({"hookSpecificOutput": {"hookEventName": event, "additionalContext": context}}).to_string())
 }

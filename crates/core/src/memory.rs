@@ -40,6 +40,14 @@ pub struct Memory {
     pub reinforcement: i64,
     /// Temporary facts stop being current after this instant.
     pub expires_at: Option<String>,
+    /// "user" or "agent"; None when unknown.
+    pub stated_by: Option<String>,
+}
+
+impl Memory {
+    pub fn stated_by_user(&self) -> bool {
+        self.stated_by.as_deref() == Some("user")
+    }
 }
 
 fn to_memory(r: &Row) -> rusqlite::Result<Memory> {
@@ -69,6 +77,7 @@ fn to_memory(r: &Row) -> rusqlite::Result<Memory> {
         reviewed_at: r.get("reviewed_at")?,
         reinforcement: r.get("reinforcement")?,
         expires_at: r.get("expires_at")?,
+        stated_by: r.get("stated_by")?,
     })
 }
 
@@ -95,6 +104,7 @@ pub struct NewMemory {
     pub touches: Vec<String>,
     pub is_inference: bool,
     pub expires_at: Option<String>,
+    pub stated_by: Option<String>,
 }
 
 impl NewMemory {
@@ -135,10 +145,10 @@ fn insert_memory(conn: &Connection, m: &NewMemory, at: &str, version: i64) -> Re
     conn.execute(
         "INSERT INTO memories (id, type, title, claim, rationale, scope, summary, version, is_hub,
            observed_at, valid_from, event_date, commit_sha, confidence, salience, authored_by, session_id, updated_at,
-           is_inference, expires_at)
+           is_inference, expires_at, stated_by)
          VALUES (:id, :type, :title, :claim, :rationale, :scope, :summary, :version, :is_hub,
            :observed, :valid_from, :event_date, :commit_sha, :confidence, :salience, :authored_by, :session_id, :at,
-           :is_inference, :expires_at)",
+           :is_inference, :expires_at, :stated_by)",
         named_params! {
             ":id": id, ":type": m.kind, ":title": m.title, ":claim": m.claim, ":rationale": m.rationale,
             ":scope": m.scope, ":summary": m.summary, ":version": version, ":is_hub": m.is_hub as i64,
@@ -146,7 +156,7 @@ fn insert_memory(conn: &Connection, m: &NewMemory, at: &str, version: i64) -> Re
             ":commit_sha": m.commit_sha, ":confidence": m.confidence.unwrap_or(0.5),
             ":salience": m.salience.unwrap_or(0.5), ":authored_by": m.authored_by,
             ":session_id": m.session_id, ":at": at,
-            ":is_inference": m.is_inference as i64, ":expires_at": m.expires_at,
+            ":is_inference": m.is_inference as i64, ":expires_at": m.expires_at, ":stated_by": m.stated_by,
         },
     )?;
     for seq in &m.evidence {

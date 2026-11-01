@@ -2,6 +2,8 @@ use std::collections::HashSet;
 
 use engram_core::graph::{EdgeOpts, add_edge};
 use engram_core::memory::{Memory, NewMemory, SearchOpts, create_memory, reinforce, search_memories, supersede};
+use engram_core::db::{new_id, now};
+use engram_core::rusqlite::params;
 use engram_core::{Connection, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -10,6 +12,8 @@ pub enum SaveAction {
     Superseded,
     /// The same fact again: counted, not duplicated.
     Reinforced,
+    /// Saved next to a user-stated memory it disagrees with; the person decides in Review.
+    Disputed,
 }
 
 impl SaveAction {
@@ -18,6 +22,7 @@ impl SaveAction {
             SaveAction::Created => "created",
             SaveAction::Superseded => "superseded",
             SaveAction::Reinforced => "reinforced",
+            SaveAction::Disputed => "disputed",
         }
     }
 }
@@ -61,6 +66,11 @@ pub fn save_memory(conn: &Connection, input: NewMemory) -> Result<SaveResult> {
     if let Some(m) = candidates.iter().find(|m| similarity(&m.title, &input.title) >= SAME_TOPIC) {
         return if similarity(&m.claim, &input.claim) >= SAME_CLAIM {
             Ok(SaveResult { action: SaveAction::Reinforced, memory: reinforce(conn, &m.id)?, extends: None })
+        } else if m.stated_by_user() && input.stated_by.as_deref() != Some("user") {
+            // Only the person replaces what the person said: an agent's different view waits in Review.
+            let memory = create_memory(conn, input)?;
+            dispute(conn, &memory, m)?;
+            Ok(SaveResult { action: SaveAction::Disputed, memory, extends: None })
         } else {
             Ok(SaveResult { action: SaveAction::Superseded, memory: supersede(conn, &m.id, input)?, extends: None })
         };
@@ -77,4 +87,15 @@ pub fn save_memory(conn: &Connection, input: NewMemory) -> Result<SaveResult> {
         add_edge(conn, &memory.id, parent, "extends", EdgeOpts { weight: Some(0.9), ..Default::default() })?;
     }
     Ok(SaveResult { action: SaveAction::Created, memory, extends: related })
+}
+
+/// Ask the person whether `newer` should replace `older`, as a pending link in Review.
+fn dispute(conn: &Connection, newer: &Memory, older: &Memory) -> Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO link_judgments (id, src, dst, relation, reason, confidence, judged_by, status, created_at)
+         VALUES (?, ?, ?, 'replaces', 'An agent noted a different view of what the user stated.', 1.0, 'rule', 'pending', ?)",
+        params![new_id("lnk"), newer.id, older.id, now()],
+    )?;
+    add_edge(conn, &newer.id, &older.id, "contradicts", EdgeOpts { weight: Some(1.0), ..Default::default() })?;
+    Ok(())
 }

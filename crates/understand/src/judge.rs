@@ -283,9 +283,13 @@ fn record(conn: &Connection, m: &Memory, other: &Memory, v: &Verdict, judged_by:
 /// Whether `newer` may retire `older` without a person agreeing. Being newer is not enough:
 /// - a memory from conversation alone may not retire one a commit backs (chat plans change,
 ///   commits are what happened);
-/// - a memory in an open conflict with the code may not retire anything.
+/// - a memory in an open conflict with the code may not retire anything;
+/// - only the person may retire what the person stated.
 fn may_retire(conn: &Connection, older: &Memory, newer: &Memory) -> Result<bool> {
     if newer.commit_sha.is_none() && older.commit_sha.is_some() {
+        return Ok(false);
+    }
+    if older.stated_by_user() && !newer.stated_by_user() {
         return Ok(false);
     }
     let disputed: bool = conn.query_row(
