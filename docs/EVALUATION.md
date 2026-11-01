@@ -26,12 +26,48 @@ found: a memory layer for AI agents that publishes its benchmark results. Its nu
 
 ## Suites
 
-### A. Conversational memory: LongMemEval-S *(in progress: dev split done)*
+### A. Conversational memory: LongMemEval-S *(done: test split run once)*
 
 [LongMemEval](https://arxiv.org/abs/2410.10813) gives each question a haystack of about 50 chat sessions
 (around 115k tokens) and marks which sessions hold the evidence (`answer_session_ids`). Categories:
 single-session (user, assistant, preference), multi-session, knowledge update, temporal reasoning,
 abstention.
+
+**Test split result (2026-11-01, commit ed26c32).** This split was never run or tuned on before:
+407 questions, 382 without abstention for retrieval. Run once, after tuning on dev ended; the numbers
+are as measured.
+
+| | MemoryOS (test, 407 questions) | Supermemory (vendor-reported, 500) |
+|---|---|---|
+| Evidence session in top 20 (R@20) | **100%** | 97% (with GPT-4o) |
+| Evidence session in top 10 / top 5 | 99.7% / 99.0% | — |
+| Every evidence session in top 5 (all@5) | 88.0% | — |
+| Answer accuracy | **86.7%** (mean over types 85.6%), Muse Spark | 85.2% (Gemini 3 Pro), 84.6% (GPT-5) |
+
+Answer accuracy by type (n): single-session-assistant 100 (43), single-session-user 98.2 (55),
+temporal 91.4 (105), knowledge update 88.1 (59), preference 81.8 (22), multi-session 75.5 (98),
+abstention 64.0 (25). Retrieval R@5 by type: 100 for all except multi-session 99.0 and preference
+86.4. History given to the model: about 9.3k tokens per question.
+
+How to read it:
+
+- **Retrieval is ahead:** the evidence was in the top 20 for every test question, and in the top 5
+  for 99%.
+- **Answer accuracy is on par, slightly ahead:** 1.5 points over Supermemory's best published figure,
+  which is within run-to-run noise. Dev scored 92.5%, so dev was optimistic; only test is reported.
+- **Weakest:** multi-session counting ("how many … in total"), where the model misses an item, and
+  abstention, where it answers from related but wrong details.
+
+Differences in setup, stated with the numbers:
+
+- Muse Spark answers and judges; the official judge, and Supermemory's, is GPT-4o.
+- Our test split is 407 of the 500 questions (a fixed hash split); Supermemory reports on all 500.
+- Our accuracy includes the 25 abstention questions.
+- 7 model replies hit their token limit (4 answers at 6000, 3 verdicts at 2000) and count as scored.
+  A cut-off verdict without "yes" counts as wrong. Raising the limits after seeing test results
+  would be a new run, so it is left for the next release.
+
+Result files: `bench/longmemeval/test-retrieval.json`, `bench/longmemeval/test-qa.jsonl`.
 
 - **Ingest:** each question's sessions become a fresh Engram project, through the same transcript
   path real agent sessions use.
@@ -114,8 +150,6 @@ All 8 wrong verdicts were checked by hand, and the judge was right each time. Wh
 A net gain of one question is within run-to-run noise. We use 40 for the test run because its fixes
 address a known limit (evidence ranked 21–40), and its losses are reasoning slips.
 
-Tuning set; the test split has not been run.
-
 **Dev split (88 questions, abstention excluded), 2026-10-31.** Tuning set; the test split has not been run.
 
 | Embeddings | R@5 | R@10 | R@20 | all@5 | In agent's answer | Answer tokens |
@@ -147,8 +181,7 @@ in the date range. all@5 did not move: questions that need every session of a se
 of the three sports events") still lose one of them. Still dev only; the test split has not been run.
 Search latency with the model, one thread, no other load: 23 ms p50 (query embedding included).
 
-Not yet comparable to Supermemory's figure: theirs is reported on the full set with GPT-4o in the loop;
-ours is retrieval-only on dev. The test-split number will be reported once, after tuning ends.
+Tuning ended here; the test split result is at the top of this section.
 
 ### B. Code awareness: file localization on SWE-bench Lite *(planned)*
 
