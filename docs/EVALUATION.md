@@ -243,12 +243,24 @@ The agent then chose the code over it. Every endpoint returns `{"detail": ...}`,
 `detail`, and the repo has no mobile client. The agent said the memory was unsupported, wrote
 `{"detail": ...}`, and saved a new memory to follow the code convention. That memory would mislead
 later sessions. The memory showed the decision but not that the user stated it, while Muse's own
-`MEMORY.md` reads as the user's instruction. Two things to fix:
+`MEMORY.md` reads as the user's instruction.
 
-- the brief and search results should show where a memory came from, for example "stated by the user";
-- a memory that contradicts a user-stated decision should go to Review, not replace it.
+**Fix and re-run (commit 22f9111).** Two changes:
 
-The task is also a hard case: it asks for a convention that nothing in the code supports yet.
+- Notes now record who stated them. The brief and search show `[decision, stated by the user]`, and
+  agents are told to follow those memories even where the code does not yet.
+- An agent's differing note, or a model link, can no longer retire a user-stated memory; it waits
+  in Review.
+
+Re-run of `cb-error-format` "with", 3 runs (`results/live-20261101-114056.json`): **3/3 passed**,
+1.97M median tokens. In every run session 1 marked the decision as the user's, and session 2 saw the
+mark and wrote the `{"error": {"code", "message"}}` shape. The other 13 tasks were not re-run after
+the change, so the full-run table above stays as measured. With this task's re-run in place of its
+first run, "with" would be 42/42.
+
+The task is still a hard case: it asks for a convention that nothing in the code supports yet.
+Handoff tasks are the costliest here (about 2M tokens): the agent sets up a virtualenv and runs the
+full backend test suite in both conditions.
 
 The 14 tasks are in `bench/agents/tasks.json`. They and their pass checks were committed before any
 run.
