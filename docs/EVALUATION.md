@@ -149,6 +149,32 @@ found every companion file the imports-only graph missed, but on only 15 pairs. 
 of predicted files actually changed) is limited by file-level granularity: a page that imports an API
 service is listed even if it does not use the changed method. Function-level calls are the next step.
 
+### H. Linking memories with the model *(done, small labelled set)*
+
+Muse Spark labels how a memory relates to a neighbour (same, replaces, extends, depends on,
+contradicts, or unrelated). Code then decides what that label may change; see
+`crates/understand/src/judge.rs`. Each case is one memory and one candidate, with the relations a
+person would accept. Cases go through the same call and the same apply/review/drop rule as the app.
+
+- **Set:** 30 pairs (`crates/eval/data/links.json`): 4 same, 5 replaces, 4 extends, 3 depends on,
+  4 contradicts (2 against facts from the code), 10 unrelated pairs chosen to share words or a
+  component.
+- **Run:** `cargo run -p engram-eval -- links` (uses `META_API_KEY`, else the model set in the app).
+
+| Model | Correct relation | Unrelated pairs linked | Real links missed | Memories wrongly retired without review |
+|---|---|---|---|---|
+| muse-spark-1.3, 3 runs | 29, 29, 28 of 30 (93–97%) | 0 | 1–2 (borderline "adds detail") | 0 |
+
+Caveats: we wrote the pairs ourselves, and the prompt's wording of "extends" was adjusted once after
+seeing misses on this set, so this is a development set, not a held-out one. One earlier run put two
+test pairs into the prompt as examples; that inflated the score and was discarded. The first run
+scored 47% because Muse Spark's thinking counts against `max_tokens`: replies came back empty or cut
+off. The budget is now 8000 tokens, and cut-off replies are logged.
+
+On live projects the rules mattered more than the score. A memory from chat ("uses venv, not Conda")
+retired a commit-backed decision; since then, a chat-only memory can't retire one a commit backs, a
+memory in conflict with the code retires nothing, and every applied link can be undone.
+
 ### E. Live agents, with and without Engram *(planned)*
 
 The test that matters most: real Claude Code and Codex sessions on a real repository.

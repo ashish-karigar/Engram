@@ -102,7 +102,7 @@ enum Suite {
         #[arg(long, default_value_t = 3)]
         depth: usize,
     },
-    /// Suite F: how accurately the model links memories, on labelled pairs (uses the configured model).
+    /// Suite H: how accurately the model links memories, on labelled pairs (uses the configured model).
     Links,
     /// Print a repository's system map (areas, endpoints, callers, services).
     Map {

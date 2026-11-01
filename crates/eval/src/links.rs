@@ -1,4 +1,4 @@
-//! Suite F: how well the model links memories. Each labelled case is one memory and one
+//! Suite H: how well the model links memories. Each labelled case is one memory and one
 //! candidate with the relations a person would accept (none = unrelated). Cases run through the
 //! same `judge` call and the same apply/review/drop rule as the app, so the numbers describe what
 //! would actually happen to a project's memory.
