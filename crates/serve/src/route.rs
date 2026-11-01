@@ -47,13 +47,13 @@ pub fn pick_project(projects: &[ProjectRef], actor: &str, cwd: Option<&str>) -> 
         let path = Path::new(cwd).canonicalize().unwrap_or_else(|_| cwd.into());
         return project_containing(projects, &path)
             .cloned()
-            .ok_or_else(|| Error::msg(format!("Engram is not watching {cwd}. Watched folders: {}", names())));
+            .ok_or_else(|| Error::msg(format!("MemoryOS is not watching {cwd}. Watched folders: {}", names())));
     }
     let recent = projects.iter().filter_map(|p| Some((last_activity(p, actor)?, p))).max_by(|a, b| a.0.cmp(&b.0));
     match (recent, projects) {
         (Some((_, p)), _) => Ok(p.clone()),
         (None, [only]) => Ok(only.clone()),
-        (None, []) => Err(Error::msg("Engram is not watching any project yet. Add a folder in the Engram app.")),
-        (None, _) => Err(Error::msg(format!("Pass `cwd` (the folder you are working in) so Engram can pick the project. Watched folders: {}", names()))),
+        (None, []) => Err(Error::msg("MemoryOS is not watching any project yet. Add a folder in the MemoryOS app.")),
+        (None, _) => Err(Error::msg(format!("Pass `cwd` (the folder you are working in) so MemoryOS can pick the project. Watched folders: {}", names()))),
     }
 }

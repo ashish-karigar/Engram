@@ -9,7 +9,7 @@ export function ReviewPanel({ api }: { api: ProjectApi }) {
   const decide = (id: string, action: "approve" | "decline") => api.decide(id, action).then(reload);
   return (
     <div className="scroll">
-      <p className="muted" style={{ marginBottom: 12 }}>Engram flags facts it inferred rather than read. Approve the right ones; declined guesses leave search.</p>
+      <p className="muted" style={{ marginBottom: 12 }}>MemoryOS flags facts it inferred rather than read. Approve the right ones; declined guesses leave search.</p>
       <ul className="rows">
         {data.map(({ memory: m, parentCount }) => (
           <li key={m.id} className="row">

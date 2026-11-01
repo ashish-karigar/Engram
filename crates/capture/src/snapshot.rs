@@ -8,10 +8,10 @@ use crate::git::{git, git_env, head_sha};
 pub const SNAPSHOT_REF: &str = "refs/engram/snapshots";
 
 const IDENTITY: [(&str, &str); 4] = [
-    ("GIT_AUTHOR_NAME", "Engram"),
-    ("GIT_AUTHOR_EMAIL", "engram@localhost"),
-    ("GIT_COMMITTER_NAME", "Engram"),
-    ("GIT_COMMITTER_EMAIL", "engram@localhost"),
+    ("GIT_AUTHOR_NAME", "MemoryOS"),
+    ("GIT_AUTHOR_EMAIL", "memoryos@localhost"),
+    ("GIT_COMMITTER_NAME", "MemoryOS"),
+    ("GIT_COMMITTER_EMAIL", "memoryos@localhost"),
 ];
 
 #[derive(Debug, Clone)]

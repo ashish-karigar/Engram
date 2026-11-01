@@ -1,6 +1,6 @@
-# Engram
+# MemoryOS
 
-Shared, local-first memory for coding agents. Engram watches your projects, keeps an immutable
+Shared, local-first memory for coding agents. MemoryOS watches your projects, keeps an immutable
 record of what happened, distills it into a temporal graph of decisions, reasons, dead ends and
 code links, and serves small, token-budgeted answers to any agent over MCP or HTTP.
 
@@ -12,7 +12,7 @@ repository was written during the event.
 ## How it works
 
 1. **Capture**: a watcher records file changes and git commits. Uncommitted work is saved to
-   `refs/engram/snapshots` (code stays in git, never in Engram's database).
+   `refs/engram/snapshots` (code stays in git, never in MemoryOS's database).
 2. **Understand**: tree-sitter indexes Python, Rust, TypeScript and JavaScript (symbols and imports, Cargo workspaces included); events are grouped into tasks; a model extracts decisions
    and reasons, and each is accepted only if its quote appears in the evidence.
 3. **Remember**: memories are versioned and time-bounded; newer facts supersede older ones; stale
@@ -40,7 +40,8 @@ npm run app:dev                   # desktop app (Tauri) with hot reload
 npm run app:build                 # release bundle
 ```
 
-Or from a terminal, without the desktop window:
+Or from a terminal, without the desktop window. The project was first called Engram, and the
+crates, environment variables and data folder still use that name:
 
 ```bash
 cargo run -p engram-daemon -- daemon                 # start the daemon

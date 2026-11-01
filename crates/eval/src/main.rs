@@ -23,7 +23,7 @@ fn models_dir() -> PathBuf {
 }
 
 #[derive(Parser)]
-#[command(name = "engram-eval", about = "Run Engram's evaluation suites")]
+#[command(name = "engram-eval", about = "Run MemoryOS's evaluation suites")]
 struct Cli {
     #[command(subcommand)]
     suite: Suite,

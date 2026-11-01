@@ -48,24 +48,45 @@ impl Endpoint {
     }
 }
 
-const BEGIN: &str = "# >>> engram >>>";
-const END: &str = "# <<< engram <<<";
+/// The name agents know the server by. It was `engram` before the app became MemoryOS.
+pub const SERVER: &str = "memoryos";
+const OLD_SERVER: &str = "engram";
 
-/// Insert or replace a marked block, so re-connecting never duplicates the entry.
-pub fn upsert_block(text: &str, block: &str) -> String {
-    let wrapped = format!("{BEGIN}\n{block}\n{END}");
-    match (text.find(BEGIN), text.find(END)) {
-        (Some(start), Some(end)) if end > start => format!("{}{wrapped}{}", &text[..start], &text[end + END.len()..]),
-        _ => format!("{}\n\n{wrapped}\n", text.trim_end()),
+const BEGIN: &str = "# >>> memoryos >>>";
+const END: &str = "# <<< memoryos <<<";
+const OLD_BEGIN: &str = "# >>> engram >>>";
+const OLD_END: &str = "# <<< engram <<<";
+
+fn cut_block(text: &str, begin: &str, end: &str) -> Option<(usize, usize)> {
+    match (text.find(begin), text.find(end)) {
+        (Some(start), Some(stop)) if stop > start => Some((start, stop + end.len())),
+        _ => None,
     }
 }
 
-/// Merge an `engram` entry into a JSON settings file's `mcpServers`, leaving everything else intact.
+/// Insert or replace a marked block, so re-connecting never duplicates the entry. A block under
+/// the old name is replaced too.
+pub fn upsert_block(text: &str, block: &str) -> String {
+    let wrapped = format!("{BEGIN}\n{block}\n{END}");
+    let mut text = text.to_string();
+    if let Some((start, stop)) = cut_block(&text, OLD_BEGIN, OLD_END) {
+        text.replace_range(start..stop, "");
+    }
+    match cut_block(&text, BEGIN, END) {
+        Some((start, stop)) => format!("{}{wrapped}{}", &text[..start], &text[stop..]),
+        None => format!("{}\n\n{wrapped}\n", text.trim_end()),
+    }
+}
+
+/// Merge the server's entry into a JSON settings file's `mcpServers`, leaving everything else
+/// intact apart from an entry under the old name.
 pub fn merge_mcp_server(json_text: &str, entry: Value) -> Result<String> {
     let mut data: Value = if json_text.trim().is_empty() { json!({}) } else { serde_json::from_str(json_text)? };
     let servers = data.as_object_mut().ok_or_else(|| Error::msg("settings file is not a JSON object"))?
         .entry("mcpServers").or_insert_with(|| json!({}));
-    servers.as_object_mut().ok_or_else(|| Error::msg("mcpServers is not an object"))?.insert("engram".into(), entry);
+    let servers = servers.as_object_mut().ok_or_else(|| Error::msg("mcpServers is not an object"))?;
+    servers.remove(OLD_SERVER);
+    servers.insert(SERVER.into(), entry);
     Ok(serde_json::to_string_pretty(&data)? + "\n")
 }
 
@@ -88,7 +109,7 @@ fn home() -> PathBuf {
 
 fn backup(file: &Path) -> Result<()> {
     if file.exists() {
-        std::fs::copy(file, format!("{}.engram.bak", file.display()))?;
+        std::fs::copy(file, format!("{}.memoryos.bak", file.display()))?;
     } else if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -104,7 +125,7 @@ pub fn plan_connect(agent: Agent, e: Endpoint) -> ConnectPlan {
 }
 
 fn codex_block(url: &str, token: &str) -> String {
-    format!("[mcp_servers.engram]\nurl = \"{url}\"\nhttp_headers = {{ Authorization = \"Bearer {token}\" }}")
+    format!("[mcp_servers.{SERVER}]\nurl = \"{url}\"\nhttp_headers = {{ Authorization = \"Bearer {token}\" }}")
 }
 
 pub fn codex_plan(e: Endpoint, file: PathBuf) -> ConnectPlan {
@@ -116,7 +137,7 @@ pub fn codex_plan(e: Endpoint, file: PathBuf) -> ConnectPlan {
             backup(&file)?;
             let current = std::fs::read_to_string(&file).unwrap_or_default();
             std::fs::write(&file, upsert_block(&current, &codex_block(&e.mcp_url(), &e.token)))?;
-            Ok(format!("Updated {} (backup: {}.engram.bak). Restart Codex.", file.display(), file.display()))
+            Ok(format!("Updated {} (backup: {}.memoryos.bak). Restart Codex.", file.display(), file.display()))
         }),
     }
 }
@@ -127,7 +148,7 @@ fn mcp_entry(url: &str, token: &str) -> Value {
 
 pub fn muse_plan(e: Endpoint, file: PathBuf) -> ConnectPlan {
     let preview = format!(
-        "Add mcpServers.engram to {}:\n{}",
+        "Add mcpServers.{SERVER} to {}:\n{}",
         file.display(),
         serde_json::to_string_pretty(&mcp_entry(&e.mcp_url(), "<token>")).unwrap_or_default()
     );
@@ -139,7 +160,7 @@ pub fn muse_plan(e: Endpoint, file: PathBuf) -> ConnectPlan {
             let current = std::fs::read_to_string(&file).unwrap_or_default();
             std::fs::write(&file, merge_mcp_server(&current, mcp_entry(&e.mcp_url(), &e.token))?)?;
             Ok(format!(
-                "Updated {} (backup: {}.engram.bak). Restart Muse. The entry format follows Meta's streamable-HTTP convention; verify with /mcp inside Muse.",
+                "Updated {} (backup: {}.memoryos.bak). Restart Muse. The entry format follows Meta's streamable-HTTP convention; verify with /mcp inside Muse.",
                 file.display(),
                 file.display()
             ))
@@ -149,12 +170,12 @@ pub fn muse_plan(e: Endpoint, file: PathBuf) -> ConnectPlan {
 
 /// The command an agent hook runs: this same binary with `hook <agent>`.
 pub fn hook_command(agent: &str) -> String {
-    let exe = std::env::current_exe().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| "engram".into());
+    let exe = std::env::current_exe().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| "memoryos".into());
     format!("\"{exe}\" hook {agent}")
 }
 
-/// Add Engram's SessionStart hook to Claude Code settings (runs on startup, resume and after
-/// compaction). Existing hooks are kept; an older Engram hook is replaced, never duplicated.
+/// Add the SessionStart hook to Claude Code settings (runs on startup, resume and after
+/// compaction). Existing hooks are kept; an older one is replaced, never duplicated.
 pub fn merge_claude_hook(json_text: &str, command: &str) -> Result<String> {
     let mut data: Value = if json_text.trim().is_empty() { json!({}) } else { serde_json::from_str(json_text)? };
     let root = data.as_object_mut().ok_or_else(|| Error::msg("Claude settings is not a JSON object"))?;
@@ -171,7 +192,7 @@ fn claude_plan(e: Endpoint) -> ConnectPlan {
     let command = hook_command("claude");
     let user_config = home().join(".claude.json");
     let preview = format!(
-        "1. Run: claude mcp add --transport http --scope user engram {url} --header \"Authorization: Bearer <token>\"\n   \
+        "1. Run: claude mcp add --transport http --scope user {SERVER} {url} --header \"Authorization: Bearer <token>\"\n   \
          (without the `claude` command, the same entry goes into mcpServers in {})\n\
          2. Add a SessionStart hook to {} (startup, resume and after compaction):\n   {command}\n   It injects the project brief so Claude re-orients after compacting.",
         user_config.display(),
@@ -184,12 +205,14 @@ fn claude_plan(e: Endpoint) -> ConnectPlan {
             backup(&settings)?;
             let current = std::fs::read_to_string(&settings).unwrap_or_default();
             std::fs::write(&settings, merge_claude_hook(&current, &command)?)?;
-            let hook_note = format!("Hook added to {} (backup: {}.engram.bak).", settings.display(), settings.display());
+            let hook_note = format!("Hook added to {} (backup: {}.memoryos.bak).", settings.display(), settings.display());
 
             let run = |args: &[&str]| Command::new("claude").args(args).output();
-            let _ = run(&["mcp", "remove", "--scope", "user", "engram"]);
+            for name in [OLD_SERVER, SERVER] {
+                let _ = run(&["mcp", "remove", "--scope", "user", name]);
+            }
             let header = format!("Authorization: Bearer {}", e.token);
-            match run(&["mcp", "add", "--transport", "http", "--scope", "user", "engram", &url, "--header", &header]) {
+            match run(&["mcp", "add", "--transport", "http", "--scope", "user", SERVER, &url, "--header", &header]) {
                 Ok(out) if out.status.success() => Ok(format!("Registered with Claude Code (user scope). {hook_note} Start a new session.")),
                 Ok(out) => Err(Error::msg(format!("{hook_note} But `claude mcp add` failed: {}", String::from_utf8_lossy(&out.stderr).trim()))),
                 // The desktop app ships Claude Code without the CLI on PATH: write what `mcp add` writes.
@@ -197,7 +220,7 @@ fn claude_plan(e: Endpoint) -> ConnectPlan {
                     backup(&user_config)?;
                     let current = std::fs::read_to_string(&user_config).unwrap_or_default();
                     std::fs::write(&user_config, merge_mcp_server(&current, mcp_entry(&url, &e.token))?)?;
-                    Ok(format!("Added engram to mcpServers in {} (backup: .engram.bak). {hook_note} Start a new session.", user_config.display()))
+                    Ok(format!("Added {SERVER} to mcpServers in {} (backup: .memoryos.bak). {hook_note} Start a new session.", user_config.display()))
                 }
             }
         }),

@@ -38,12 +38,15 @@ fn repo(files: &[(&str, &str)], subject: &str) -> TempDir {
 fn connector_edits_are_idempotent_and_preserve_existing_settings() {
     let once = upsert_block("model = \"x\"\n", "[mcp_servers.engram]\nurl = \"a\"");
     let twice = upsert_block(&once, "[mcp_servers.engram]\nurl = \"b\"");
-    assert_eq!(twice.matches(">>> engram").count(), 1);
+    assert_eq!(twice.matches(">>> memoryos").count(), 1);
+    // A block written under the old name is replaced, not kept beside the new one.
+    let renamed = upsert_block("# >>> engram >>>\n[mcp_servers.engram]\n# <<< engram <<<\n", "[mcp_servers.memoryos]");
+    assert!(!renamed.contains("engram") && renamed.contains("memoryos"));
     assert!(twice.contains("url = \"b\"") && twice.contains("model = \"x\""));
 
     let merged: Value = serde_json::from_str(&merge_mcp_server(r#"{"model":"m","mcpServers":{"other":{"url":"u"}}}"#, json!({"url": "e"})).unwrap()).unwrap();
     assert_eq!(merged["model"], "m");
-    assert!(merged["mcpServers"]["other"].is_object() && merged["mcpServers"]["engram"].is_object());
+    assert!(merged["mcpServers"]["other"].is_object() && merged["mcpServers"]["memoryos"].is_object());
 }
 
 #[test]
@@ -58,12 +61,12 @@ fn connecting_codex_and_muse_writes_only_the_target_file() {
     plan.apply().unwrap();
     let written = std::fs::read_to_string(&toml).unwrap();
     assert!(written.contains("model = \"o\"") && written.contains("/p/abc/mcp") && written.contains("egm_secret"));
-    assert!(dir.path().join("codex.toml.engram.bak").exists());
+    assert!(dir.path().join("codex.toml.memoryos.bak").exists());
 
     let json_file = dir.path().join("settings.json");
     muse_plan(ep(), json_file.clone()).apply().unwrap();
     let settings: Value = serde_json::from_str(&std::fs::read_to_string(&json_file).unwrap()).unwrap();
-    assert_eq!(settings["mcpServers"]["engram"]["url"], "http://127.0.0.1:1/p/abc/mcp");
+    assert_eq!(settings["mcpServers"]["memoryos"]["url"], "http://127.0.0.1:1/p/abc/mcp");
     assert_eq!(Agent::parse("muse").unwrap().actor_name(), "muse-code");
 }
 

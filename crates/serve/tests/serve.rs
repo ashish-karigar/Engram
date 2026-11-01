@@ -160,7 +160,7 @@ async fn two_agents_share_one_memory_over_mcp() {
         }
     };
     let init = rpc(f.claude.clone(), 1, "initialize", json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}})).await;
-    assert_eq!(init["result"]["serverInfo"]["name"], "engram");
+    assert_eq!(init["result"]["serverInfo"]["name"], "memoryos");
     assert_eq!(init["result"]["protocolVersion"], "2025-06-18");
 
     let tools = rpc(f.claude.clone(), 2, "tools/list", json!({})).await;

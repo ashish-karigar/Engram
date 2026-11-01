@@ -21,14 +21,14 @@ export function AboutPage({ connection, projects }: { connection: Connection; pr
         <div className="about-head">
           <Mark size={22} />
           <div>
-            <h1>engram</h1>
+            <h1>MemoryOS</h1>
             <p className="faint">Version {version ?? "0.1.0"}</p>
           </div>
         </div>
         <p className="lead">Local-first shared memory for coding agents.</p>
 
         <h3>What it does</h3>
-        <p>Engram watches your project folders and keeps the decisions, facts and dead ends your agents work through, with their reasons and the code they touch. It also maps the code: its parts, the endpoints between them, and the services they rely on.</p>
+        <p>MemoryOS watches your project folders and keeps the decisions, facts and dead ends your agents work through, with their reasons and the code they touch. It also maps the code: its parts, the endpoints between them, and the services they rely on.</p>
         <h3>Shared by every agent</h3>
         <p>Claude Code, Codex and other agents connect over MCP and read the same memory, so the next session starts where the last one stopped.</p>
         <h3>Stays on this Mac</h3>

@@ -14,7 +14,7 @@ const FILTERS: [Filter, string, (d: DocumentView) => boolean][] = [
   ["added", "Added", (d) => d.source !== "project" && d.source !== "session"],
 ];
 
-/** Everything Engram can quote from: project docs and code (indexed automatically) and added documents. */
+/** Everything MemoryOS can quote from: project docs and code (indexed automatically) and added documents. */
 export function DocumentsPanel({ api, onOpen }: { api: ProjectApi; onOpen(id: string): void }) {
   const { data = [], reload } = usePolling<DocumentView[]>(() => api.documents(), 4000, [api]);
   const [filter, setFilter] = useState<Filter>("all");

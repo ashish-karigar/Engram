@@ -10,8 +10,8 @@ use crate::ops::{Ctx, OpResult, op_add_document, op_brief, op_expand, op_feature
 const DEFAULT_PROTOCOL: &str = "2025-03-26";
 
 /// Sent in `initialize`; clients that support server instructions add it to the agent's prompt.
-/// Engram learns mostly from what agents record, so this says when to record, briefly.
-pub const INSTRUCTIONS: &str = "Engram is this project's shared memory across agents and sessions. \
+/// MemoryOS learns mostly from what agents record, so this says when to record, briefly.
+pub const INSTRUCTIONS: &str = "MemoryOS is this project's shared memory across agents and sessions. \
 Call `brief` when you start a task and after your context is compacted. Call `search` before changing code you \
 did not write, to find the decisions and reasons behind it. Call `note` as soon as you: decide between options \
 (record the reason), reject an approach (type rejected_option), hit a dead end (type dead_end, say what failed), \
@@ -118,7 +118,7 @@ pub fn handle_message(tools: &Value, call: ToolCall, msg: &Value) -> Option<Valu
         "initialize" => json!({
             "protocolVersion": params["protocolVersion"].as_str().unwrap_or(DEFAULT_PROTOCOL),
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "engram", "version": env!("CARGO_PKG_VERSION")},
+            "serverInfo": {"name": "memoryos", "version": env!("CARGO_PKG_VERSION")},
             "instructions": INSTRUCTIONS
         }),
         "ping" => json!({}),

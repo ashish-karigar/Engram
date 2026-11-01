@@ -25,7 +25,7 @@ fn daemon_info(state: tauri::State<'_, DaemonState>) -> Result<DaemonInfo, Strin
 }
 
 fn main() {
-    // Agent hooks call this same binary: `Engram hook claude`. Answer and exit without a window.
+    // Agent hooks call this same binary: `MemoryOS hook claude`. Answer and exit without a window.
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).map(String::as_str) == Some("hook") {
         std::process::exit(engram_daemon::hook::run_hook(args.get(2).map_or("claude", String::as_str)));
@@ -40,7 +40,7 @@ fn main() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("failed to build Engram");
+        .expect("failed to build MemoryOS");
 
     app.run(|handle, event| {
         if let RunEvent::Exit = event {

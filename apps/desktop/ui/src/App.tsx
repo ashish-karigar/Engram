@@ -105,12 +105,12 @@ export function App() {
   const remove = async (p: Project) => {
     const question = `Stop watching ${p.name}? Its memory stays on disk and comes back if you add the folder again.`;
     const yes = (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
-      ? await (await import("@tauri-apps/plugin-dialog")).ask(question, { title: "Engram", kind: "warning", okLabel: "Stop watching" })
+      ? await (await import("@tauri-apps/plugin-dialog")).ask(question, { title: "MemoryOS", kind: "warning", okLabel: "Stop watching" })
       : window.confirm(question);
     if (yes) api?.remove(p.id).then(reload);
   };
 
-  if (daemonError) return <div className="empty" data-tauri-drag-region><h1>Engram</h1><p className="err">{daemonError}</p></div>;
+  if (daemonError) return <div className="empty" data-tauri-drag-region><h1>MemoryOS</h1><p className="err">{daemonError}</p></div>;
   if (!connection) return <div className="empty" data-tauri-drag-region><p className="muted">Starting…</p></div>;
 
   return (

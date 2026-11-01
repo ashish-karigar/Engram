@@ -45,7 +45,7 @@ struct Client {
 
 impl Client {
     fn discover() -> Result<Client, String> {
-        let text = std::fs::read_to_string(app_data_dir().join("runtime.json")).map_err(|_| "Engram daemon is not running. Start it with: engram daemon")?;
+        let text = std::fs::read_to_string(app_data_dir().join("runtime.json")).map_err(|_| "MemoryOS daemon is not running. Start it with: engram daemon")?;
         let info: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
         Ok(Client { url: info["url"].as_str().unwrap_or("").into(), token: info["adminToken"].as_str().unwrap_or("").into() })
     }
@@ -78,7 +78,7 @@ async fn run(command: Command) -> Result<(), String> {
     match command {
         Command::Daemon { port } => {
             let daemon = start_daemon(DaemonOptions { port: port.unwrap_or_else(engram_daemon::configured_port), ..Default::default() }).await.map_err(|e| e.to_string())?;
-            println!("Engram daemon at {}", daemon.url);
+            println!("MemoryOS daemon at {}", daemon.url);
             println!("ENGRAM_READY {}", json!({"url": daemon.url, "adminToken": daemon.admin_token}));
             tokio::signal::ctrl_c().await.map_err(|e| e.to_string())?;
             daemon.stop().await;
