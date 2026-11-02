@@ -38,6 +38,22 @@ Look (decided by the user, keep it everywhere):
   a slow light sweep across it, a soft amber glow behind it. No photos. Respect
   prefers-reduced-motion.
 - Calm and premium: generous spacing, thin mocha borders, subtle gradients only where they help.
+- Motion: every section animates in on scroll (fade and rise, children staggered, using
+  IntersectionObserver); result numbers count up when they come into view; the nav turns
+  translucent with a blur once you scroll; cards lift slightly on hover; the hero glow drifts
+  slowly with the scroll. All of it smooth and subtle, and off under prefers-reduced-motion.
+- Real product images: public/screenshots/ holds screenshots of the MemoryOS app (graph.png,
+  timeline.png, review.png, requests.png, documents.png, agents.png; 2880x1800). Use them, never
+  placeholders: a large framed graph.png under the hero buttons, and an app tour section with tabs
+  that switch between the screenshots. Show them in a macOS-style window frame with a soft gold
+  glow.
+- Type like Apple's product pages: very large display headings (up to about 120px on desktop,
+  tight letter-spacing), short lines, lots of air between sections.
+
+Quality bar: this must look like a funded company's site, not a template. Write readable,
+formatted code. Before you finish, run the site and look at every section at 1440px and 390px
+wide; fix anything that overlaps, feels empty or looks unfinished. Keep the repository to the
+site's code and a short README.
 
 MemoryOS is local-first shared memory for coding agents. It watches a project's commits, agent
 sessions and documents, keeps the decisions, reasons and dead ends, and serves them to Claude Code,
@@ -59,7 +75,7 @@ Sections, in order:
 7. Results: with MemoryOS 39/42 agent tasks passed vs 26/42 without; LongMemEval: evidence in the
    top 20 for 100% of questions, 86.7% answered correctly; search 23 ms median, 45 ms over one
    million chunks. Big numbers, with one line under each saying how it was measured.
-8. The desktop app: graph, review, timeline and agents, with image placeholders.
+8. The desktop app: a tour of the real screenshots (graph, timeline, review, requests, agents).
 9. Privacy and security: listens only on this Mac, a separate key for each agent, keys in files
    only you can read, reset a key in one click, nothing uploaded.
 10. Get started: three steps (download, connect your agents, add a project) with copyable commands.
