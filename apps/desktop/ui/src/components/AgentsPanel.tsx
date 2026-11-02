@@ -44,6 +44,17 @@ function AgentCard({ api, agent, state, onChange }: { api: Api; agent: (typeof A
       (r) => { setResult(r.result); setError(null); onChange(); },
       (e: Error) => setError(e.message),
     );
+  const reset = async () => {
+    const question = `Give ${agent.name} a new key? The current key stops working right away.`;
+    const yes = (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+      ? await (await import("@tauri-apps/plugin-dialog")).ask(question, { title: "MemoryOS", kind: "warning", okLabel: "Reset key" })
+      : window.confirm(question);
+    if (!yes) return;
+    api.resetKey(agent.id).then(
+      (r) => { setResult(r.result); setError(null); setMode(null); onChange(); },
+      (e: Error) => setError(e.message),
+    );
+  };
   const copy = () => {
     if (!state) return;
     void navigator.clipboard.writeText(state.manual).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
@@ -58,6 +69,8 @@ function AgentCard({ api, agent, state, onChange }: { api: Api; agent: (typeof A
       <div className="actions">
         <button className={`btn ${mode === "auto" ? "on" : ""}`} onClick={() => { setMode("auto"); setResult(null); }}>Do it for me</button>
         <button className={`btn ${mode === "manual" ? "on" : ""}`} onClick={() => setMode("manual")}>Set it up yourself</button>
+        <span className="spacer" />
+        <button className="btn ghost" onClick={reset} title="Issue a new key and revoke the current one">Reset key</button>
       </div>
       {mode === "auto" && state && (
         <>

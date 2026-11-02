@@ -24,6 +24,8 @@ export const projectsApi = (c: Connection) => ({
   testSettings: (target: "llm" | "embeddings", settings?: AppSettings) => call<TestResult>(c, "/api/settings/test", post({ target, settings })),
   /** Agents connect once, to every project. Without `apply` this only reads their status. */
   connect: (agent: string, apply: boolean) => call<ConnectResult>(c, "/api/connect", post({ agent, apply })),
+  /** A new key for the agent; the old one stops working. Written into the agent if it is connected. */
+  resetKey: (agent: string) => call<ConnectResult>(c, "/api/connect/reset", post({ agent })),
 });
 
 /** Everything the UI reads or does inside one project. */

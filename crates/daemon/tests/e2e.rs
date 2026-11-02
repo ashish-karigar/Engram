@@ -77,6 +77,22 @@ fn connecting_codex_and_muse_writes_only_the_target_file() {
     let again: Value = serde_json::from_str(&std::fs::read_to_string(&json_file).unwrap()).unwrap();
     assert_eq!(again["hooks"]["SessionStart"].as_array().unwrap().len(), 1, "reconnecting must not add a second hook");
     assert_eq!(Agent::parse("muse").unwrap().actor_name(), "muse-code");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&json_file).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "a file holding a token must be private");
+    }
+}
+
+#[test]
+fn resetting_an_agent_token_revokes_the_old_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = engram_daemon::secrets::ensure_agent_token(dir.path(), "codex").unwrap();
+    let new = engram_daemon::secrets::reset_agent_token(dir.path(), "codex").unwrap();
+    assert_ne!(old, new);
+    assert_eq!(engram_daemon::secrets::agent_for_token(dir.path(), &old), None);
+    assert_eq!(engram_daemon::secrets::agent_for_token(dir.path(), &new).as_deref(), Some("codex"));
 }
 
 struct Api {

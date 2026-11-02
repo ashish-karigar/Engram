@@ -12,7 +12,7 @@ use crate::connectors::{Agent, Endpoint, manual_steps, plan_connect, status};
 use crate::paths::{app_data_dir, project_paths};
 use crate::project::{RunningProject, RuntimeOptions};
 use crate::registry::Registry;
-use crate::secrets::{agent_for_token, ensure_admin_token, ensure_agent_token, write_private};
+use crate::secrets::{agent_for_token, ensure_admin_token, ensure_agent_token, reset_agent_token, write_private};
 use crate::settings::Settings;
 
 /// Agents' configs hold the endpoint URL, so the port must survive restarts.
@@ -125,6 +125,20 @@ impl ProjectManager for Daemon {
         let result = if apply { Some(plan.apply()?) } else { None };
         let (server, hook) = status(agent);
         Ok(ConnectOutcome { agent: agent.id().into(), preview, result, manual, server, hook })
+    }
+
+    fn reset_token(&self, agent: &str) -> Result<ConnectOutcome> {
+        let parsed = Agent::parse(agent).ok_or_else(|| Error::msg(format!("unknown agent: {agent}")))?;
+        reset_agent_token(&self.base, parsed.actor_name())?;
+        // A connected agent gets the new token written in; otherwise it is used on the next connect.
+        let connected = status(parsed).0;
+        let mut outcome = self.connect(agent, connected)?;
+        outcome.result = Some(if connected {
+            format!("New key issued; the old one no longer works. {}", outcome.result.unwrap_or_default())
+        } else {
+            "New key issued; the old one no longer works.".into()
+        });
+        Ok(outcome)
     }
 
     fn agent_for_token(&self, token: &str) -> Option<String> {

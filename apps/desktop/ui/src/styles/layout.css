@@ -337,3 +337,4 @@ kbd { font: 10px var(--mono); color: var(--faint); border: 1px solid var(--line-
 .steps > li.done h3::after { content: " ✓"; color: var(--ok); }
 .steps > li .btn.primary { align-self: flex-start; margin-top: 6px; }
 .steps .agent-list { margin-top: 8px; }
+.actions .spacer { flex: 1; }

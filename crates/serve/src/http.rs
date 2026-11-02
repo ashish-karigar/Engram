@@ -152,6 +152,15 @@ async fn dispatch(State(state): State<Arc<AppState>>, req: Request) -> Response 
                 .await
                 .unwrap_or_else(|e| Err(Error::msg(e.to_string())))
         }
+        (&Method::POST, ["api", "connect", "reset"]) if is_admin => {
+            let manager = state.manager.clone();
+            tokio::task::spawn_blocking(move || {
+                let outcome = manager.reset_token(json_body["agent"].as_str().unwrap_or(""))?;
+                Ok(reply(StatusCode::OK, &serde_json::to_value(outcome)?))
+            })
+            .await
+            .unwrap_or_else(|e| Err(Error::msg(e.to_string())))
+        }
         (_, ["p", id, tail @ ..]) => {
             let st = state.clone();
             let (id, tail, method) = (id.to_string(), tail.iter().map(|s| s.to_string()).collect::<Vec<_>>(), parts.method.clone());

@@ -54,6 +54,15 @@ pub fn ensure_agent_token(base: &Path, agent: &str) -> std::io::Result<String> {
     Ok(token)
 }
 
+/// Replace an agent's token. The old one stops working at once: tokens are checked against this file.
+pub fn reset_agent_token(base: &Path, agent: &str) -> std::io::Result<String> {
+    let file = base.join("agents.json");
+    let mut tokens = read(&file);
+    tokens.remove(agent);
+    write_private(&file, &serde_json::to_string_pretty(&tokens).map_err(std::io::Error::other)?)?;
+    ensure_agent_token(base, agent)
+}
+
 /// The agent a shared-endpoint token belongs to.
 pub fn agent_for_token(base: &Path, token: &str) -> Option<String> {
     read(&base.join("agents.json")).into_iter().find(|(_, t)| t == token).map(|(agent, _)| agent)

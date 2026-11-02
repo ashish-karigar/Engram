@@ -46,6 +46,11 @@ pub trait ProjectManager: Send + Sync {
     fn remove(&self, id: &str) -> Result<()>;
     /// Connect an agent to the shared endpoint (all projects). Shows the change; `apply` makes it.
     fn connect(&self, agent: &str, apply: bool) -> Result<ConnectOutcome>;
+    /// Give the agent a new token, revoking the old one, and write it into the agent's config if
+    /// the agent is connected.
+    fn reset_token(&self, _agent: &str) -> Result<ConnectOutcome> {
+        Err(Error::msg("not supported"))
+    }
 
     /// The agent (actor name) a shared-endpoint token belongs to.
     fn agent_for_token(&self, _token: &str) -> Option<String> {

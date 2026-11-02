@@ -4,6 +4,9 @@ use std::process::Command;
 use engram_core::{Error, Result};
 use serde_json::{Value, json};
 
+// Files that end up holding an agent's token are written readable by the user only.
+use crate::secrets::write_private;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Agent {
     Claude,
@@ -145,7 +148,7 @@ pub fn codex_plan(e: Endpoint, file: PathBuf, hooks: PathBuf) -> ConnectPlan {
         apply: Box::new(move || {
             backup(&file)?;
             let current = std::fs::read_to_string(&file).unwrap_or_default();
-            std::fs::write(&file, upsert_block(&current, &codex_block(&e.mcp_url(), &e.token)))?;
+            write_private(&file, &upsert_block(&current, &codex_block(&e.mcp_url(), &e.token)))?;
             backup(&hooks)?;
             let current = std::fs::read_to_string(&hooks).unwrap_or_default();
             std::fs::write(&hooks, merge_session_hook(&current, Agent::Codex, &command)?)?;
@@ -178,7 +181,7 @@ pub fn muse_plan(e: Endpoint, file: PathBuf) -> ConnectPlan {
             backup(&file)?;
             let current = std::fs::read_to_string(&file).unwrap_or_default();
             let with_server = merge_mcp_server(&current, mcp_entry(&e.mcp_url(), &e.token))?;
-            std::fs::write(&file, merge_session_hook(&with_server, Agent::Muse, &command)?)?;
+            write_private(&file, &merge_session_hook(&with_server, Agent::Muse, &command)?)?;
             Ok(format!(
                 "Updated {} (backup: {}.memoryos.bak). Restart Muse. The entry format follows Meta's streamable-HTTP convention; verify with /mcp inside Muse.",
                 file.display(),
@@ -298,7 +301,7 @@ fn claude_plan(e: Endpoint) -> ConnectPlan {
                 Err(_) => {
                     backup(&user_config)?;
                     let current = std::fs::read_to_string(&user_config).unwrap_or_default();
-                    std::fs::write(&user_config, merge_mcp_server(&current, mcp_entry(&url, &e.token))?)?;
+                    write_private(&user_config, &merge_mcp_server(&current, mcp_entry(&url, &e.token))?)?;
                     Ok(format!("Added {SERVER} to mcpServers in {} (backup: .memoryos.bak). {hook_note} Start a new session.", user_config.display()))
                 }
             }
