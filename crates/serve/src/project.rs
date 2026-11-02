@@ -43,7 +43,8 @@ pub trait ProjectManager: Send + Sync {
     fn list(&self) -> Vec<ProjectRef>;
     fn get(&self, id: &str) -> Option<ProjectRef>;
     fn add(&self, root: &Path) -> Result<ProjectRef>;
-    fn remove(&self, id: &str) -> Result<()>;
+    /// Stop watching a project. With `forget`, its stored memory is deleted too.
+    fn remove(&self, id: &str, forget: bool) -> Result<()>;
     /// Connect an agent to the shared endpoint (all projects). Shows the change; `apply` makes it.
     fn connect(&self, agent: &str, apply: bool) -> Result<ConnectOutcome>;
     /// Give the agent a new token, revoking the old one, and write it into the agent's config if

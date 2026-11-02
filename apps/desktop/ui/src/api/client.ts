@@ -18,7 +18,9 @@ const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.strin
 export const projectsApi = (c: Connection) => ({
   list: () => call<Project[]>(c, "/api/projects"),
   add: (root: string) => call<Project>(c, "/api/projects", post({ root })),
-  remove: (id: string) => call<{ ok: boolean }>(c, `/api/projects/${id}`, { method: "DELETE" }),
+  /** With `forget`, the project's stored memory is deleted too; the folder itself is never touched. */
+  remove: (id: string, forget = false) =>
+    call<{ ok: boolean }>(c, `/api/projects/${id}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ forget }) }),
   settings: () => call<AppSettings>(c, "/api/settings"),
   saveSettings: (s: AppSettings) => call<AppSettings>(c, "/api/settings", post(s)),
   testSettings: (target: "llm" | "embeddings", settings?: AppSettings) => call<TestResult>(c, "/api/settings/test", post({ target, settings })),

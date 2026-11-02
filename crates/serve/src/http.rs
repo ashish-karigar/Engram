@@ -197,7 +197,8 @@ async fn handle_projects(state: Arc<AppState>, method: Method, rest: &[&str], bo
         }
         (Method::DELETE, Some(id)) => {
             let manager = state.manager.clone();
-            tokio::task::spawn_blocking(move || manager.remove(&id)).await.map_err(|e| Error::msg(e.to_string()))??;
+            let forget = body["forget"].as_bool().unwrap_or(false);
+            tokio::task::spawn_blocking(move || manager.remove(&id, forget)).await.map_err(|e| Error::msg(e.to_string()))??;
             Ok(reply(StatusCode::OK, &json!({"ok": true})))
         }
         _ => Ok(fail(StatusCode::NOT_FOUND, "not found")),

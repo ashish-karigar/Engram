@@ -103,13 +103,20 @@ export function App() {
       (e: Error) => setAddError(e.message),
     );
   };
-  // Stopping is reversible (the memory stays on disk), but it still asks: it is one click away in the list.
+  // Stopping is reversible (the memory stays on disk); deleting the memory is asked separately,
+  // because it cannot be undone.
   const remove = async (p: Project) => {
-    const question = `Stop watching ${p.name}? Its memory stays on disk and comes back if you add the folder again.`;
-    const yes = (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
-      ? await (await import("@tauri-apps/plugin-dialog")).ask(question, { title: "MemoryOS", kind: "warning", okLabel: "Stop watching" })
-      : window.confirm(question);
-    if (yes) api?.remove(p.id).then(reload);
+    const ask = async (question: string, okLabel: string, cancelLabel: string) =>
+      (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+        ? (await import("@tauri-apps/plugin-dialog")).ask(question, { title: "MemoryOS", kind: "warning", okLabel, cancelLabel })
+        : window.confirm(`${question}\n\nOK = ${okLabel}`);
+    if (!(await ask(`Stop watching ${p.name}?`, "Stop watching", "Cancel"))) return;
+    const forget = await ask(
+      `Also delete everything MemoryOS remembers about ${p.name}? This cannot be undone. Your project folder is not touched.`,
+      "Delete its memory",
+      "Keep its memory",
+    );
+    api?.remove(p.id, forget).then(reload);
   };
 
   if (daemonError) return <div className="empty" data-tauri-drag-region><h1>MemoryOS</h1><p className="err">{daemonError}</p></div>;

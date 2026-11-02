@@ -32,7 +32,7 @@ impl ProjectManager for TestManager {
         self.projects.lock().unwrap().insert(id, project.clone());
         Ok(project)
     }
-    fn remove(&self, id: &str) -> Result<()> {
+    fn remove(&self, id: &str, _forget: bool) -> Result<()> {
         self.projects.lock().unwrap().remove(id).map(|_| ()).ok_or_else(|| Error::msg("unknown project"))
     }
     fn connect(&self, agent: &str, apply: bool) -> Result<ConnectOutcome> {
@@ -213,7 +213,7 @@ async fn projects_are_isolated_and_manageable() {
 
     let (_, connect) = post(&f, &f.admin, "/p/p1/api/connect", json!({"agent": "codex"})).await;
     assert!(connect["preview"].as_str().unwrap().contains("claude mcp add"));
-    f.manager.remove(&other).unwrap();
+    f.manager.remove(&other, false).unwrap();
     assert_eq!(get(&f, &f.admin, &format!("/p/{other}/api/stats")).await.0, 404);
 }
 

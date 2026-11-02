@@ -275,3 +275,28 @@ async fn hook_prints_the_brief_for_the_project_containing_cwd() {
     assert!(tokio::task::spawn_blocking(move || engram_daemon::hook::hook_output("claude", &outside)).await.unwrap().is_none(), "fails open");
     running.stop().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn removing_a_project_can_forget_its_memory() {
+    let home = tempfile::tempdir().unwrap();
+    let site = repo(&[("index.html", "<h1>hi</h1>\n")], "Add page");
+    let running = start_daemon(DaemonOptions { base: home.path().to_path_buf(), port: 0, runtime: None }).await.unwrap();
+    let api = Api { url: running.url.clone(), admin: running.admin_token.clone() };
+    let delete = |id: String, forget: bool| {
+        let (url, admin) = (api.url.clone(), api.admin.clone());
+        async move {
+            reqwest::Client::new().delete(format!("{url}/api/projects/{id}")).bearer_auth(admin).json(&json!({"forget": forget})).send().await.unwrap();
+        }
+    };
+
+    let id = api.post(&api.admin, "/api/projects", json!({"root": site.path()})).await["id"].as_str().unwrap().to_string();
+    let dir = home.path().join("projects").join(&id);
+    assert!(dir.is_dir());
+    delete(id.clone(), false).await;
+    assert!(dir.is_dir(), "a plain remove keeps the memory");
+
+    let id = api.post(&api.admin, "/api/projects", json!({"root": site.path()})).await["id"].as_str().unwrap().to_string();
+    delete(id, true).await;
+    assert!(!dir.exists(), "forget deletes the memory");
+    assert!(site.path().join("index.html").exists(), "the project folder itself is untouched");
+}

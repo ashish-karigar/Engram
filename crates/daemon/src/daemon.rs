@@ -108,10 +108,15 @@ impl ProjectManager for Daemon {
         Ok(project)
     }
 
-    fn remove(&self, id: &str) -> Result<()> {
+    fn remove(&self, id: &str, forget: bool) -> Result<()> {
         let project = self.projects.lock().unwrap().remove(id).ok_or_else(|| Error::msg("unknown project"))?;
         self.registry.remove(&project.paths.root);
+        let dir = project.paths.dir.clone();
         project.stop();
+        // The memory lives in its own folder under the data dir, never inside the project.
+        if forget && dir.starts_with(self.base.join("projects")) && dir.is_dir() {
+            std::fs::remove_dir_all(&dir)?;
+        }
         Ok(())
     }
 
