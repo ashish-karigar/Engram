@@ -14,7 +14,7 @@ use engram_embed::Embedder;
 use engram_rag::document::{delete_document, get_by_external_id};
 use serde_json::json;
 
-use crate::source::{AGENTS, Agent, Sources};
+use crate::source::{AGENTS, Agent, Sources, claude_worked_elsewhere, turn_belongs};
 use crate::transcript::rebuild_transcript;
 use crate::turn::Turn;
 use crate::{claude, codex, muse};
@@ -134,9 +134,15 @@ pub fn sync_sessions(conn: &Connection, embedder: &dyn Embedder, root: &Path, so
             }
             let fallback = file.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
             let mut session_id = get_meta(conn, &format!("sessions.sid:{key}"))?.unwrap_or(fallback);
+            // A Claude Code session that also worked in another project gives this one only the
+            // turns run inside it (Codex and Muse logs are already one folder per session).
+            let worked_elsewhere = agent == Agent::Claude && claude_worked_elsewhere(&file, root);
             let mut at = start;
             for line in text.split_inclusive('\n') {
                 for (i, turn) in parse(agent, line, &mut session_id).into_iter().enumerate() {
+                    if agent == Agent::Claude && !turn_belongs(turn.cwd.as_deref(), root, worked_elsewhere) {
+                        continue;
+                    }
                     let op_id = format!("turn:{}:{}:{at}:{i}", agent.id(), key);
                     let external = record_turn(conn, agent, &actor_id, &turn, op_id)?;
                     changed.insert((agent.id().to_string(), external));

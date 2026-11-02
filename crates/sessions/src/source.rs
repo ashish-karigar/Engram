@@ -79,6 +79,62 @@ pub fn within(cwd: &str, root: &Path) -> bool {
     cwd == root || cwd.starts_with(&format!("{root}/"))
 }
 
+/// A folder of other work: not the project, not a folder above it, but beside it (under the home
+/// folder when the project is there, else under the project's parent). `/tmp` and the like are not.
+fn elsewhere(cwd: &str, root: &Path) -> bool {
+    if within(cwd, root) || root.starts_with(cwd) {
+        return false;
+    }
+    let home = std::env::var("HOME").unwrap_or_default();
+    let base = if !home.is_empty() && within(&root.to_string_lossy(), Path::new(&home)) {
+        PathBuf::from(home)
+    } else {
+        root.parent().map(Path::to_path_buf).unwrap_or_default()
+    };
+    base.as_os_str().len() > 1 && within(cwd, &base)
+}
+
+/// Whether a Claude Code session ever worked in another project's folder. Such a session (a long
+/// one started in a parent folder, say) gives a project only the turns run inside it; a session
+/// that only worked here keeps its planning turns from the parent folder too.
+static ELSEWHERE: Mutex<Option<HashMap<(PathBuf, PathBuf), (u64, bool)>>> = Mutex::new(None);
+
+pub fn claude_worked_elsewhere(path: &Path, root: &Path) -> bool {
+    let key = (path.to_path_buf(), root.to_path_buf());
+    let (from, found) = ELSEWHERE.lock().unwrap().get_or_insert_with(HashMap::new).get(&key).copied().unwrap_or((0, false));
+    if found {
+        return true;
+    }
+    let Ok(mut file) = File::open(path) else { return false };
+    let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let start = if len < from { 0 } else { from };
+    if file.seek(SeekFrom::Start(start)).is_err() {
+        return false;
+    }
+    let (mut at, mut found) = (start, false);
+    for line in BufReader::new(file).split(b'\n').map_while(Result::ok) {
+        at += line.len() as u64 + 1;
+        let Ok(line) = std::str::from_utf8(&line) else { continue };
+        if line.contains("\"cwd\"") && claude::cwd_of(line).is_some_and(|c| elsewhere(&c, root)) {
+            found = true;
+            break;
+        }
+    }
+    ELSEWHERE.lock().unwrap().get_or_insert_with(HashMap::new).insert(key, (at.min(len), found));
+    found
+}
+
+/// Whether a turn belongs to the project: one run inside it always does; one from another
+/// project's folder never does; any other (a parent folder, `/tmp`) only if the session never
+/// worked in another project.
+pub fn turn_belongs(cwd: Option<&str>, root: &Path, session_worked_elsewhere: bool) -> bool {
+    match cwd {
+        Some(c) if within(c, root) => true,
+        Some(c) if elsewhere(c, root) => false,
+        _ => !session_worked_elsewhere,
+    }
+}
+
 /// The first match of `find` in the opening `lines` lines of a log.
 fn first_match(path: &Path, lines: usize, find: impl Fn(&str) -> Option<String>) -> Option<String> {
     let reader = BufReader::new(File::open(path).ok()?);
@@ -135,8 +191,8 @@ impl Sources {
                         && (dir == slug || dir.starts_with(&format!("{slug}-")) || slug.starts_with(&format!("{dir}-")))
                 });
                 // A session started in a parent folder belongs here only if it worked inside the
-                // project at some point; then the whole conversation counts, since the planning
-                // usually happens before the agent moves into the folder.
+                // project at some point. Its turns are then filtered in sync (`turn_belongs`):
+                // planning before the move counts, other projects' work does not.
                 files.retain(|f| {
                     let dir = f.parent().and_then(|d| d.file_name()).map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
                     dir == slug || dir.starts_with(&format!("{slug}-")) || mentions_cwd_within(f, root)

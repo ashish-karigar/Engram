@@ -73,6 +73,25 @@ fn muse_frames_and_run_events_become_turns() {
     assert_eq!(turns[2].tools[0].files, ["perception/camera.py"]);
 }
 
+#[test]
+fn a_session_across_projects_gives_each_only_its_own_turns() {
+    let home = tempfile::tempdir().unwrap();
+    let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let (a, b) = (a.path().canonicalize().unwrap(), b.path().canonicalize().unwrap());
+    let parent = a.parent().unwrap().to_path_buf();
+    assert_eq!(b.parent(), Some(parent.as_path()), "both projects sit side by side");
+    let sources = Sources { claude: home.path().join("claude"), codex: home.path().join("codex"), muse: home.path().join("muse") };
+
+    // One long session started in the parent folder: planning there, work in A, then work in B.
+    let s = |cwd: &Path, i: usize| claude_lines(&cwd.to_string_lossy())[i].replace("\"s1\"", "\"s3\"");
+    write(&sources.claude.join(claude_slug(&parent)).join("s3.jsonl"), &[s(&parent, 0), s(&a, 1), s(&b, 0)]);
+
+    let e = HashEmbedder::default();
+    let (in_a, in_b) = (open_memory().unwrap(), open_memory().unwrap());
+    assert_eq!(sync_sessions(&in_a, &e, &a, &sources).unwrap().turns, 1, "only the turn run inside A");
+    assert_eq!(sync_sessions(&in_b, &e, &b, &sources).unwrap().turns, 1, "only the turn run inside B");
+}
+
 fn write(path: &Path, lines: &[String]) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let mut f = std::fs::OpenOptions::new().create(true).append(true).open(path).unwrap();
@@ -93,7 +112,7 @@ fn sync_is_incremental_attributed_scrubbed_and_searchable() {
     write(&log, &claude_lines(&cwd)[..2]);
     let other = sources.claude.join(claude_slug(Path::new("/elsewhere"))).join("s9.jsonl");
     write(&other, &claude_lines("/elsewhere"));
-    // A session started in the parent folder that later worked inside the project counts whole.
+    // A session started in the parent folder that later worked only inside this project counts whole.
     let parent = root_path.parent().unwrap();
     let parent_log = sources.claude.join(claude_slug(parent)).join("s2.jsonl");
     let mut outside = claude_lines(&parent.to_string_lossy())[..1].to_vec();
