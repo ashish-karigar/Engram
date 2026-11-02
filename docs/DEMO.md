@@ -45,6 +45,14 @@ Look (decided by the user, keep it everywhere):
   each section heading; in "How it works" and the handoff story, separate lanes for Claude Code,
   Codex and Muse Code (gold, amber and a light mocha) curve into one shared line. Draw them in SVG
   and let them draw themselves on scroll.
+- ASCII memory: in a few places, text "recalls" itself out of ASCII characters, like a memory
+  coming back. Characters (in SF Mono, gold fading to mocha) flicker through random glyphs and
+  settle into the real words. Use it for: each section's eyebrow label as it scrolls in; a
+  "recall" moment where an agent's question appears and the remembered decision resolves out of
+  ASCII beneath it; an ASCII field that dissolves to reveal each app screenshot; and a faint ASCII
+  rendering of the brain that the 3D node brain fades into on narrow screens. Use it in those
+  places only, keep it fast (under a second per word) and readable, and show plain text under
+  prefers-reduced-motion.
 - No boxes: do not put content in cards or bordered boxes. Lay sections out with typography,
   whitespace, thin rules and the git lines. The only framed things are the app screenshots.
 - No status dots, pulsing dots or green dots anywhere.
