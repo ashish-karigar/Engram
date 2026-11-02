@@ -19,8 +19,10 @@ decided and what is left reaches it through MemoryOS.
 Open the `memoryos-site` folder in Codex and paste:
 
 ```text
-Build the website for MemoryOS in this folder: plain HTML, CSS and a little JavaScript, no build
-step and no frameworks, so GitHub Pages can serve it. This is the product's main site, not a short
+Build the website for MemoryOS in this folder with React and TypeScript on Vite. One component per
+section, plain CSS with variables for the design tokens, no UI library or CSS framework. It will be
+hosted on GitHub Pages, so `npm run build` must produce a static site in `dist/` (set Vite's `base`
+to "./"). This is the product's main site, not a short
 landing page: a long, polished page like the sites of leading developer-tool companies, with a
 real section for every part of the product. It must work on a phone.
 
@@ -90,7 +92,7 @@ Muse Code gets the brief at session start, searches MemoryOS for the remaining s
 
 ## Take 3: the result
 
-Open `index.html` in a browser and scroll through it. Then show the graph: Codex's and Muse's memories
+Run `npm run dev` in the folder, open the address it prints, and scroll through the site. Then show the graph: Codex's and Muse's memories
 on one project.
 
 ## If something goes wrong
