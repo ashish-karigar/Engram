@@ -6,8 +6,42 @@ code links, and serves small, token-budgeted answers to any agent over MCP or HT
 
 Switch agents, or survive a context compaction, without re-briefing.
 
+**[Download MemoryOS for Mac](https://github.com/ashish-karigar/Engram/releases/latest/download/MemoryOS_0.1.0_aarch64.dmg)**
+(Apple silicon, M1 and later) · [Release notes](https://github.com/ashish-karigar/Engram/releases/latest)
+
 Built for the Meta Global AI Developer Hackathon (Oct 26 – Nov 4, 2026). All code in this
 repository was written during the event.
+
+## Install
+
+1. Open the `.dmg` and drag MemoryOS into Applications. Open it from there: agent connectors
+   remember where the app lives, so connecting while it runs from the disk image breaks them later.
+2. The app is not notarized yet, so macOS blocks the first launch. Go to System Settings →
+   Privacy & Security and click **Open Anyway**. This is needed once.
+3. Add a project folder from the sidebar, then connect your agents (Claude Code, Codex, Muse Code)
+   from the Agents tab. New sessions start with the project brief and can search memory over MCP.
+
+Everything stays on your Mac. A hosted model is used only if you add one in Settings.
+
+## Results
+
+Live agents, same tasks with and without MemoryOS (Muse Code, `muse-spark-1.3`, 14 tasks × 3 runs
+per condition, 84 trials):
+
+| | With MemoryOS | Without |
+|---|---|---|
+| Trials passed | **39 / 42** | 26 / 42 |
+| Median tokens per trial | **145k** | 216k |
+| Median uncached tokens per trial | **31k** | 58k |
+| Median tool calls per trial | **6** | 10 |
+
+- Tasks whose answer existed only in past sessions: **12 / 12** with memory, 0 / 12 without.
+- Uncached tokens were lower with memory on all 14 tasks.
+- LongMemEval-S test split, never tuned on: evidence in the top 5 for 99% of questions, and
+  **86.7%** answer accuracy with Muse Spark.
+- Model-judged memory links: 93–97% correct relations over 3 runs, with no unrelated pairs linked.
+
+Method, per-task numbers and the failures: [docs/EVALUATION.md](docs/EVALUATION.md).
 
 ## How it works
 
@@ -29,15 +63,15 @@ repository was written during the event.
 How to use it: [docs/USAGE.md](docs/USAGE.md). How it is evaluated: [docs/EVALUATION.md](docs/EVALUATION.md).
 Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Decisions: [docs/ACTION_PLAN.md](docs/ACTION_PLAN.md).
 
-## Run it
+## Build from source
 
 Requires Rust (stable), Node 20+, and git.
 
 ```bash
-cargo test --workspace            # 71 tests, including a two-project, two-agent end-to-end run
+cargo test --workspace            # includes a two-project, two-agent end-to-end run
 npm install
 npm run app:dev                   # desktop app (Tauri) with hot reload
-npm run app:build                 # release bundle
+npm run app:build                 # release bundle: .app and .dmg in target/release/bundle
 ```
 
 Or from a terminal, without the desktop window. The project was first called Engram, and the
@@ -78,14 +112,12 @@ apps/desktop       Tauri shell + React UI (ui/)
 
 ## Status
 
-Working and tested: capture, snapshots, Python indexing, extraction pipeline with grounding, temporal
-memory, graph recall, MCP + HTTP (checked with the official MCP TypeScript client), request log,
-connectors, multiple projects, desktop UI.
+Working and tested: capture, snapshots, code indexing, extraction with grounding, temporal memory,
+graph recall, documents, Claude Code / Codex / Muse Code session logs, MCP + HTTP, request log,
+agent connectors, multiple projects, and the packaged desktop app.
 
-Not done: adapters that read Codex/Muse session logs (agents use `note` instead),
-cloud sync and billing. The desktop app launches and runs its daemon, but the native folder picker and
-the Codex/Muse/Claude connectors have not been exercised on a real machine. The Muse API base URL and
-model id defaults are unverified and configurable.
+Not done: Intel Mac and Windows builds, notarization, cloud sync. The Muse API base URL and model id
+defaults are configurable.
 
 ## License
 
