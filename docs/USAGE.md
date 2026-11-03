@@ -9,8 +9,8 @@ each screen shows, settings, and how to undo anything Engram changes.
 Requirements: macOS (Linux works for the daemon), Rust stable, Node 20+, git.
 
 ```bash
-git clone https://github.com/ashish-karigar/Engram.git
-cd Engram
+git clone https://github.com/ashish-karigar/MemoryOS.git
+cd MemoryOS
 npm install
 npm run app:dev          # desktop app with the daemon inside it
 ```

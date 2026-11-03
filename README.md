@@ -6,8 +6,8 @@ code links, and serves small, token-budgeted answers to any agent over MCP or HT
 
 Switch agents, or survive a context compaction, without re-briefing.
 
-**[Download MemoryOS for Mac](https://github.com/ashish-karigar/Engram/releases/latest/download/MemoryOS_0.1.0_aarch64.dmg)**
-(Apple silicon, M1 and later) · [Release notes](https://github.com/ashish-karigar/Engram/releases/latest)
+**[Download MemoryOS for Mac](https://github.com/ashish-karigar/MemoryOS/releases/latest/download/MemoryOS_0.1.0_aarch64.dmg)**
+(Apple silicon, M1 and later) · [Release notes](https://github.com/ashish-karigar/MemoryOS/releases/latest)
 
 Built for the Meta Global AI Developer Hackathon (Oct 26 – Nov 4, 2026). All code in this
 repository was written during the event.
